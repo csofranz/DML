@@ -1,0 +1,111 @@
+cfxSmokeZone = {}
+cfxSmokeZone.version = "1.0.2" 
+cfxSmokeZone.requiredLibs = {
+	"dcsCommon", -- always
+	"cfxZones", -- Zones, of course 
+}
+--[[--
+	Version History
+ 1.0.0 - initial version
+ 1.0.1 - added removeSmokeZone
+ 1.0.2 - added altitude
+
+	SMOKE ZONES *** EXTENDS ZONES ***
+	keeps 'eternal' smoke up for any zone that has the 
+	'smoke' attribute 
+	
+	USAGE
+	add a 'smoke' attribute to the zone. the value of the attribute 
+	defines the color. Valid values are: red, green, blue, white, orange, 0 (results in green smoke), 1 (red smoke), 2 (white), 3 (orange), 4 (blue)
+	defaults to "green"
+	altiude is meters above ground height, defaults to 5m
+--]]--
+cfxSmokeZone.smokeZones = {}
+cfxSmokeZone.updateDelay = 5 * 60 -- every 5 minutes 
+
+function cfxSmokeZone.processSmokeZone(aZone)
+	local rawVal = cfxZones.getStringFromZoneProperty(aZone, "smoke", "green")
+	rawVal = rawVal:lower()
+	local theColor = 0 
+	if rawVal == "red" or rawVal == "1" then theColor = 1 end 
+	if rawVal == "white" or rawVal == "2" then theColor = 2 end 
+	if rawVal == "orange" or rawVal == "3" then theColor = 3 end 
+	if rawVal == "blue" or rawVal == "4" then theColor = 4 end 
+
+	aZone.smokeColor = theColor
+	aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "altitude", 1)
+end
+
+function cfxSmokeZone.addSmokeZone(aZone)
+	table.insert(cfxSmokeZone.smokeZones, aZone)
+end
+
+function cfxSmokeZone.addSmokeZoneWithColor(aZone, aColor, anAltitude)
+	if not aColor then aColor = 0 end -- default green 
+	if not anAltitude then anAltitude = 5 end 
+	if not aZone then return end 
+	aZone.smokeColor = aColor
+	aZone.smokeAlt = anAltitude
+	cfxSmokeZone.addSmokeZone(aZone) -- add to update loop
+	cfxZones.markZoneWithSmoke(aZone, 0, 0, aZone.smokeColor, aZone.smokeAlt) -- smoke on!
+end
+
+function cfxSmokeZone.removeSmokeZone(aZone)
+	if not aZone then return end 
+	if type(aZone) == "string" then 
+		aZone = cfxZones.getZoneByName(aZone) 
+	end
+	
+	-- now create new table 
+	local filtered = {}
+	for idx, theZone in pairs(cfxSmokeZone.smokeZones) do 
+		if theZone ~= aZone then 
+			table.insert(filtered, theZone)
+		end 
+	end
+	cfxSmokeZone.smokeZones = filtered 
+end
+
+
+function cfxSmokeZone.update()
+	-- call me in a couple of minutes to 'rekindle'
+	timer.scheduleFunction(cfxSmokeZone.update, {}, timer.getTime() + cfxSmokeZone.updateDelay)
+	
+	-- re-smoke all zones after delay
+	for idx, aZone in pairs(cfxSmokeZone.smokeZones) do 
+		if aZone.smokeColor then 
+			cfxZones.markZoneWithSmoke(aZone, 0, 0, aZone.smokeColor, aZone.smokeAlt)
+		end
+	end
+end
+
+function cfxSmokeZone.start()
+	if not dcsCommon.libCheck("cfx Smoke Zones", 
+		cfxSmokeZone.requiredLibs) then
+		return false 
+	end
+	
+	-- collect all zones with 'smoke' attribute 
+	-- collect all spawn zones 
+	local attrZones = cfxZones.getZonesWithAttributeNamed("smoke")
+	
+	-- now create a spawner for all, add them to the spawner updater, and spawn for all zones that are not
+	-- paused 
+	for k, aZone in pairs(attrZones) do 
+		cfxSmokeZone.processSmokeZone(aZone) -- process attribute and add to zone
+		cfxSmokeZone.addSmokeZone(aZone) -- remember it so we can smoke it
+	end
+
+	-- start update loop
+	cfxSmokeZone.update()
+	
+	-- say hi
+	trigger.action.outText("cfx Smoke Zones v" .. cfxSmokeZone.version .. " started.", 30)
+	return true 
+end
+
+-- let's go 
+if not cfxSmokeZone.start() then 
+	trigger.action.outText("cf/x Smoke Zones aborted: missing libraries", 30)
+	cfxSmokeZone = nil 
+end
