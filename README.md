@@ -40,6 +40,9 @@ Above screenshot was taken from my “Integrated Warfare: Pushback”, a mission
 
 All zones use simple, ME editable attributes (like “pathing”, “offroad”) to tell DML what to do. In the end, writing such a mission amounts to just a little more than placing zones and adding attributes. After all, the trick is coming up with a good mission idea – putting it together should be easy. With DML it may have become a bit easier.
 
+![image](https://user-images.githubusercontent.com/21967811/150333527-15e2af24-8598-4177-801f-8dabcd75baf8.png)
+
+
 Behind the scenes, DML also provides a collection of **Foundation** modules that lack ME integration. Using these modules directly is not intended for beginners and requires a modicum of Lua-knowledge; they provide ready-made, tested, convenient access to many functions that mission designers would traditionally code by themselves (or use ready-made libraries).
 
 ## What is in the box?
