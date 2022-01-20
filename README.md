@@ -3,7 +3,7 @@ A Toolbox For Mission Designers
 (no Lua Required)
 
 ## What?
-DML is a **mission-building toolbox** for Eagle Dynamic's DCS combat flight simulator that **does not require Lua**, yet it also provides comprehensive support if you do want to use Lua. At its heart are modules that **attach themselves to Mission Editor’s (ME) Trigger Zones** to provide new abilities. Mission designers control these new abilities in ME by adding ‘Attributes’ to these Trigger Zone.
+DML is a **mission-building toolbox** for Eagle Dynamic's DCS combat flight simulator that **does not require Lua**, yet it also provides comprehensive support if you do want to use Lua. At its heart are modules that **attach themselves to Mission Editor’s (ME) Trigger Zones** to provide new abilities. Mission designers control these new abilities in ME by adding ‘Attributes’ to these Trigger Zones.
 
 ![image](https://user-images.githubusercontent.com/21967811/150338060-10061782-c59c-46ac-8e42-ab598aae1fc9.png)
 
