@@ -33,7 +33,7 @@ Let us look at a real-life DML-enhanced mission:
 
 Note the five Trigger Zones on the map (follow the unobtrusive red arrows). As mentioned, DML uses ME Trigger Zones and attaches its own modules to them. That way, mission designers can simply place new functionality by adding standard Trigger Zones to the map - without requiring any Lua. You then add a few attributes to the Trigger Zone, and DML’s modules home in on them automatically.
 
-Above screenshot was taken from my “[Integrated Warfare: Pushback]”(https://forums.eagle.ru/topic/276664-pushback-caucasus-integrated-warfare-multi-module-multi-player/), a mission that uses DML to dynamically create ground forces and that require the player’s air support to win. On the map, I placed various zones to
+Above screenshot was taken from my ["Integrated Warfare: Pushback"](https://forums.eagle.ru/topic/276664-pushback-caucasus-integrated-warfare-multi-module-multi-player/), a mission that uses DML to dynamically create ground forces and that require the player’s air support to win. On the map, I placed various zones to
 
 - Add conquerable zones (“Wolf Crossing”, “Bride’s Bridge”, “Highroad”) – these are zones that, when captured by blue or red, automatically produce ground forces that defend the zone against invaders and seek out and capture other conquerable zones
 - Control civilian air traffic (“Traffic: Civilian”)
