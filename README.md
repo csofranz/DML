@@ -18,7 +18,8 @@ DML has something in store for every mission designer – novices and veterans a
 ## Show Me!
 Let us look at a real-life DML-enhanced mission:
 
-(image to come)
+ ![image](https://user-images.githubusercontent.com/21967811/150332973-0a517578-3967-400a-9b5c-1207b0fab53e.png)
+
 
 Note the five Trigger Zones on the map (follow the unobtrusive red arrows). As mentioned, DML uses ME Trigger Zones and attaches its own modules to them. That way, mission designers can simply place new functionality by adding standard Trigger Zones to the map - without requiring any Lua. You then add a few attributes to the Trigger Zone, and DML’s modules home in on them automatically.
 
