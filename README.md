@@ -5,6 +5,10 @@ A Toolbox For Mission Designers
 ## What?
 DML is a **mission-building toolbox that** for Eagle Dynamic's DCS combat flight simulator that **does not require Lua**, yet it also provides comprehensive support if you do want to use Lua. At its heart are modules that **attach themselves to Mission Editor’s (ME) Trigger Zones** to provide new abilities. Mission designers control these new abilities in ME by adding ‘Attributes’ to these Trigger Zone.
 
+![image](https://user-images.githubusercontent.com/21967811/150338060-10061782-c59c-46ac-8e42-ab598aae1fc9.png)
+
+For example, when you add above attributes to a trigger zone, the “cfxNDB” module automatically activates for this zone, and starts an NDB at the zone’s center at 121.5 MHz, playing the “distressbeacon.ogg” sound file on that frequency.
+
 ![image](https://user-images.githubusercontent.com/21967811/150333140-665cda5e-dad5-4f7f-897f-853179e89448.png)
 
 
