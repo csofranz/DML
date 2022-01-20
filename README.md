@@ -14,6 +14,9 @@ Through this simple mechanism, adding complex new abilities to missions becomes 
 
 If that isn’t enough, DML modules **can be triggered with ME flags**, while others **can set ME Flags** when they activate. For example, spawn zones can be instructed to watch flag 100, and spawn every time when that flag changes its value. Other modules can be told to increase a Flag (e.g., 110) every time they activate. This allows you to integrate the modules in your normal ME mission design workflow without having to resorting to outside means.
 
+![image](https://user-images.githubusercontent.com/21967811/150333268-21d8ede9-4846-4194-812b-dfdb35e8dac9.png)
+
+
 If a module requires configuration data, it starts up with default values, and then looks for a – surprise! – Trigger Zone that might contain the attributes that you want to change for this mission. **You can configure your modules from within ME** – you don’t have to change a single line of code.
 
 DML has something in store for every mission designer – novices and veterans alike. And for mission designers who have discovered Lua, DML can super-charge their abilities. That being said, **Lua knowledge is not required** to use DML in your missions. At all.
