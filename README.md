@@ -19,6 +19,9 @@ If that isn’t enough, DML modules **can be triggered with ME flags**, while ot
 
 If a module requires configuration data, it starts up with default values, and then looks for a – surprise! – Trigger Zone that might contain the attributes that you want to change for this mission. **You can configure your modules from within ME** – you don’t have to change a single line of code.
 
+![image](https://user-images.githubusercontent.com/21967811/150333378-ad2908c4-b14b-42af-9b1b-ad6bc9993b92.png)
+
+
 DML has something in store for every mission designer – novices and veterans alike. And for mission designers who have discovered Lua, DML can super-charge their abilities. That being said, **Lua knowledge is not required** to use DML in your missions. At all.
 
 ## Show Me!
