@@ -9,9 +9,6 @@ DML is a **mission-building toolbox that** for Eagle Dynamic's DCS combat flight
 
 For example, when you add above attributes to a trigger zone, the “cfxNDB” module automatically activates for this zone, and starts an NDB at the zone’s center at 121.5 MHz, playing the “distressbeacon.ogg” sound file on that frequency.
 
-![image](https://user-images.githubusercontent.com/21967811/150333140-665cda5e-dad5-4f7f-897f-853179e89448.png)
-
-
 Through this simple mechanism, adding complex new abilities to missions becomes a snap (or, at least, much easier). Since **you control DML from inside ME**, you do not have to mess around with Lua scripts – all DML modules take their run-time data from Trigger Zone attributes. You edit those in ME: Trigger Zones already have attributes, editing them is built into ME. If you have ever created a Trigger Zone, you have already seen ME’s zone attributes. You likely ignored them because they have had little practical use. Until now. We’ll use zone attributes to put DCS mission creation into super-cruise.
 
 **DML can reduce advanced tasks (such as adding CSAR missions) to placing trigger zones and adding attributes.**
