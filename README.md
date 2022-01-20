@@ -52,7 +52,7 @@ So, what’s in DML right now? In a nutshell here’s what you get:
   - Limited number of pilots (ties in with CSAR Missions)
   - Civilian Air traffic
   - Automatic Recon Mode
-  - Slot Blocking Client (SSB based)
+  - Slot Blocking Client (SSB based) for preventing spawns on enemy airfields
   - Protection from missiles
   - Helicopter Troop Pick-up, Transport and Deployment
   - Score Keeping
@@ -61,6 +61,7 @@ So, what’s in DML right now? In a nutshell here’s what you get:
   - Dynamic Object/Cargo Spawning
   - Artillery Target Zones
   - Conquerable Zones and FARPS
+  - (moving) NDB
   - Map/Scenery Object destruction Detector 
 - **Foundation**, a library of ready-to-use methods **(only for mission designers who use Lua)**. They support
   - Advanced Event Handlers for mission and player events
