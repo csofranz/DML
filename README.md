@@ -70,7 +70,7 @@ So, what’s in DML right now? In a nutshell here’s what you get:
   - Managing orders and pathing for troops
 - **Multi-player supported out-of-the-box**. All modules work for single- and multiplayer missions, including modules with user interaction via communications.
 - **A collection of fully documented Tutorials / Demos** that serve to illustrate how the more salient points of DML can be used to quickly create great mission. They aren’t flashy. They hopefully are helpful instead. 
-- A hefty Manual that I can lord over you and yell “RTFM” whenever you have a question. Yup, that’s definitely why I wrote it.
+- **A hefty Manual** that I can lord over you and yell “RTFM” whenever you have a question. Yup, that’s definitely why I wrote it.
 
 Of course, this is just the beginning – DML is far from complete, and there are lots of new avenues to explore. Based on feedback, I expect DML to evolve, and to add new and exciting abilities. Until then, I hope that you enjoy the ride!
 
