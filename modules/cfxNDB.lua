@@ -1,5 +1,19 @@
 cfxNDB = {}
 cfxNDB.version = "1.0.0"
+
+--[[--
+	cfxNDB:
+	Copyright (c) 2021 by Christian Franz and cf/x AG
+	
+	Zone enhancement that simulates an NDB for a zone.
+	If zone is linked, the NDB's location is updated 
+	regularly.
+	Currently, the individual refresh is only respected 
+	correctly if it's longer than the module's refresh and 
+	an even multiple of module's refresh, else it will be
+	refreshed at the next module update cycle 
+--]]--
+
 cfxNDB.verbose = false 
 cfxNDB.ups = 10 -- every 10 seconds 
 cfxNDB.requiredLibs = {
