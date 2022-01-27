@@ -1,5 +1,5 @@
 cargoSuper = {}
-cargoSuper.version = "1.1.0"
+cargoSuper.version = "1.1.1"
 --[[--
 version history
 	1.0.0 - initial version
@@ -13,6 +13,7 @@ version history
 		  - getAllCategoriesFor alias for getAllCargos 
 		  - getManifestForCategory alias for getManifestFor
 		  - removeAllMassFor()
+	1.1.1 - deleteMassObject corrected index bug 
 	
 CargoSuper manages weigth for a logical named unit. Weight can be added 
 to arbitrary categories like 'passengers', 'cargo' or "whatever". In order 
@@ -68,7 +69,7 @@ function cargoSuper.deleteMassObject(massObject)
 	else 
 		theName = massObject.name 
 	end 
-	cargoSuper.massObjects[massName] = nil
+	cargoSuper.massObjects[theName] = nil -- 1.1.1 corrected to theName from massName 
 end
 
 function cargoSuper.addMassObjectTo(name, category, theMassObject)

@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.1"
+cfxZones.version = "2.5.2"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -43,6 +43,8 @@ cfxZones.version = "2.5.1"
  - 2.4.12 - getStringFromZoneProperty
  - 2.5.0  - harden getZoneProperty and all getPropertyXXXX
  - 2.5.1  - markZoneWithSmoke supports alt attribute 
+ - 2.5.2  - getPoint also writes through to zone itself for optimization
+          - new method getPositiveRangeFromZoneProperty(theZone, theProperty, default)
  
 --]]--
 cfxZones.verbose = true
@@ -1100,6 +1102,45 @@ function cfxZones.getMinMaxFromZoneProperty(theZone, theProperty)
 	
 end
 
+function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default)
+	-- reads property as string, and interprets as range 'a-b'. 
+	-- if not a range but single number, returns both for upper and lower 
+	--trigger.action.outText("***Zne: enter with <" .. theZone.name .. ">: range for property <" .. theProperty .. ">!", 30)
+	if not default then default = 0 end 
+	local lowerBound = default
+	local upperBound = default 
+	
+	local rangeString = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	if dcsCommon.containsString(rangeString, "-") then 
+		local theRange = dcsCommon.splitString(rangeString, "-")
+		lowerBound = theRange[1]
+		lowerBound = tonumber(lowerBound)
+		upperBound = theRange[2]
+		upperBound = tonumber(upperBound)
+		if lowerBound and upperBound then
+			-- swap if wrong order
+			if lowerBound > upperBound then 
+				local temp = upperBound
+				upperBound = lowerBound
+				lowerBound = temp 
+			end
+--			if rndFlags.verbose then 
+--			trigger.action.outText("+++Zne: detected range <" .. lowerBound .. ", " .. upperBound .. ">", 30)
+--			end
+		else
+			-- bounds illegal
+			trigger.action.outText("+++Zne: illegal range  <" .. rangeString .. ">, using " .. default .. "-" .. default, 30)
+			lowerBound = default
+			upperBound = default 
+		end
+	else 
+		upperBound = cfxZones.getNumberFromZoneProperty(theZone, theProperty, default) -- between pulses 
+		lowerBound = upperBound
+	end
+--	trigger.action.outText("+++Zne: returning <" .. lowerBound .. ", " .. upperBound .. ">", 30)
+	return lowerBound, upperBound
+end
+
 function cfxZones.hasProperty(theZone, theProperty) 
 	return cfxZones.getZoneProperty(theZone, theProperty) ~= nil 
 end
@@ -1223,7 +1264,7 @@ end
 --
 -- requires that readFromDCS has been done
 --
-function cfxZones.getPoint(aZone) -- always works, wven linked, point can be reused 
+function cfxZones.getPoint(aZone) -- always works, even linked, point can be reused 
 	if aZone.linkedUnit then 
 		local theUnit = aZone.linkedUnit
 		-- has a link. is link existing?
@@ -1237,6 +1278,8 @@ function cfxZones.getPoint(aZone) -- always works, wven linked, point can be reu
 	thePos.x = aZone.point.x
 	thePos.y = 0 -- aZone.y 
 	thePos.z = aZone.point.z
+	-- since we are at it, update the zone as well
+	aZone.point = thePos 
 	return thePos 
 end
 

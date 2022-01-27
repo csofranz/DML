@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.0.2" 
+cfxSmokeZone.version = "1.0.3" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -9,7 +9,10 @@ cfxSmokeZone.requiredLibs = {
  1.0.0 - initial version
  1.0.1 - added removeSmokeZone
  1.0.2 - added altitude
-
+ 1.0.3 - added paused attribute 
+       - added f? attribute --> onFlag 
+	   - broke out startSmoke 
+	   
 	SMOKE ZONES *** EXTENDS ZONES ***
 	keeps 'eternal' smoke up for any zone that has the 
 	'smoke' attribute 
@@ -34,27 +37,61 @@ function cfxSmokeZone.processSmokeZone(aZone)
 
 	aZone.smokeColor = theColor
 	aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "altitude", 1)
+	
+	-- paused 
+	aZone.paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
+	
+	-- f? query flags 
+	if cfxZones.hasProperty(aZone, "f?") then 
+		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
+	end
+	
+	if aZone.onFlag then 
+		aZone.onFlagVal = trigger.misc.getUserFlag(aZone.onFlag) -- save last value
+	end
 end
 
 function cfxSmokeZone.addSmokeZone(aZone)
 	table.insert(cfxSmokeZone.smokeZones, aZone)
 end
 
-function cfxSmokeZone.addSmokeZoneWithColor(aZone, aColor, anAltitude)
+function cfxSmokeZone.addSmokeZoneWithColor(aZone, aColor, anAltitude, paused, onFlag)
 	if not aColor then aColor = 0 end -- default green 
 	if not anAltitude then anAltitude = 5 end 
 	if not aZone then return end 
+	if not paused then paused = false end 
+	
 	aZone.smokeColor = aColor
 	aZone.smokeAlt = anAltitude
+	aZone.paused = paused 
+	
+	if onFlag then 
+		aZone.onFlag = onFlag 
+		aZone.onFlagVal = trigger.misc.getUserFlag(onFlag)
+	end
+	
 	cfxSmokeZone.addSmokeZone(aZone) -- add to update loop
-	cfxZones.markZoneWithSmoke(aZone, 0, 0, aZone.smokeColor, aZone.smokeAlt) -- smoke on!
+	if not paused then 
+		cfxSmokeZone.startSmoke(aZone)
+	end
+	
 end
 
-function cfxSmokeZone.removeSmokeZone(aZone)
-	if not aZone then return end 
+function cfxSmokeZone.startSmoke(aZone)
 	if type(aZone) == "string" then 
 		aZone = cfxZones.getZoneByName(aZone) 
 	end
+	if not aZone then return end 
+	if not aZone.smokeColor then return end 
+	aZone.paused = false 
+	cfxZones.markZoneWithSmoke(aZone, 0, 0, aZone.smokeColor, aZone.smokeAlt)
+end
+
+function cfxSmokeZone.removeSmokeZone(aZone)
+	if type(aZone) == "string" then 
+		aZone = cfxZones.getZoneByName(aZone) 
+	end
+	if not aZone then return end 
 	
 	-- now create new table 
 	local filtered = {}
@@ -73,8 +110,25 @@ function cfxSmokeZone.update()
 	
 	-- re-smoke all zones after delay
 	for idx, aZone in pairs(cfxSmokeZone.smokeZones) do 
-		if aZone.smokeColor then 
-			cfxZones.markZoneWithSmoke(aZone, 0, 0, aZone.smokeColor, aZone.smokeAlt)
+		if not aZone.paused and aZone.smokeColor then 
+			cfxSmokeZone.startSmoke(aZone)
+			
+		end
+	end
+end
+
+
+function cfxSmokeZone.checkFlags()
+	timer.scheduleFunction(cfxSmokeZone.checkFlags, {}, timer.getTime() + 1) -- every second 
+	for idx, aZone in pairs(cfxSmokeZone.smokeZones) do 
+		if aZone.paused and aZone.onFlagVal then 
+			-- see if this changed 
+			local currTriggerVal = trigger.misc.getUserFlag(aZone.onFlag)
+			if currTriggerVal ~= aZone.onFlagVal then
+				-- yupp, trigger start 
+				cfxSmokeZone.startSmoke(aZone)
+				aZone.onFlagVal = currTriggerVal
+			end			
 		end
 	end
 end
@@ -89,15 +143,18 @@ function cfxSmokeZone.start()
 	-- collect all spawn zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("smoke")
 	
-	-- now create a spawner for all, add them to the spawner updater, and spawn for all zones that are not
-	-- paused 
+	-- now create a smoker for all, add them to updater,
+	-- smoke all that aren't paused 
 	for k, aZone in pairs(attrZones) do 
 		cfxSmokeZone.processSmokeZone(aZone) -- process attribute and add to zone
 		cfxSmokeZone.addSmokeZone(aZone) -- remember it so we can smoke it
 	end
 
 	-- start update loop
-	cfxSmokeZone.update()
+	cfxSmokeZone.update() -- also starts all unpaused 
+	
+	-- start check loop in one second 
+	timer.scheduleFunction(cfxSmokeZone.checkFlags, {}, timer.getTime() + 1)
 	
 	-- say hi
 	trigger.action.outText("cfx Smoke Zones v" .. cfxSmokeZone.version .. " started.", 30)

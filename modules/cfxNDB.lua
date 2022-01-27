@@ -1,5 +1,5 @@
 cfxNDB = {}
-cfxNDB.version = "1.0.0"
+cfxNDB.version = "1.1.0"
 
 --[[--
 	cfxNDB:
@@ -12,10 +12,20 @@ cfxNDB.version = "1.0.0"
 	correctly if it's longer than the module's refresh and 
 	an even multiple of module's refresh, else it will be
 	refreshed at the next module update cycle 
+	
+	VERSION HISTORY
+	1.0.0 - initial version 
+	1.1.0 - on? flag 
+	      - off? flag 
+		  - ups at 1, decoupled update from refresh 
+		  - paused flag, paused handling 
+		  - startNDB() can accept string 
+		  - stopNDB() can accept string
+		  
 --]]--
 
 cfxNDB.verbose = false 
-cfxNDB.ups = 10 -- every 10 seconds 
+cfxNDB.ups = 1 -- once every 1 second 
 cfxNDB.requiredLibs = {
 	"dcsCommon", 
 	"cfxZones",  
@@ -30,6 +40,18 @@ cfxNDB.ndbs = {} -- all ndbs
 --
 
 function cfxNDB.startNDB(theNDB)
+	if type(theNDB) == "string" then 
+		theNDB = cfxZones.getZoneByName(theNDB) 
+	end
+	
+	if not theNDB.freq then 
+		-- this zone is not an NDB. Exit 
+		if cfxNDB.verbose then 
+			trigger.action.outText("+++ndb: start() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
+		end
+		return 
+	end
+	
 	theNDB.ndbRefreshTime = timer.getTime() + theNDB.ndbRefresh -- only used in linkedUnit, but set up anyway
 	-- generate new ID 
 	theNDB.ndbID = dcsCommon.uuid("ndb")
@@ -47,10 +69,31 @@ function cfxNDB.startNDB(theNDB)
 		end 
 		trigger.action.outText("+++ndb: started " .. theNDB.name .. dsc .. " at " .. theNDB.freq/1000000 .. "mod " .. modulation .. " with w=" .. theNDB.power .. " s=<" .. fileName .. ">", 30)
 	end
+	theNDB.paused = false 
+	
+	if cfxNDB.verbose then 
+		trigger.action.outText("+++ndb: " .. theNDB.name .. " started", 30) 
+	end
 end
 
 function cfxNDB.stopNDB(theNDB)
+	if type(theNDB) == "string" then 
+		theNDB = cfxZones.getZoneByName(theNDB) 
+	end
+	
+	if not theNDB.freq then 
+		-- this zone is not an NDB. Exit 
+		if cfxNDB.verbose then 
+			trigger.action.outText("+++ndb: stop() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
+		end
+		return 
+	end
+	
 	trigger.action.stopRadioTransmission(theNDB.ndbID)
+	theNDB.paused = true 
+	if cfxNDB.verbose then 
+		trigger.action.outText("+++ndb: " .. theNDB.name .. " stopped", 30) 
+	end
 end
 
 function cfxNDB.createNDBWithZone(theZone)
@@ -65,8 +108,31 @@ function cfxNDB.createNDBWithZone(theZone)
 	-- when LARGER than module's refresh.
 	theZone.ndbRefresh = cfxZones.getNumberFromZoneProperty(theZone, "ndbRefresh", cfxNDB.refresh) -- only used if linked
 	theZone.ndbRefreshTime = timer.getTime() + theZone.ndbRefresh -- only used with linkedUnit, but set up nonetheless
+	
+	-- paused 
+	theZone.paused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false) 
+	
+	-- on/offf query flags 
+	if cfxZones.hasProperty(theZone, "on?") then 
+		theZone.onFlag = cfxZones.getStringFromZoneProperty(theZone, "on?", "none")
+	end
+	
+	if theZone.onFlag then 
+		theZone.onFlagVal = trigger.misc.getUserFlag(theZone.onFlag) -- save last value
+	end
+	
+	if cfxZones.hasProperty(theZone, "off?") then 
+		theZone.offFlag = cfxZones.getStringFromZoneProperty(theZone, "off?", "none")
+	end
+	
+	if theZone.offFlag then 
+		theZone.offFlagVal = trigger.misc.getUserFlag(theZone.offFlag) -- save last value
+	end
+	
 	-- start it 
-	cfxNDB.startNDB(theZone)
+	if not theZone.paused then 
+		cfxNDB.startNDB(theZone)
+	end
 	
 	-- add it to my watchlist 
 	table.insert(cfxNDB.ndbs, theZone)
@@ -84,10 +150,31 @@ function cfxNDB.update()
 		-- moving with the linked unit 
 		if theNDB.linkedUnit then 
 			-- yupp, need to update
-			if now > theNDB.ndbRefreshTime then 
-				cfxNDB.stopNDB(theNDB)
-				cfxNDB.startNDB(theNDB)
+			if (not theNDB.paused) and 
+			(now > theNDB.ndbRefreshTime) then 
+				cfxNDB.stopNDB(theNDB) -- also pauses
+				cfxNDB.startNDB(theNDB) -- turns off pause 
 			end
+		end
+		
+		-- now check triggers to start/stop 
+		if theNDB.onFlagVal then 
+			-- see if this changed 
+			local currTriggerVal = trigger.misc.getUserFlag(theNDB.onFlag)
+			if currTriggerVal ~= theNDB.onFlagVal then
+				-- yupp, trigger start 
+				cfxNDB.startNDB(theNDB)
+				theNDB.onFlagVal = currTriggerVal
+			end			
+		end
+		
+		if theNDB.offFlagVal then 
+			local currTriggerVal = trigger.misc.getUserFlag(theNDB.offFlag)
+			if currTriggerVal ~= theNDB.offFlagVal then
+				-- yupp, trigger start 
+				cfxNDB.stopNDB(theNDB)
+				theNDB.offFlagVal = currTriggerVal
+			end		
 		end
 	end
 end

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.1"
+dcsCommon.version = "2.5.2"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -56,6 +56,8 @@ dcsCommon.version = "2.5.1"
  2.5.0 - "Line" formation with one unit places unit at center 	
  2.5.1 - vNorm(a)  
  2.5.1 - added SA-18 Igla manpad to unitIsInfantry()
+ 2.5.2 - added copyArray method
+	   - corrected heading in createStaticObjectData
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -825,7 +827,14 @@ dcsCommon.version = "2.5.1"
 		return copy
 	end
 
-
+	function dcsCommon.copyArray(inArray)
+		-- warning: this is a ref copy!
+		local theCopy = {}
+		for idx, element in pairs(inArray) do 
+			table.insert(theCopy, element)
+		end
+		return theCopy 
+	end
 --
 -- 
 -- S P A W N I N G 
@@ -1355,7 +1364,7 @@ dcsCommon.version = "2.5.1"
 		-- now loop and create a unit for each table
 		local num = 1
 		for key, theType in pairs(theUnitTypes) do 
---			trigger.action.outText("creating unit " .. name .. "-" .. num, 30)
+			-- trigger.action.outText("+++dcsC: creating unit " .. name .. "-" .. num .. ": " .. theType, 30)
 			local aUnit = dcsCommon.createGroundUnitData(name .. "-"..num, theType, false)
 			dcsCommon.addUnitToGroupData(aUnit, theNewGroup, 0, 0)
 			num = num + 1
@@ -1478,7 +1487,7 @@ dcsCommon.version = "2.5.1"
 		if not cargo then cargo = false end 
 		objType = dcsCommon.trim(objType) 
 		
-		staticObj.heading = 0
+		staticObj.heading = heading
 		-- staticObj.groupId = 0
 		-- staticObj.shape_name = shape -- e.g. H-Windsock_RW
 		staticObj.type = objType  -- e.g. Windsock

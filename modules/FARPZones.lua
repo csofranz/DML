@@ -1,17 +1,21 @@
 FARPZones = {}
-FARPZones.version = "1.0.2"
+FARPZones.version = "1.1.0"
+FARPZones.verbose = false 
 --[[--
   Version History
   1.0.0 - Initial Version
   1.0.1 - support "none" as defender types
         - default types for defenders to none
   1.0.2 - hiddenRed, hiddenBlue, hiddenGrey
+  1.1.0 - config zone 
+		- rFormation attribute added 
+		- verbose flag 
+		- verbose cleanup ("FZ: something happened")
   
 --]]--
+
 FARPZones.requiredLibs = {
-	"dcsCommon", -- common is of course needed for everything
-	             -- pretty stupid to check for this since we 
-				 -- need common to invoke the check, but anyway
+	"dcsCommon", 
 	"cfxZones", -- Zones, of course 
 --	"cfxCommander", -- to make troops do stuff
 --	"cfxGroundTroops", -- generic when dropping troops
@@ -134,25 +138,29 @@ function FARPZones.createFARPFromZone(aZone)
 			aZone, 
 			"rPhiHDef", 
 			3)
---	trigger.action.outText("*** DEF rPhi are " .. rPhi[1] .. " and " .. rPhi[2], 30)
+	--trigger.action.outText("*** DEF rPhi are " .. rPhi[1] .. " and " .. rPhi[2] .. " heading " .. rPhi[3], 30)
 	-- get r and phi for facilities
 	-- create a new defenderzone for this 
 	local r = rPhi[1]
 	local phi = rPhi[2] * 0.0174533 -- 1 degree = 0.0174533 rad
 	local dx = aZone.point.x + r * math.cos(phi)
 	local dz = aZone.point.z + r * math.sin(phi)
-	theFarp.defZone = cfxZones.createSimpleZone(aZone.name .. "-Def", {x=dx, y = 0, z=dz}, 100)
+	local formRad = cfxZones.getNumberFromZoneProperty(aZone, "rFormation", 100)
+	
+	theFarp.defZone = cfxZones.createSimpleZone(aZone.name .. "-Def", {x=dx, y = 0, z=dz}, formRad)
 	theFarp.defHeading = rPhi[3]
 	
+	rPhi = {}
 	rPhi = cfxZones.getVectorFromZoneProperty(
 			aZone, 
 			"rPhiHRes", 
-			3) -- optional, will reterurn {0,0} else 
---	trigger.action.outText("*** RES rPhi are " .. rPhi[1] .. " and " .. rPhi[2] .. " heading " .. rPhi[3], 30)
+			3)  
+	--trigger.action.outText("*** RES rPhi are " .. rPhi[1] .. " and " .. rPhi[2] .. " heading " .. rPhi[3], 30)
 	r = rPhi[1]
 	phi = rPhi[2] * 0.0174533 -- 1 degree = 0.0174533 rad
 	dx = aZone.point.x + r * math.cos(phi)
 	dz = aZone.point.z + r * math.sin(phi)
+	
 	theFarp.resZone = cfxZones.createSimpleZone(aZone.name .. "-Res", {x=dx, y = 0, z=dz}, 50)
 	theFarp.resHeading = rPhi[3]
 	
@@ -307,7 +315,10 @@ function FARPZones.produceVehicles(theFarp)
 		table.insert(unitTypes, "Soldier M4") -- make it one m4 trooper as fallback
 	end
 	
-	-- trigger.action.outText("*** ENTER produce vehicles, will produce " .. theTypes , 30)
+	if FARPZones.verbose then 
+		trigger.action.outText("*** ENTER produce DEF vehicles, will produce " .. theTypes , 30)
+	end 
+	
 	local theCoalition = theFarp.owner 
 	
 	if theTypes ~= "none" then 
@@ -364,12 +375,14 @@ function FARPZones.somethingHappened(event)
 	local theUnit = event.initiator
 	local ID = event.id
 	
-	trigger.action.outText("FZ: something happened", 30) 
+	--trigger.action.outText("FZ: something happened", 30) 
 	local aFarp = event.place
 	local zonedFarp = FARPZones.getFARPZoneForFARP(aFarp) 
 
-	if not zonedFarp then 
-		trigger.action.outText("Hand change, NOT INTERESTING", 30)
+	if not zonedFarp then
+		if FARPZones.verbose then 
+			trigger.action.outText("Hand change, NOT INTERESTING", 30)
+		end 
 		return 
 	end 
 
@@ -380,9 +393,7 @@ function FARPZones.somethingHappened(event)
 	trigger.action.outSound("Quest Snare 3.wav")
 	zonedFarp.owner = newOwner
 	zonedFarp.zone.owner = newOwner 
-	-- better: sound winm and lose to different sides 
 	-- update color in map 
---	FARPZones.drawFarp(zonedFarp)
 	FARPZones.drawFARPCircleInMap(zonedFarp)
 	
 	-- remove all existing resources immediately, 
@@ -406,6 +417,23 @@ end
 --
 -- Start 
 --
+function FARPZones.readConfig()
+	local theZone = cfxZones.getZoneByName("farpZonesConfig") 
+	if not theZone then 
+		if FARPZones.verbose then 
+			trigger.action.outText("***frpZ: NO config zone!", 30) 
+		end
+		return 
+	end 
+	
+	FARPZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+ 	
+	FARPZones.spinUpDelay = cfxZones.getNumberFromZoneProperty(theZone, "spinUpDelay", 30)
+	
+	if FARPZones.verbose then 
+		trigger.action.outText("***frpZ: read config", 30) 
+	end
+end
 
 
 function FARPZones.start()
@@ -416,7 +444,10 @@ function FARPZones.start()
 	end
 	
 	FARPZones.startingUp = true 
-	 
+	
+	-- read config zone 
+	FARPZones.readConfig()
+	
 	-- install callbacks for FARP-relevant events
 	dcsCommon.addEventHandler(FARPZones.somethingHappened,
 							  FARPZones.preProcessor,
@@ -427,10 +458,11 @@ function FARPZones.start()
 	for k, aZone in pairs(theZones) do 
 		local aFARP = FARPZones.createFARPFromZone(aZone) -- read attributes from DCS
 		FARPZones.addFARPZone(aFARP) -- add to managed zones 
---		FARPZones.drawFarp(aFARP)
 		FARPZones.drawFARPCircleInMap(aFARP) -- mark in map 
-		FARPZones.produceVehicles(aFARP) -- allocate initial vehicles 
-		--trigger.action.outText("processed FARP " .. aZone.name .. " now owned by " .. aZone.owner, 30)
+		FARPZones.produceVehicles(aFARP) -- allocate initial vehicles
+		if FARPZones.verbose then 
+			trigger.action.outText("processed FARP <" .. aZone.name .. "> now owned by " .. aZone.owner, 30)
+		end 
 	end
 
 	FARPZones.startingUp = false 

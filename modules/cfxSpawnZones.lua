@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.5.1"
+cfxSpawnZones.version = "1.5.2"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -51,6 +51,7 @@ cfxSpawnZones.verbose = false
 --         - spawnWithSpawner made string compatible
 --   1.5.1 - relaxed baseName and default to dcsCommon.uuid()
 --         - verbose 
+--   1.5.2 - activate?, pause? flag 
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -137,6 +138,16 @@ function cfxSpawnZones.createSpawner(inZone)
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "activate?") then 
+		theSpawner.activateFlag = cfxZones.getStringFromZoneProperty(inZone, "activate?", "none")
+		theSpawner.lastActivateValue = trigger.misc.getUserFlag(theSpawner.activateFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "pause?") then 
+		theSpawner.pauseFlag = cfxZones.getStringFromZoneProperty(inZone, "pause?", "none")
+		theSpawner.lastPauseValue = trigger.misc.getUserFlag(theSpawner.pauseFlag)
 	end
 	
 	theSpawner.types = cfxZones.getZoneProperty(inZone, "types")
@@ -407,7 +418,16 @@ function cfxSpawnZones.update()
 		-- is master zone still alinged with me?
 		needsSpawn = needsSpawn and cfxSpawnZones.verifySpawnOwnership(spawner)
 
-		-- check if perhaps our watchtrigger causes spawn
+		-- check if perhaps our watchtriggers causes spawn
+		if spawner.pauseFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(spawner.pauseFlag)
+			if currTriggerVal ~= spawner.lastPauseValue then
+				spawner.paused = true  
+				needsSpawn = false
+				spawner.lastPauseValue = currTriggerVal
+			end
+		end
+		
 		if spawner.triggerFlag then 
 			local currTriggerVal = trigger.misc.getUserFlag(spawner.triggerFlag)
 			if currTriggerVal ~= spawner.lastTriggerValue then
@@ -415,6 +435,16 @@ function cfxSpawnZones.update()
 				spawner.lastTriggerValue = currTriggerVal
 			end
 		end
+		
+		if spawner.activateFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(spawner.activateFlag)
+			if currTriggerVal ~= spawner.lastActivateValue then
+				spawner.paused = false  
+				spawner.lastActivateValue = currTriggerVal
+			end
+		end
+
+		
 				
 		-- if we get here, and needsSpawn is still set, we go ahead and spawn
 		if needsSpawn then 

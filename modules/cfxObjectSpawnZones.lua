@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.1.3"
+cfxObjectSpawnZones.version = "1.1.4"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -22,6 +22,7 @@ cfxObjectSpawnZones.ups = 1
 --   1.1.2 - autoRemove option re-installed 
 --         - added possibility to autoUnlink
 --   1.1.3 - ME-triggered flag via f? and triggerFlag 
+--   1.1.4 - activate?, pause? attributes 
 
 -- Object spawn zones have the following major uses:
 --  - dynamically spawn cargo 
@@ -82,6 +83,16 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "activate?") then 
+		theSpawner.activateFlag = cfxZones.getStringFromZoneProperty(inZone, "activate?", "none")
+		theSpawner.lastActivateValue = trigger.misc.getUserFlag(theSpawner.activateFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "pause?") then 
+		theSpawner.pauseFlag = cfxZones.getStringFromZoneProperty(inZone, "pause?", "none")
+		theSpawner.lastPauseValue = trigger.misc.getUserFlag(theSpawner.pauseFlag)
 	end
 	
 	--theSpawner.types = cfxZones.getZoneProperty(inZone, "types")
@@ -410,6 +421,15 @@ function cfxObjectSpawnZones.update()
 		
 		local needsSpawn = cfxObjectSpawnZones.needsSpawning(spawner)
 		-- check if perhaps our watchtrigger causes spawn
+		if spawner.pauseFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(spawner.pauseFlag)
+			if currTriggerVal ~= spawner.lastPauseValue then
+				spawner.paused = true  
+				needsSpawn = false 
+				spawner.lastPauseValue = currTriggerVal
+			end
+		end
+		
 		if spawner.triggerFlag then 
 			local currTriggerVal = trigger.misc.getUserFlag(spawner.triggerFlag)
 			if currTriggerVal ~= spawner.lastTriggerValue then
@@ -417,6 +437,17 @@ function cfxObjectSpawnZones.update()
 				spawner.lastTriggerValue = currTriggerVal
 			end
 		end		
+		
+		if spawner.activateFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(spawner.activateFlag)
+			if currTriggerVal ~= spawner.lastActivateValue then
+				spawner.paused = false  
+				spawner.lastActivateValue = currTriggerVal
+			end
+		end
+
+		
+		
 		
 		if needsSpawn then 
 			cfxObjectSpawnZones.spawnWithSpawner(spawner)
