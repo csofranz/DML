@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.2"
+cfxZones.version = "2.5.3"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -45,6 +45,9 @@ cfxZones.version = "2.5.2"
  - 2.5.1  - markZoneWithSmoke supports alt attribute 
  - 2.5.2  - getPoint also writes through to zone itself for optimization
           - new method getPositiveRangeFromZoneProperty(theZone, theProperty, default)
+ - 2.5.3  - new getAllGroupsInZone()
+ - 2.5.4  - cleaned up getZoneProperty break on no properties 
+		  - extractPropertyFromDCS trims key and property 
  
 --]]--
 cfxZones.verbose = true
@@ -543,19 +546,28 @@ end
 --
 -- units / groups in zone
 --
+function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be code 
+	-- warning: does not check for exiting!
+	local inZones = {}
+	local coals = {0, 1, 2} -- all coalitions
+	for idx, coa in pairs(coals) do 
+		local allGroups = coalition.getGroups(coa, categ)
+		for key, group in pairs(allGroups) do -- iterate all groups
+			if cfxZones.isGroupPartiallyInZone(group, theZone) then
+				table.insert(inZones, group)
+			end
+		end
+	end
+	return inZones
+end
+
 function cfxZones.groupsOfCoalitionPartiallyInZone(coal, theZone, categ) -- categ is optional
 	local groupsInZone = {}
 	local allGroups = coalition.getGroups(coal, categ)
 	for key, group in pairs(allGroups) do -- iterate all groups
 		if group:isExist() then
-			
-			
 			if cfxZones.isGroupPartiallyInZone(group, theZone) then
-				
-				table.insert(groupsInZone, group)
-			else 
-				
-			
+				table.insert(groupsInZone, group)			
 			end
 		end
 	end
@@ -565,21 +577,14 @@ end
 function cfxZones.isGroupPartiallyInZone(aGroup, aZone)
 	if not aGroup then return false end 
 	if not aZone then return false end 
-	
-	
-	-- needs to be implemented
+		
 	if not aGroup:isExist() then return false end 
 	local allUnits = aGroup:getUnits()
 	for uk, aUnit in pairs (allUnits) do 
-		if aUnit:isExist() and aUnit:getLife() > 1 then 
-		
+		if aUnit:isExist() and aUnit:getLife() > 1 then 		
 			local p = aUnit:getPoint()
---			p.y = 0 -- zones have no altitude
-			-- modification of isPointInsideZone now takes care of this
 			if cfxZones.isPointInsideZone(p, aZone) then 			
 				return true
-			else 
-						
 			end 
 		end
 	end
@@ -589,7 +594,6 @@ end
 function cfxZones.isEntireGroupInZone(aGroup, aZone)
 	if not aGroup then return false end 
 	if not aZone then return false end 
-	-- needs to be implemented
 	if not aGroup:isExist() then return false end 
 	local allUnits = aGroup:getUnits()
 	for uk, aUnit in pairs (allUnits) do 
@@ -1047,6 +1051,8 @@ function cfxZones.getAllZoneProperties(theZone, caseInsensitive) -- return as di
 end
 
 function cfxZones.extractPropertyFromDCS(theKey, theProperties)
+-- trim
+	theKey = dcsCommon.trim(theKey) 
 --	make lower case conversion if not case sensitive
 	if not cfxZones.caseSensitiveProperties then 
 		theKey = string.lower(theKey)
@@ -1055,7 +1061,8 @@ function cfxZones.extractPropertyFromDCS(theKey, theProperties)
 -- iterate all keys and compare to what we are looking for 	
 	for i=1, #theProperties do
 		local theP = theProperties[i]
-		local existingKey = theP.key 
+		 
+		local existingKey = dcsCommon.trim(theP.key)  
 		if not cfxZones.caseSensitiveProperties then 
 			existingKey = string.lower(existingKey)
 		end
@@ -1073,7 +1080,7 @@ function cfxZones.getZoneProperty(cZone, theKey)
 	end 
 	if not theKey then 
 		trigger.action.outText("+++zone: no property key in getZoneProperty for zone " .. cZone.name, 30)
-		breakme.here = 1
+--		breakme.here = 1
 		return 
 	end	
 
@@ -1349,6 +1356,8 @@ function cfxZones.init()
 	-- note, all zones with this property are by definition owned zones.
 	-- and hence will be read anyway. this will merely ensure that the 
 	-- ownership is established right away
+	-- unless owned zones module is missing, in which case 
+	-- ownership is still established 
 	local pZones = cfxZones.zonesWithProperty("owner")
 	for n, aZone in pairs(pZones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)

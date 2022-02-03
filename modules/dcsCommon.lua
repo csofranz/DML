@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.2"
+dcsCommon.version = "2.5.3"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -58,6 +58,7 @@ dcsCommon.version = "2.5.2"
  2.5.1 - added SA-18 Igla manpad to unitIsInfantry()
  2.5.2 - added copyArray method
 	   - corrected heading in createStaticObjectData
+ 2.5.3 - corrected rotateGroupData bug for cz 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1444,7 +1445,10 @@ dcsCommon.version = "2.5.2"
 
 	function dcsCommon.rotateGroupData(theGroup, degrees, cx, cz)
 		if not cx then cx = 0 end
-		if not cy then cy = 0 end
+		if not cz then cz = 0 end
+		local cy = cz 
+		--trigger.action.outText("+++dcsC:rotGrp cy,cy = "..cx .. "," .. cy, 30)
+		
 		local rads = degrees *  3.14152 / 180
 		-- turns all units in group around the group's center by degrees.
 		-- may also need to turn individual units by same amount

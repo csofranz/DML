@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.1.0"
+cfxOwnedZones.version = "1.1.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 --[[-- VERSION HISTORY
@@ -39,6 +39,7 @@ cfxOwnedZones.announcer = true
 	  - remove exiting defenders from zone after cap to avoid 
 	    shocked state
       - announcer 		
+1.1.1 - conq+1 flag 
 	  
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -200,6 +201,10 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	
 	local paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
 	aZone.paused = paused 
+	
+	if cfxZones.hasProperty(aZone, "conq+1") then 
+		cfxOwnedZones.conqueredFlag = cfxZones.getNumberFromZoneProperty(theZone, "conq+1", -1)
+	end
 	
 	aZone.unbeatable = cfxZones.getBoolFromZoneProperty(aZone, "unbeatable", false)
 	aZone.untargetable = cfxZones.getBoolFromZoneProperty(aZone, "untargetable", false)
@@ -489,6 +494,11 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 			trigger.action.outSoundForCoalition(1, "Death BRASS.wav")
 		end
 	end 
+	-- increase conq flag 
+	if aZone.conqueredFlag then 
+		local lastVal = trigger.misc.getUserFlag(aZone.conqueredFlag)
+		trigger.action.setUserFlag)aZone.conqueredFlag, lastVal + 1)
+	end
 	-- invoke callbacks now
 	cfxOwnedZones.invokeConqueredCallbacks(aZone, theSide, formerOwner)
 	

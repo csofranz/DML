@@ -278,7 +278,9 @@ end
 function rndFlags.startCycle()
 	for idx, theZone in pairs(rndFlags.rndGen) do
 		if theZone.onStart then 
-			trigger.action.outText("+++RND: starting " .. theZone.name, 30)
+			if rndFlags.verbose then 
+				trigger.action.outText("+++RND: starting " .. theZone.name, 30)
+			end 
 			rndFlags.fire(theZone)
 		end
 	end
