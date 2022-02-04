@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.0.0"
+cloneZones.version = "1.0.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,6 +14,7 @@ cloneZones.cloners = {}
 	
 	Version History
 	1.0.0 - initial version 
+	1.0.1 - preWipe attribute
 	
 --]]--
 
@@ -93,6 +94,8 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	
 	theZone.moveRoute = cfxZones.getBoolFromZoneProperty(theZone, "moveRoute", false)
 	
+	theZone.preWipe = cfxZones.getBoolFromZoneProperty(theZone, "preWipe", false)
+	
 	if cfxZones.hasProperty(theZone, "empty+1") then 
 		theZone.emptyFlag = cfxZones.getNumberFromZoneProperty(theZone, "empty+1", "<None>") -- note string on number default
 	end
@@ -114,6 +117,9 @@ end
 --
 
 function cloneZones.despawnAll(theZone) 
+	if cloneZones.verbose then 
+		trigger.action.outText("wiping <" .. theZone.name .. ">", 30)
+	end 
 	for idx, aGroup in pairs(theZone.mySpawns) do 
 		Group.destroy(aGroup)
 	end
@@ -294,6 +300,11 @@ function cloneZones.spawnWithCloner(theZone)
 			trigger.action.outText("+++clnZ: clone source template <".. templateZone.name .. "> for clone zone <" .. theZone.name .."> is empty", 30)
 		end 
 		return 
+	end
+
+	-- pre-Wipe?
+	if theZone.preWipe then 
+		cloneZones.despawnAll(theZone)
 	end
 	
 --	local myLoc = cfxZones.getPoint(theZone)

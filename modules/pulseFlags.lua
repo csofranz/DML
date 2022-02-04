@@ -30,8 +30,9 @@ function pulseFlags.createPulseWithZone(theZone)
 
 	-- time can be number, or number-number range
 	theZone.minTime, theZone.time = cfxZones.getPositiveRangeFromZoneProperty(theZone, "time", 1)
-	
-	trigger.action.outText("***PulF: zone <" .. theZone.name .. "> time is <".. theZone.minTime ..", " .. theZone.time .. "!", 30)
+	if pulseFlags.verbose then 
+		trigger.action.outText("***PulF: zone <" .. theZone.name .. "> time is <".. theZone.minTime ..", " .. theZone.time .. "!", 30)
+	end 
 	
 	theZone.pulses = cfxZones.getNumberFromZoneProperty(theZone, "pulses", -1)
 	theZone.pulsesLeft = 0 -- will start new cycle 
