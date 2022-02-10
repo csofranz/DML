@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.0.0"
+pulseFlags.version = "1.0.1"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,6 +12,7 @@ pulseFlags.requiredLibs = {
 	
 	Version History
 	- 1.0.0 Initial version 
+	- 1.0.1 pause behavior debugged 
 	
 --]]--
 
@@ -49,6 +50,7 @@ function pulseFlags.createPulseWithZone(theZone)
 	end
 	
 	theZone.paused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false)
+	
 	
 	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
 	
@@ -148,7 +150,7 @@ function pulseFlags.doPulse(args)
 	--trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> scheduled in ".. delay .."!", 30)
 	
 	-- schedule in delay time 
-	timer.scheduleFunction(pulseFlags.doPulse, args, timer.getTime() + delay)
+	theZone.timerID = timer.scheduleFunction(pulseFlags.doPulse, args, timer.getTime() + delay)
 	if pulseFlags.verbose then 
 		trigger.action.outText("+++PulF: pulse <" .. theZone.name .. "> rescheduled in " .. delay, 30)
 	end 
@@ -194,7 +196,8 @@ function pulseFlags.update()
 			then 
 				trigger.action.outText("+++PulF: activating <" .. aZone.name .. ">", 30)
 				aZone.lastActivateValue = currTriggerVal
-				theZone.paused = false -- will start anew 
+				aZone.paused = false -- will start anew 
+				
 			end
 		end
 		
@@ -204,7 +207,11 @@ function pulseFlags.update()
 			then 
 				trigger.action.outText("+++PulF: pausing <" .. aZone.name .. ">", 30)
 				aZone.lastPauseValue = currTriggerVal
-				theZone.paused = true  -- will start anew 
+				aZone.paused = true  -- prevents new start 
+				if aZone.timerID then 
+					 timer.removeFunction(aZone.timerID)
+					 aZone.timerID = nil 
+				end 
 			end
 		end
 	end

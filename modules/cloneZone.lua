@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.0.1"
+cloneZones.version = "1.1.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,6 +15,8 @@ cloneZones.cloners = {}
 	Version History
 	1.0.0 - initial version 
 	1.0.1 - preWipe attribute
+	1.1.0 - support for static objects
+	      - despawn? attribute 
 	
 --]]--
 
@@ -42,8 +44,10 @@ end
 
 function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	local localZones = cfxZones.allGroupsInZone(theZone)
+	local localObjects = cfxZones.allStaticsInZone(theZone)
 	theZone.cloner = true -- this is a cloner zoner 
 	theZone.mySpawns = {}
+	theZone.myStatics = {}
 	--theZone.groupVectors = {}
 	theZone.origin = cfxZones.getPoint(theZone) -- save reference point for all groupVectors 
 	
@@ -60,20 +64,30 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	
 	if not theZone.source then 
 		theZone.cloneNames = {} -- names of the groups. only present in template spawners
+		theZone.staticNames = {} -- names of all statics. only present in templates
+		
 		for idx, aGroup in pairs(localZones) do
 			local gName = aGroup:getName()
 			if gName then 
 				table.insert(theZone.cloneNames, gName)
 				table.insert(theZone.mySpawns, aGroup) -- collect them for initial despawn
-			end 
-			
+			end 	
 		end
+		for idx, aStatic in pairs (localObjects) do 
+			local sName = aStatic:getName()
+			if sName then 
+				table.insert(theZone.staticNames, sName)
+				table.insert(theZone.myStatics, aStatic)
+			end
+		end
+		
 		cloneZones.despawnAll(theZone) 
-		if #theZone.cloneNames < 1 then 
+		if (#theZone.cloneNames + #theZone.staticNames)	< 1 then 
 			if cloneZones.verbose then 
 				trigger.action.outText("+++clnZ: WARNING - Template in clone zone <" .. theZone.name .. "> is empty", 30)
 			end 
-			theZone.cloneNames = nil 
+			theZone.cloneNames = nil
+			theZone.staticNames = nil 
 		end
 		if cloneZones.verbose then 
 			trigger.action.outText(theZone.name .. " clone template saved", 30)
@@ -85,9 +99,16 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
 		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
+	
 	if cfxZones.hasProperty(theZone, "spawn?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "spawn?", "none")
 		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
+	end
+	
+	-- deSpawn?
+	if cfxZones.hasProperty(theZone, "deSpawn?") then 
+		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deSpawn?", "none")
+		theZone.lastDeSpawnValue = trigger.misc.getUserFlag(theZone.deSpawnFlag) -- save last value
 	end
 	
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
@@ -123,7 +144,14 @@ function cloneZones.despawnAll(theZone)
 	for idx, aGroup in pairs(theZone.mySpawns) do 
 		Group.destroy(aGroup)
 	end
+	for idx, aStatic in pairs(theZone.myStatics) do 
+		-- warning! may be mismatch because we are looking at groups
+		-- not objects. let's see
+		trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
+		Object.destroy(aStatic) -- we don't aStatio:destroy() to find out what it is 
+	end
 	theZone.mySpawns = {}
+	theZone.myStatics = {}
 end
 
 function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints)
@@ -226,6 +254,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin)
 	
 	local spawnedGroups = {}
+	local spawnedStatics = {}
 	
 	for idx, aGroupName in pairs(theZone.cloneNames) do 
 		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(aGroupName)
@@ -237,7 +266,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		-- now use raw data to spawn and see if it works outabox
 		local theCat = cfxMX.catText2ID(cat)
-		--TODO: if theCat == -1 the group is static, may need to code for that 
 		
 		-- update their position if not spawning to exact same location 
 		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute)
@@ -245,7 +273,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- apply turning 
 		dcsCommon.rotateGroupData(rawData, spawnZone.turn, newCenter.x, newCenter.z)
 		
-		-- make sure all names (group and units) are unique 
+		-- make sure unit and group names are unique 
 		cloneZones.uniqueNameGroupData(rawData)
 		
 		-- see waht country we spawn for
@@ -255,7 +283,45 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		table.insert(spawnedGroups, theGroup)
 	end
 
-	return spawnedGroups
+	-- static spawns 
+	for idx, aStaticName in pairs(theZone.staticNames) do 
+		local rawData, cat, ctry, parent = cfxMX.getStaticFromDCSbyName(aStaticName)
+		
+		if not rawData then
+			trigger.action.outText("Static Clone: no such group <"..aStaticName .. ">", 30)
+			
+		elseif rawData.name == aStaticName then 
+			trigger.action.outText("Static Clone: suxess!!! <".. aStaticName ..">", 30)
+
+		else 
+			trigger.action.outText("Static Clone: FAILED name check for <" .. aStaticName .. ">", 30)
+		end
+		
+		-- now use raw data to spawn and see if it works outabox
+		local theCat = cfxMX.catText2ID(cat) -- will be "static"
+		
+		-- move origin 
+		rawData.x = rawData.x + zoneDelta.x 
+		rawData.y = rawData.y + zoneDelta.z -- !!!
+	
+		-- apply turning 
+		dcsCommon.rotateUnitData(rawData, spawnZone.turn, newCenter.x, newCenter.z)
+		
+		-- make sure static name is unique 
+--		cloneZones.uniqueNameGroupData(rawData)
+		rawData.name = dcsCommon.uuid(rawData.name)
+		rawData.unitID = nil -- simply forget, will be newly issued 
+		
+		-- see waht country we spawn for
+		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
+		
+		local theStatic = coalition.addStaticObject(ctry, rawData)
+		table.insert(spawnedStatics, theStatic)
+		--]]--
+		trigger.action.outText("Static spawn: spawned " .. aStaticName, 30)
+	end	
+
+	return spawnedGroups, spawnedStatics 
 end
 
 function cloneZones.spawnWithCloner(theZone) 
@@ -307,27 +373,45 @@ function cloneZones.spawnWithCloner(theZone)
 		cloneZones.despawnAll(theZone)
 	end
 	
---	local myLoc = cfxZones.getPoint(theZone)
-	local theClones = cloneZones.spawnWithTemplateForZone(templateZone, theZone)
+
+	local theClones, theStatics = cloneZones.spawnWithTemplateForZone(templateZone, theZone)
 	-- reset hasClones so we know our spawns are full and we can 
 	-- detect complete destruction
-	if theClones and #theClones > 0 then 
+	if (theClones and #theClones > 0) or 
+	   (theStatics and #theStatics > 0)
+	then 
 		theZone.hasClones = true 
 		theZone.mySpawns = theClones 
+		theZone.myStatics = theStatics 
+	else 
+		theZone.hasClones = false 
+		theZone.mySpawns = {}
+		theZone.myStatics = {}
 	end
 end
 
 function cloneZones.countLiveUnits(theZone)
 	if not theZone then return 0 end 
-	if not theZone.mySpawns then return 0 end 
 	local count = 0
-	for idx, aGroup in pairs(theZone.mySpawns) do 
-		if aGroup:isExist() then 
-			local allUnits = aGroup:getUnits()
-			for idy, aUnit in pairs(allUnits) do 
-				if aUnit:isExist() and aUnit:getLife() >= 1 then 
-					count = count + 1
+	-- count units 
+	if theZone.mySpawns then 
+		for idx, aGroup in pairs(theZone.mySpawns) do 
+			if aGroup:isExist() then 
+				local allUnits = aGroup:getUnits()
+				for idy, aUnit in pairs(allUnits) do 
+					if aUnit:isExist() and aUnit:getLife() >= 1 then 
+						count = count + 1
+					end
 				end
+			end
+		end
+	end
+	
+	-- count statics 
+	if theZone.myStatics then 
+		for idx, aStatic in pairs(theZone.myStatics) do 
+			if aStatic:isExist() and aStatic:getLife() >= 1 then 
+				count = count + 1
 			end
 		end
 	end
@@ -336,17 +420,27 @@ end
 
 function cloneZones.hasLiveUnits(theZone)
 	if not theZone then return 0 end 
-	if not theZone.mySpawns then return 0 end 
-	for idx, aGroup in pairs(theZone.mySpawns) do 
-		if aGroup:isExist() then 
-			local allUnits = aGroup:getUnits()
-			for idy, aUnit in pairs(allUnits) do 
-				if aUnit:isExist() and aUnit:getLife() >= 1 then 
-					return true
+	if theZone.mySpawns then 
+		for idx, aGroup in pairs(theZone.mySpawns) do 
+			if aGroup:isExist() then 
+				local allUnits = aGroup:getUnits()
+				for idy, aUnit in pairs(allUnits) do 
+					if aUnit:isExist() and aUnit:getLife() >= 1 then 
+						return true
+					end
 				end
 			end
 		end
+	end 
+	
+	if theZone.myStatics then 
+		for idx, aStatic in pairs(theZone.myStatics) do 
+			if aStatic:isExist() and aStatic.getLife() >= 1 then 
+				return true 
+			end 
+		end
 	end
+	
 	return false
 end
 
@@ -362,7 +456,17 @@ function cloneZones.update()
 	timer.scheduleFunction(cloneZones.update, {}, timer.getTime() + 1)
 	
 	for idx, aZone in pairs(cloneZones.cloners) do
-		-- see if pulse is running 
+		-- see if deSpawn was pulled. Must run before spawn
+		if aZone.deSpawnFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(aZone.deSpawnFlag)
+			if currTriggerVal ~= aZone.lastDeSpawnValue then 
+				if cloneZones.verbose then 
+					trigger.action.outText("+++clnZ: DEspawn triggered for <" .. aZone.name .. ">", 30)
+				end 
+				cloneZones.despawnAll(aZone)
+				aZone.lastDeSpawnValue = currTriggerVal
+			end
+		end
 		
 		-- see if we got spawn? command
 		if aZone.spawnFlag then 
@@ -386,6 +490,8 @@ function cloneZones.update()
 				aZone.hasClones = false 
 			end
 		end
+		
+		
 	end
 end
 

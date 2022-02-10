@@ -15,6 +15,10 @@ delayFlag.flags = {}
 	
 	Version History
 	1.0.0 - Initial Version 
+	1.0.1 - message attribute 
+	1.0.2 - slight spelling correction 
+		  - using cfxZones for polling 
+		  - removed pollFlag 
 	
 --]]--
 
@@ -75,7 +79,7 @@ function delayFlag.createTimerWithZone(theZone)
 	
 	-- message
 	if cfxZones.hasProperty(theZone, "message") then 
-		theZone.myMessage = cfxZones.getBoolStringZoneProperty(theZone, "message", "<none>")
+		theZone.myMessage = cfxZones.getStringZoneProperty(theZone, "message", "<none>")
 	end
 	
 	-- init 
@@ -88,6 +92,7 @@ end
 --
 -- do the pulling
 -- 
+--[[--
 function delayFlag.pollFlag(theFlag, method) 
 	if delayFlag.verbose then 
 		trigger.action.outText("+++dlyF: polling flag " .. theFlag .. " with " .. method, 30)
@@ -113,7 +118,7 @@ function delayFlag.pollFlag(theFlag, method)
 		
 	else 
 		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++RND: unknown method <" .. method .. "> - using 'on'", 30)
+			trigger.action.outText("+++dlyF: unknown method <" .. method .. "> - using 'on'", 30)
 		end
 		-- default: on.
 		trigger.action.setUserFlag(theFlag, 1)
@@ -124,7 +129,7 @@ function delayFlag.pollFlag(theFlag, method)
 		trigger.action.outText("+++dlyF flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
 	end 
 end
-
+--]]--
 --
 -- update 
 -- 
@@ -184,7 +189,7 @@ function delayFlag.update()
 				-- end timer 
 				aZone.running = false 
 				-- poll flag 
-				delayFlag.pollFlag(aZone.outFlag, aZone.method)
+				cfxZones.pollFlag(aZone.outFlag, aZone.method)
 				-- say message
 				if aZone.myMessage then 
 					trigger.action.outText(aZone.myMessage, 30)

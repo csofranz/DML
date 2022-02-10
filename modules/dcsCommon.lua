@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.3"
+dcsCommon.version = "2.5.4"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -59,6 +59,10 @@ dcsCommon.version = "2.5.3"
  2.5.2 - added copyArray method
 	   - corrected heading in createStaticObjectData
  2.5.3 - corrected rotateGroupData bug for cz 
+	   - removed forced error in failed pickRandom
+ 2.5.4 - rotateUnitData()
+       - randomBetween()
+	   
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -84,6 +88,33 @@ dcsCommon.version = "2.5.3"
 		end
 		return canRun
 	end
+
+	-- returns only positive values, lo must be >0 and <= hi 
+	function dcsCommon.randomBetween(loBound, hiBound)
+		if not loBound then loBound = 1 end 
+		if not hiBound then hiBound = 1 end 
+		if loBound == hiBound then return loBound end 
+
+		local delayMin = loBound
+		local delayMax = hiBound 
+		local delay = delayMax 
+	
+		if delayMin ~= delayMax then 
+			-- pick random in range , say 3-7 --> 5 s!
+			local delayDiff = (delayMax - delayMin) + 1 -- 7-3 + 1
+			delay = dcsCommon.smallRandom(delayDiff) - 1 --> 0-4
+			delay = delay + delayMin 
+			if delay > delayMax then delay = delayMax end 
+			if delay < 1 then delay = 1 end 
+		
+			if dcsCommon.verbose then 
+				trigger.action.outText("+++dcsC: delay range " .. delayMin .. "-" .. delayMax .. ": selected " .. delay, 30)
+			end
+		end
+		
+		return delay
+	end
+	
 
 	-- taken inspiration from mist, as dcs lua has issues with
 	-- random numbers smaller than 50. Given a range of x numbers 1..x, it is 
@@ -140,7 +171,7 @@ dcsCommon.version = "2.5.3"
 		
 		if #theTable < 1 then 
 			trigger.action.outText("*** warning: zero choice in pick random", 30)
-			local k = i.ll 
+			--local k = i.ll 
 			return nil
 		end
 		if #theTable == 1 then return theTable[1] end
@@ -1442,6 +1473,26 @@ dcsCommon.version = "2.5.3"
 		py = inX * s + inY * c
 		return px, py		
 	end
+
+	function dcsCommon.rotateUnitData(theUnit, degrees, cx, cy)
+		if not cx then cx = 0 end
+		if not cz then cz = 0 end
+		local cy = cz 
+		--trigger.action.outText("+++dcsC:rotGrp cy,cy = "..cx .. "," .. cy, 30)
+		
+		local rads = degrees *  3.14152 / 180
+		do
+			theUnit.x = theUnit.x - cx -- MOVE TO ORIGIN OF ROTATION
+			theUnit.y = theUnit.y - cy 				
+			theUnit.x, theUnit.y = dcsCommon.rotatePointAroundOrigin(theUnit.x, theUnit.y, degrees)
+			theUnit.x = theUnit.x + cx -- MOVE BACK 
+			theUnit.y = theUnit.y + cy 				
+
+			-- may also want to increase heading by degreess
+			theUnit.heading = theUnit.heading + rads 
+		end
+	end
+	
 
 	function dcsCommon.rotateGroupData(theGroup, degrees, cx, cz)
 		if not cx then cx = 0 end

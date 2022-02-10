@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.3"
+cfxZones.version = "2.5.5"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -48,9 +48,11 @@ cfxZones.version = "2.5.3"
  - 2.5.3  - new getAllGroupsInZone()
  - 2.5.4  - cleaned up getZoneProperty break on no properties 
 		  - extractPropertyFromDCS trims key and property 
+ - 2.5.5  - pollFlag() centralized for banging 
+          - allStaticsInZone
  
 --]]--
-cfxZones.verbose = true
+cfxZones.verbose = false
 cfxZones.caseSensitiveProperties = false -- set to true to make property names case sensitive 
 cfxZones.ups = 1 -- updates per second. updates moving zones
 
@@ -561,6 +563,22 @@ function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be 
 	return inZones
 end
 
+function cfxZones.allStaticsInZone(theZone) -- categ is optional, must be code 
+	-- warning: does not check for exiting!
+	local inZones = {}
+	local coals = {0, 1, 2} -- all coalitions
+	for idx, coa in pairs(coals) do 
+		local allStats = coalition.getStaticObjects(coa)
+		for key, statO in pairs(allStats) do -- iterate all groups
+			local oP = statO:getPoint()
+			if cfxZones.pointInZone(oP, theZone) then
+				table.insert(inZones, statO)
+			end
+		end
+	end
+	return inZones
+end
+
 function cfxZones.groupsOfCoalitionPartiallyInZone(coal, theZone, categ) -- categ is optional
 	local groupsInZone = {}
 	local allGroups = coalition.getGroups(coal, categ)
@@ -1027,6 +1045,46 @@ function cfxZones.processCraterZones ()
 	end
 end
 --]]--
+--
+-- Flag Pulling 
+--
+function cfxZones.pollFlag(theFlag, method) 
+	if cfxZones.verbose then 
+		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
+	end 
+	
+	method = method:lower()
+	local currVal = trigger.misc.getUserFlag(theFlag)
+	if method == "inc" or method == "f+1" then 
+		trigger.action.setUserFlag(theFlag, currVal + 1)
+		
+	elseif method == "dec" or method == "f-1" then 
+		trigger.action.setUserFlag(theFlag, currVal - 1)
+		
+	elseif method == "off" or method == "f=0" then 
+		trigger.action.setUserFlag(theFlag, 0)
+		
+	elseif method == "flip" or method == "xor" then 
+		if currVal ~= 0 then 
+			trigger.action.setUserFlag(theFlag, 0)
+		else 
+			trigger.action.setUserFlag(theFlag, 1)
+		end
+		
+	else 
+		if method ~= "on" and method ~= "f=1" then 
+			trigger.action.outText("+++zones: unknown method <" .. method .. "> - using 'on'", 30)
+		end
+		-- default: on.
+		trigger.action.setUserFlag(theFlag, 1)
+	end
+	
+	local newVal = trigger.misc.getUserFlag(theFlag)
+	if cfxZones.verbose then
+		trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
+	end 
+end
+
 
 --
 -- PROPERTY PROCESSING 

@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.0.0"
+cfxMX.version = "1.0.1"
 --[[--
  Mission data decoder. Access to ME-built mission structures
  
@@ -7,6 +7,7 @@ cfxMX.version = "1.0.0"
  
  Version History
    1.0.0 - initial version 
+   1.0.1 - getStaticFromDCSbyName()
    
  
 --]]--
@@ -65,6 +66,70 @@ function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 		end -- if there is coalition data  
 	end --for all coalitions in mission 
 	return nil, "none", "none"
+end
+
+function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
+	if not fetchOriginal then fetchOriginal = false end 
+	-- fetch the static description for static named aName (if exists)
+	-- returned structure must be parsed for useful information 
+	-- returns data, category, countyID and parent group name 
+	-- unless fetchOriginal is true, creates a deep clone of 
+	-- static data structure 
+		
+	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+		local coa_name = coa_name_miz
+		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
+			coa_name = 'neutral'
+		end
+		-- directly convert coalition into number for easier access later
+		local coaNum = 0
+		if coa_name == "red" then coaNum = 1 end 
+		if coa_name == "blue" then coaNum = 2 end 
+		
+		if type(coa_data) == 'table' then -- coalition = {bullseye, nav_points, name, county}, 
+										  -- with county being an array 
+			if coa_data.country then -- make sure there a country table for this coalition
+				for cntry_id, cntry_data in pairs(coa_data.country) do -- iterate all countries for this 
+					-- per country = {id, name, vehicle, helicopter, plane, ship, static}
+					local countryName = string.lower(cntry_data.name)
+					local countryID = cntry_data.id 
+					if type(cntry_data) == 'table' then	-- filter strings .id and .name 
+						for obj_type_name, obj_type_data in pairs(cntry_data) do
+							if obj_type_name == "static"
+--							   obj_type_name == "helicopter" or 
+--							   obj_type_name == "ship" or 
+--							   obj_type_name == "plane" or 
+--							   obj_type_name == "vehicle" or 
+--							   obj_type_name == "static" 
+							then -- (only look at statics)
+								local category = obj_type_name
+								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one static in group!
+									for group_num, group_data in pairs(obj_type_data.group) do
+										if group_data and group_data.units and type(group_data.units) == 'table' 
+										then --make sure - again - that this is a valid group
+											for unit_num, unit_data in pairs(group_data.units) do -- iterate units
+												if unit_data.name == aName then 
+													local groupName = group_data.name
+													local theStatic = unit_data
+													if not fetchOriginal then 
+														theStatic = dcsCommon.clone(unit_data)
+													end
+													return theStatic, category, countryID, groupName  
+												
+												end -- if name match
+											end -- for all units 
+										end -- has groups 
+									
+									end -- is a static 
+								end --if has category data 
+							end --if plane, helo etc... category
+						end --for all objects in country 
+					end --if has country data 
+				end --for all countries in coalition
+			end --if coalition has country table 
+		end -- if there is coalition data  
+	end --for all coalitions in mission 
+	return nil, "<none>", "<none>", "<no group name>"
 end
 
 function cfxMX.catText2ID(inText) 
