@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.1.0"
+cloneZones.version = "1.1.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -17,6 +17,7 @@ cloneZones.cloners = {}
 	1.0.1 - preWipe attribute
 	1.1.0 - support for static objects
 	      - despawn? attribute 
+	1.1.1 - despawnAll: isExist guard 
 	
 --]]--
 
@@ -100,6 +101,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
 	
+	if cfxZones.hasProperty(theZone, "in?") then 
+		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
+	end
+	
 	if cfxZones.hasProperty(theZone, "spawn?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "spawn?", "none")
 		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
@@ -142,13 +148,17 @@ function cloneZones.despawnAll(theZone)
 		trigger.action.outText("wiping <" .. theZone.name .. ">", 30)
 	end 
 	for idx, aGroup in pairs(theZone.mySpawns) do 
-		Group.destroy(aGroup)
+		if aGroup:isExist() then 
+			Group.destroy(aGroup)
+		end 
 	end
 	for idx, aStatic in pairs(theZone.myStatics) do 
 		-- warning! may be mismatch because we are looking at groups
 		-- not objects. let's see
-		trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
-		Object.destroy(aStatic) -- we don't aStatio:destroy() to find out what it is 
+		if aStatic:isExist() then 
+			trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
+			Object.destroy(aStatic) -- we don't aStatio:destroy() to find out what it is
+		end 
 	end
 	theZone.mySpawns = {}
 	theZone.myStatics = {}

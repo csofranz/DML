@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.1.1"
+cfxOwnedZones.version = "1.1.2"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 --[[-- VERSION HISTORY
@@ -40,6 +40,7 @@ cfxOwnedZones.announcer = true
 	    shocked state
       - announcer 		
 1.1.1 - conq+1 flag 
+1.1.2 - corrected type bug in zoneConquered 
 	  
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -497,7 +498,7 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 	-- increase conq flag 
 	if aZone.conqueredFlag then 
 		local lastVal = trigger.misc.getUserFlag(aZone.conqueredFlag)
-		trigger.action.setUserFlag)aZone.conqueredFlag, lastVal + 1)
+		trigger.action.setUserFlag(aZone.conqueredFlag, lastVal + 1)
 	end
 	-- invoke callbacks now
 	cfxOwnedZones.invokeConqueredCallbacks(aZone, theSide, formerOwner)

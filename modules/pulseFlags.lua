@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.0.1"
+pulseFlags.version = "1.0.2"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,6 +13,7 @@ pulseFlags.requiredLibs = {
 	Version History
 	- 1.0.0 Initial version 
 	- 1.0.1 pause behavior debugged 
+	- 1.0.2 zero pulse optional initial pulse suppress
 	
 --]]--
 
@@ -60,7 +61,8 @@ function pulseFlags.createPulseWithZone(theZone)
 	end
 
 	theZone.pulsing = false -- not running 
-	
+	theZone.hasPulsed = false 
+	theZone.zeroPulse = cfxZones.getBoolFromZoneProperty(theZone, "zeroPulse", true)
 end
 
 --
@@ -113,32 +115,40 @@ function pulseFlags.doPulse(args)
 		return 
 	end 
 	
-	-- do a poll on flags 
-	pulseFlags.pollFlag(theZone.flag, theZone.method) 
+	-- do a poll on flags
+	-- first, we only do an initial pulse if zeroPulse is set
+	if theZone.hasPulsed or theZone.zeroPulse then 
+		pulseFlags.pollFlag(theZone.flag, theZone.method) 
 	
-	-- decrease count
-	if theZone.pulses > 0 then
-		-- only do this if ending
-		theZone.pulsesLeft = theZone.pulsesLeft - 1
-		
-		-- see if we are done 
-		if theZone.pulsesLeft < 1 then 
-			-- increment done flag if set 
-			if theZone.doneFlag then 
-				local currVal = trigger.misc.getUserFlag(theZone.doneFlag)
-				trigger.action.setUserFlag(theZone.doneFlag, currVal + 1)
+		-- decrease count
+		if theZone.pulses > 0 then
+			-- only do this if ending
+			theZone.pulsesLeft = theZone.pulsesLeft - 1
+			
+			-- see if we are done 
+			if theZone.pulsesLeft < 1 then 
+				-- increment done flag if set 
+				if theZone.doneFlag then 
+					local currVal = trigger.misc.getUserFlag(theZone.doneFlag)
+					trigger.action.setUserFlag(theZone.doneFlag, currVal + 1)
+				end
+				if pulseFlags.verbose then 
+					trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> ended!", 30)
+				end 
+				theZone.pulsing = false 
+				theZone.paused = true 
+				return 
 			end
-			if pulseFlags.verbose then 
-				trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> ended!", 30)
-			end 
-			theZone.pulsing = false 
-			theZone.paused = true 
-			return 
+		end
+	else 
+		if pulseFlags.verbose then 
+			trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> delaying zero pulse!", 30)
 		end
 	end
 	
-	-- if we get here, we'll do another one soon
-	-- refresh pulse
+	theZone.hasPulsed = true -- we are past initial pulse
+	
+	-- if we get here, schedule next pulse
 	local delay = theZone.time
 	if theZone.minTime > 0 and theZone.minTime < delay then 
 		-- we want a randomized from time from minTime .. delay

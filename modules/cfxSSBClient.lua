@@ -35,6 +35,7 @@ Version History
 		  and interator
 		- reUseAfter option for single-use  
 		- dcsCommon, cfxZones import
+  2.0.1 - stricter verbosity: moved more comments to verbose only 
 	
 WHAT IT IS
 SSB Client is a small script that forms the client-side counterpart to
@@ -124,37 +125,7 @@ function cfxSSBClient.bindGroupToAirfield(groupName, airfieldName)
 	if not airfieldName then airfieldName = "<NIL>" end 
 	trigger.action.outText("+++SSB: Binding Group " .. groupName .. " to " .. airfieldName .. " failed.", 30) 
 end
---[[--
-function cfxSSBClient.dist(point1, point2) -- returns distance between two points	  	  
-  local x = point1.x - point2.x
-  local y = point1.y - point2.y 
-  local z = point1.z - point2.z
-  
-  return (x*x + y*y + z*z)^0.5
-end
---]]--
-	
--- see if instring conatins what, defaults to case insensitive
---[[--
-function cfxSSBClient.containsString(inString, what, caseSensitive)
-	if (not caseSensitive) then 
-		inString = string.upper(inString)
-		what = string.upper(what)
-	end
-	return string.find(inString, what)
-end
---]]--
---[[--
-function cfxSSBClient.arrayContainsString(theArray, theString)
-	-- warning: case sensitive!
-	if not theArray then return false end
-	if not theString then return false end
-	for i = 1, #theArray do 
-		if theArray[i] == theString then return true end 
-	end
-	return false 
-end
---]]--
+
 
 function cfxSSBClient.getClosestAirbaseTo(thePoint)
 	local delta = math.huge
@@ -256,7 +227,9 @@ function cfxSSBClient.openSlotForCrashedGroupNamed(gName)
 	if not pGroup then return end 
 	cfxSSBClient.crashedGroups[gName] = nil -- set to nil to forget this happened 
 	cfxSSBClient.setSlotAccessForGroup(pGroup) -- set by current occupation status 
-	trigger.action.outText("+++SSBC:SU: re-opened slot for group <" .. gName .. ">", 30)
+	if cfxSSBClient.verbose then 
+		trigger.action.outText("+++SSBC:SU: re-opened slot for group <" .. gName .. ">", 30)
+	end 
 end
 
 function cfxSSBClient:onEvent(event)
@@ -282,7 +255,9 @@ function cfxSSBClient:onEvent(event)
 		-- remember this unit as player controlled plane
 		-- because player and plane can easily disconnect
 		cfxSSBClient.playerPlanes[uName] = playerName
-		trigger.action.outText("+++SSBC:SU: noted " .. playerName .. " piloting player unit " .. uName, 30)
+		if cfxSSBClient.verbose then 
+			trigger.action.outText("+++SSBC:SU: noted " .. playerName .. " piloting player unit " .. uName, 30)
+		end 
 		return 
 	end
 	
@@ -298,7 +273,9 @@ function cfxSSBClient:onEvent(event)
 		local thePilot = cfxSSBClient.playerPlanes[uName]
 		if not thePilot then 
 			-- ignore. not a player plane
-			trigger.action.outText("+++SSBC:SU: ignored crash for NPC unit <" .. uName .. ">", 30)
+			if cfxSSBClient.verbose then 
+				trigger.action.outText("+++SSBC:SU: ignored crash for NPC unit <" .. uName .. ">", 30)
+			end 
 			return 
 		end
 		-- if we get here, a player-owned plane has crashed 

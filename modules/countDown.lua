@@ -1,5 +1,5 @@
 countDown = {}
-countDown.version = "1.0.0"
+countDown.version = "1.1.0"
 countDown.verbose = true 
 countDown.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,11 +12,14 @@ countDown.requiredLibs = {
 	
 	Version History
 	1.0.0 - initial version 
+	1.1.0 - Lua interface: callbacks 
+	      - corrected verbose (erroneously always suppressed)
+		  - triggerFlag --> triggerCountFlag 
 	
 --]]--
 
 countDown.counters = {}
-
+countDown.callbacks = {}
 
 --
 -- add/remove zones
@@ -36,6 +39,27 @@ function countDown.getCountDownZoneByName(aName)
 	return nil 
 end
 
+
+--
+-- callbacks 
+--
+function countDown.addCallback(theCallback)
+	if not theCallback then return end 
+	table.insert(countDown.callbacks, theCallback)
+end
+
+function countDown.invokeCallbacks(theZone, val, tminus, zero, belowZero, looping)
+	if not val then val = 1 end 
+	if not tminus then tminus = false end 
+	if not zero then zero = false end 
+	if not belowZero then belowZero = false end 
+	
+	-- invoke anyone who wants to know that a group 
+	-- of people was rescued.
+	for idx, cb in pairs(csarManager.csarCompleteCB) do 
+		cb(theZone, val, tminus, zero, belowZero, looping)
+	end
+end
 --
 -- read attributes
 --
@@ -60,17 +84,17 @@ function countDown.createCountDownWithZone(theZone)
 	
 	-- trigger flag "count" / "start?"
 	if cfxZones.hasProperty(theZone, "count?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "count?", "none")
+		theZone.triggerCountFlag = cfxZones.getStringFromZoneProperty(theZone, "count?", "none")
 	end
 
 	
-	-- can also use in? for counting. we always use triggerflag 
+	-- can also use in? for counting. we always use triggerCountFlag 
 	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+		theZone.triggerCountFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
 	end
 	
-	if theZone.triggerFlag then 
-		theZone.lastTriggerValue = trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
+	if theZone.triggerCountFlag then 
+		theZone.lastTriggerValue = trigger.misc.getUserFlag(theZone.triggerCountFlag) -- save last value
 	end
 	
 	-- zero! bang 
@@ -95,14 +119,19 @@ end
 function countDown.isTriggered(theZone)
 	-- this module has triggered 
 	local val = theZone.currVal - 1 -- decrease counter 
-	if theZone.verbose then 
+	if countDown.verbose then 
 		trigger.action.outText("+++cntD: enter triggered: val now: " .. val, 30)
 	end
+	local tMinus = false 
+	local zero = false 
+	local belowZero = false 
+	local looping = false 
+	
 	if val > 0 then 
-
+		tMinus = true 
 		-- see if we need to bang Tminus 
 		if theZone.tMinusFlag then 
-			if theZone.verbose then 
+			if countDown.verbose then 
 				trigger.action.outText("+++cntD: TMINUTS", 30)
 			end
 			cfxZones.pollFlag(theZone.tMinusFlag, theZone.method)
@@ -110,8 +139,9 @@ function countDown.isTriggered(theZone)
 		
 	elseif val == 0 then 
 		-- reached zero 
+		zero = true 
 		if theZone.zeroFlag then 
-			if theZone.verbose then 
+			if countDown.verbose then 
 				trigger.action.outText("+++cntD: ZERO", 30)
 			end
 			cfxZones.pollFlag(theZone.zeroFlag, theZone.method)
@@ -119,7 +149,8 @@ function countDown.isTriggered(theZone)
 		
 		if theZone.loop then 
 			-- restart time
-			if theZone.verbose then 
+			looping = true 
+			if countDown.verbose then 
 				trigger.action.outText("+++cntD: Looping", 30)
 			end
 			val = dcsCommon.randomBetween(theZone.startMinVal, theZone.startMaxVal)
@@ -127,8 +158,9 @@ function countDown.isTriggered(theZone)
 		
 	else 
 		-- below zero
+		belowZero = true 
 		if theZone.belowZero and theZone.zeroFlag then
-			if theZone.verbose then 
+			if countDown.verbose then 
 				trigger.action.outText("+++cntD: Below Zero", 30)
 			end
 			cfxZones.pollFlag(theZone.zeroFlag, theZone.method)
@@ -136,6 +168,10 @@ function countDown.isTriggered(theZone)
 		
 	end
 	
+	-- callbacks 
+	countDown.invokeCallbacks(theZone, val, tMinus, zero, belowZero, looping)
+	
+	-- update & return 
 	theZone.currVal = val 
 	
 end
@@ -146,15 +182,15 @@ function countDown.update()
 		
 	for idx, aZone in pairs(countDown.counters) do
 		-- make sure to re-start before reading time limit
-		if aZone.triggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerFlag)
+		if aZone.triggerCountFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerCountFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue
 			then 
-				if aZone.verbose then 
+				if countDown.verbose then 
 					trigger.action.outText("+++cntD: triggered on in?", 30)
 				end
 				countDown.isTriggered(aZone)
-				aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.triggerFlag) -- save last value
+				aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.triggerCountFlag) -- save last value
 			end
 		end
 	end

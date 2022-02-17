@@ -1,5 +1,5 @@
 nameStats = {}
-nameStats.version = "1.1.0"
+nameStats.version = "1.1.1"
 --[[--
   package that allows generic and global access to data, stored by 
   name and path. Can be used to manage score, cargo, statistics etc.

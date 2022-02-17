@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.0.0"
+delayFlag.version = "1.0.2"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -19,6 +19,8 @@ delayFlag.flags = {}
 	1.0.2 - slight spelling correction 
 		  - using cfxZones for polling 
 		  - removed pollFlag 
+	1.0.3 - bug fix for config zone name
+	      - removed message attribute, moved to own module 
 	
 --]]--
 
@@ -89,47 +91,6 @@ function delayFlag.createTimerWithZone(theZone)
 end
 
 
---
--- do the pulling
--- 
---[[--
-function delayFlag.pollFlag(theFlag, method) 
-	if delayFlag.verbose then 
-		trigger.action.outText("+++dlyF: polling flag " .. theFlag .. " with " .. method, 30)
-	end 
-	
-	method = method:lower()
-	local currVal = trigger.misc.getUserFlag(theFlag)
-	if method == "inc" or method == "f+1" then 
-		trigger.action.setUserFlag(theFlag, currVal + 1)
-		
-	elseif method == "dec" or method == "f-1" then 
-		trigger.action.setUserFlag(theFlag, currVal - 1)
-		
-	elseif method == "off" or method == "f=0" then 
-		trigger.action.setUserFlag(theFlag, 0)
-		
-	elseif method == "flip" or method == "xor" then 
-		if currVal ~= 0 then 
-			trigger.action.setUserFlag(theFlag, 0)
-		else 
-			trigger.action.setUserFlag(theFlag, 1)
-		end
-		
-	else 
-		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++dlyF: unknown method <" .. method .. "> - using 'on'", 30)
-		end
-		-- default: on.
-		trigger.action.setUserFlag(theFlag, 1)
-	end
-	
-	local newVal = trigger.misc.getUserFlag(theFlag)
-	if delayFlag.verbose then
-		trigger.action.outText("+++dlyF flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
-	end 
-end
---]]--
 --
 -- update 
 -- 
@@ -204,7 +165,7 @@ end
 -- START 
 --
 function delayFlag.readConfigZone()
-	local theZone = cfxZones.getZoneByName("cloneZonesConfig") 
+	local theZone = cfxZones.getZoneByName("delayZonesConfig") 
 	if not theZone then 
 		if delayFlag.verbose then 
 			trigger.action.outText("+++dlyF: NO config zone!", 30)
