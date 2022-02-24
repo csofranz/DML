@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.0.2"
+delayFlag.version = "1.0.4"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -20,7 +20,9 @@ delayFlag.flags = {}
 		  - using cfxZones for polling 
 		  - removed pollFlag 
 	1.0.3 - bug fix for config zone name
-	      - removed message attribute, moved to own module 
+		  - removed message attribute, moved to own module 
+		  - triggerFlag --> triggerDelayFlag
+	1.0.4 - startDelay
 	
 --]]--
 
@@ -55,15 +57,19 @@ function delayFlag.createTimerWithZone(theZone)
 
 	-- trigger flag 
 	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
+		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
 	end
 	
 	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
 	end
 	
-	if theZone.triggerFlag then 
-		theZone.lastTriggerValue = trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
+	if cfxZones.hasProperty(theZone, "startDelay?") then 
+		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "startDelay?", "none")
+	end
+	
+	if theZone.triggerDelayFlag then 
+		theZone.lastDelayTriggerValue = trigger.misc.getUserFlag(theZone.triggerDelayFlag) -- save last value
 	end
 	
 	
@@ -79,10 +85,6 @@ function delayFlag.createTimerWithZone(theZone)
 		theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
 	end
 	
-	-- message
-	if cfxZones.hasProperty(theZone, "message") then 
-		theZone.myMessage = cfxZones.getStringZoneProperty(theZone, "message", "<none>")
-	end
 	
 	-- init 
 	theZone.running = false 
@@ -128,9 +130,9 @@ function delayFlag.update()
 	
 	for idx, aZone in pairs(delayFlag.flags) do
 		-- make sure to re-start before reading time limit
-		if aZone.triggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerFlag)
-			if currTriggerVal ~= aZone.lastTriggerValue
+		if aZone.triggerDelayFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerDelayFlag)
+			if currTriggerVal ~= aZone.lastDelayTriggerValue
 			then 
 				if delayFlag.verbose then 
 					if aZone.running then 
@@ -140,7 +142,7 @@ function delayFlag.update()
 					end
 				end 
 				delayFlag.startDelay(aZone) -- we restart even if running 
-				aZone.lastTriggerValue = currTriggerVal
+				aZone.lastDelayTriggerValue = currTriggerVal
 			end
 		end
 		
@@ -152,9 +154,9 @@ function delayFlag.update()
 				-- poll flag 
 				cfxZones.pollFlag(aZone.outFlag, aZone.method)
 				-- say message
-				if aZone.myMessage then 
-					trigger.action.outText(aZone.myMessage, 30)
-				end
+				--if aZone.myMessage then 
+				--	trigger.action.outText(aZone.myMessage, 30)
+				--end
 			end
 		end
 		

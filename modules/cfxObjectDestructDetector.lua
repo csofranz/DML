@@ -1,5 +1,5 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "1.0.1" 
+cfxObjectDestructDetector.version = "1.1.0" 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -9,6 +9,8 @@ cfxObjectDestructDetector.verbose = false
    VERSION HISTORY 
    1.0.0 initial version, based on parashoo, arty zones  
    1.0.1 fixed bug: trigger.MISC.getUserFlag()
+   1.1.0 added support for method, f! and destroyed! 
+   
    
    Detect when an object with OBJECT ID as assigned in ME dies 
    *** EXTENDS ZONES 
@@ -69,6 +71,16 @@ function cfxObjectDestructDetector.processObjectDestructZone(aZone)
 	if cfxZones.hasProperty(aZone, "f-1") then 
 		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f-1", "999")
 	end
+	
+	-- new method support
+	aZone.method = cfxZones.getStringFromZoneProperty(aZone, "method", "flip")
+	
+	if cfxZones.hasProperty(aZone, "f!") then 
+		aZone.outDestroyFlag = cfxZones.getNumberFromZoneProperty(aZone, "f!", -1)
+	end
+		if cfxZones.hasProperty(aZone, "destroyed!") then 
+		aZone.outDestroyFlag = cfxZones.getNumberFromZoneProperty(aZone, "destroyed!", -1)
+	end
 end
 --
 -- MAIN DETECTOR
@@ -96,6 +108,11 @@ function cfxObjectDestructDetector:onEvent(event)
 				if aZone.decreaseFlag then 
 					local val = trigger.misc.getUserFlag(aZone.decreaseFlag) - 1
 					trigger.action.setUserFlag(aZone.decreaseFlag, val)
+				end
+				
+				-- support for banging 
+				if aZone.outDestroyFlag then 
+					cfxZones.pollFlag(aZone.outDestroyFlag, aZone.method)
 				end
 				
 				-- invoke callbacks 

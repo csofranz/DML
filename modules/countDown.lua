@@ -15,6 +15,7 @@ countDown.requiredLibs = {
 	1.1.0 - Lua interface: callbacks 
 	      - corrected verbose (erroneously always suppressed)
 		  - triggerFlag --> triggerCountFlag 
+	1.1.1 - corrected bug in invokeCallback 
 	
 --]]--
 
@@ -56,7 +57,7 @@ function countDown.invokeCallbacks(theZone, val, tminus, zero, belowZero, loopin
 	
 	-- invoke anyone who wants to know that a group 
 	-- of people was rescued.
-	for idx, cb in pairs(csarManager.csarCompleteCB) do 
+	for idx, cb in pairs(countDown.callbacks) do 
 		cb(theZone, val, tminus, zero, belowZero, looping)
 	end
 end
@@ -94,7 +95,7 @@ function countDown.createCountDownWithZone(theZone)
 	end
 	
 	if theZone.triggerCountFlag then 
-		theZone.lastTriggerValue = trigger.misc.getUserFlag(theZone.triggerCountFlag) -- save last value
+		theZone.lastCountTriggerValue = trigger.misc.getUserFlag(theZone.triggerCountFlag) -- save last value
 	end
 	
 	-- zero! bang 
@@ -184,13 +185,13 @@ function countDown.update()
 		-- make sure to re-start before reading time limit
 		if aZone.triggerCountFlag then 
 			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerCountFlag)
-			if currTriggerVal ~= aZone.lastTriggerValue
+			if currTriggerVal ~= aZone.lastCountTriggerValue
 			then 
 				if countDown.verbose then 
 					trigger.action.outText("+++cntD: triggered on in?", 30)
 				end
 				countDown.isTriggered(aZone)
-				aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.triggerCountFlag) -- save last value
+				aZone.lastCountTriggerValue = trigger.misc.getUserFlag(aZone.triggerCountFlag) -- save last value
 			end
 		end
 	end

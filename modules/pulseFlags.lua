@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.0.2"
+pulseFlags.version = "1.0.3"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,6 +14,10 @@ pulseFlags.requiredLibs = {
 	- 1.0.0 Initial version 
 	- 1.0.1 pause behavior debugged 
 	- 1.0.2 zero pulse optional initial pulse suppress
+	- 1.0.3 pollFlag switched to cfxZones 
+			uses randomDelayFromPositiveRange
+			flag! now is string 
+			WARNING: still needs full alphaNum flag upgrade 
 	
 --]]--
 
@@ -28,7 +32,7 @@ end
 --
 
 function pulseFlags.createPulseWithZone(theZone)
-	theZone.flag = cfxZones.getNumberFromZoneProperty(theZone, "flag!", -1) -- the flag to pulse 
+	theZone.flag = cfxZones.getStringFromZoneProperty(theZone, "flag!", -1) -- the flag to pulse 
 
 	-- time can be number, or number-number range
 	theZone.minTime, theZone.time = cfxZones.getPositiveRangeFromZoneProperty(theZone, "time", 1)
@@ -68,42 +72,6 @@ end
 --
 -- update 
 -- 
-function pulseFlags.pollFlag(theFlag, method) 
-	if pulseFlags.verbose then 
-		trigger.action.outText("+++PulF: polling flag " .. theFlag .. " with " .. method, 30)
-	end 
-	
-	method = method:lower()
-	local currVal = trigger.misc.getUserFlag(theFlag)
-	if method == "inc" or method == "f+1" then 
-		trigger.action.setUserFlag(theFlag, currVal + 1)
-		
-	elseif method == "dec" or method == "f-1" then 
-		trigger.action.setUserFlag(theFlag, currVal - 1)
-		
-	elseif method == "off" or method == "f=0" then 
-		trigger.action.setUserFlag(theFlag, 0)
-		
-	elseif method == "flip" or method == "xor" then 
-		if currVal ~= 0 then 
-			trigger.action.setUserFlag(theFlag, 0)
-		else 
-			trigger.action.setUserFlag(theFlag, 1)
-		end
-		
-	else 
-		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++PulF: unknown method <" .. method .. "> - using 'on'", 30)
-		end
-		-- default: on.
-		trigger.action.setUserFlag(theFlag, 1)
-	end
-	
-	local newVal = trigger.misc.getUserFlag(theFlag)
-	if pulseFlags.verbose then 
-		trigger.action.outText("+++PulF: flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
-	end 
-end
 
 
 function pulseFlags.doPulse(args) 
@@ -118,7 +86,7 @@ function pulseFlags.doPulse(args)
 	-- do a poll on flags
 	-- first, we only do an initial pulse if zeroPulse is set
 	if theZone.hasPulsed or theZone.zeroPulse then 
-		pulseFlags.pollFlag(theZone.flag, theZone.method) 
+		cfxZones.pollFlag(theZone.flag, theZone.method, theZone) 
 	
 		-- decrease count
 		if theZone.pulses > 0 then
@@ -149,6 +117,7 @@ function pulseFlags.doPulse(args)
 	theZone.hasPulsed = true -- we are past initial pulse
 	
 	-- if we get here, schedule next pulse
+	--[[--
 	local delay = theZone.time
 	if theZone.minTime > 0 and theZone.minTime < delay then 
 		-- we want a randomized from time from minTime .. delay
@@ -156,6 +125,8 @@ function pulseFlags.doPulse(args)
 		varPart = dcsCommon.smallRandom(varPart) - 1
 		delay = theZone.minTime + varPart
 	end
+	--]]--
+	local delay = cfxZones.randomDelayFromPositiveRange(theZone.minTime, theZone.time)
 	
 	--trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> scheduled in ".. delay .."!", 30)
 	

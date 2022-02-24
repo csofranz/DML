@@ -178,13 +178,8 @@ function FARPZones.createFARPFromZone(aZone)
 	
 	return theFarp 
 end
---[[--
-function FARPZones.drawFarp(theFarp)
-	local theZone = theFarp.zone
-	local theOwner = theFarp.owner 
-	FARPZones.drawZoneInMap(theZone, theOwner) 
-end
---]]--
+
+	
 function FARPZones.drawFARPCircleInMap(theFarp)
 	if not theFarp then return end 
 	
@@ -429,6 +424,7 @@ function FARPZones.readConfig()
 	FARPZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
  	
 	FARPZones.spinUpDelay = cfxZones.getNumberFromZoneProperty(theZone, "spinUpDelay", 30)
+	
 	
 	if FARPZones.verbose then 
 		trigger.action.outText("***frpZ: read config", 30) 

@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.0.0"
+messenger.version = "1.0.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -9,6 +9,8 @@ messenger.messengers = {}
 --[[--
 	Version History
 	1.0.0 - initial version 
+	1.0.1 - messageOut? synonym
+	      - spelling types in about 
 	
 --]]--
 
@@ -51,6 +53,10 @@ function messenger.createMessengerDownWithZone(theZone)
 	-- can also use in? for counting. we always use triggerMessagerFlag 
 	if cfxZones.hasProperty(theZone, "in?") then 
 		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+	end
+	
+	if cfxZones.hasProperty(theZone, "messageOut?") then 
+		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOut?", "none")
 	end
 	
 	if theZone.triggerMessagerFlag then 
@@ -125,10 +131,10 @@ end
 function messenger.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
-		trigger.action.outText("cfx Count Down requires dcsCommon", 30)
+		trigger.action.outText("cfx Messenger requires dcsCommon", 30)
 		return false 
 	end 
-	if not dcsCommon.libCheck("cfx Count Down", messenger.requiredLibs) then
+	if not dcsCommon.libCheck("cfx Messenger", messenger.requiredLibs) then
 		return false 
 	end
 	

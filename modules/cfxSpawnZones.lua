@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.5.2"
+cfxSpawnZones.version = "1.5.3"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -52,6 +52,7 @@ cfxSpawnZones.verbose = false
 --   1.5.1 - relaxed baseName and default to dcsCommon.uuid()
 --         - verbose 
 --   1.5.2 - activate?, pause? flag 
+--   1.5.3 - spawn?, spawnUnits? flags 
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -137,6 +138,17 @@ function cfxSpawnZones.createSpawner(inZone)
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	-- synonyms spawn? and spawnObject?
+	if cfxZones.hasProperty(inZone, "spawn?") then 
+		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "spawnUnits?") then 
+		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObject?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	

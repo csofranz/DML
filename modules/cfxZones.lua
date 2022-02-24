@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.5"
+cfxZones.version = "2.5.6"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -50,6 +50,10 @@ cfxZones.version = "2.5.5"
 		  - extractPropertyFromDCS trims key and property 
  - 2.5.5  - pollFlag() centralized for banging 
           - allStaticsInZone
+ - 2.5.6  - flag accessor setFlagValue(), getFlagValue 
+		  - pollFlag supports theZone as final parameter
+		  - randomDelayFromPositiveRange
+		  - isMEFlag
  
 --]]--
 cfxZones.verbose = false
@@ -197,6 +201,7 @@ function cfxZones.readFromDCS(clearfirst)
 
 			-- add to my table
 			cfxZones.zones[upperName] = newZone -- WARNING: UPPER ZONE!!!
+			--trigger.action.outText("znd: procced " .. newZone.name .. " with radius " .. newZone.radius, 30)
 		else
 			if cfxZones.verbose then 
 				trigger.action.outText("cf/x zones: malformed zone #" .. i .. " dropped", 10)
@@ -467,11 +472,13 @@ end;
 function cfxZones.isPointInsideZone(thePoint, theZone)
 	local p = {x=thePoint.x, y = 0, z = thePoint.z} -- zones have no altitude
 	if (theZone.isCircle) then 
+		local zp = cfxZones.getPoint(theZone)
 		local d = dcsCommon.dist(p, theZone.point)
 		return d < theZone.radius
 	end 
 	
 	if (theZone.isPoly) then 
+		--trigger.action.outText("zne: isPointInside: " .. theZone.name .. " is Polyzone!", 30)
 		return (cfxZones.isPointInsidePoly(p, theZone.poly))
 	end
 
@@ -550,6 +557,7 @@ end
 --
 function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be code 
 	-- warning: does not check for exiting!
+	--trigger.action.outText("Zone " .. theZone.name .. " radius " .. theZone.radius, 30)
 	local inZones = {}
 	local coals = {0, 1, 2} -- all coalitions
 	for idx, coa in pairs(coals) do 
@@ -601,9 +609,12 @@ function cfxZones.isGroupPartiallyInZone(aGroup, aZone)
 	for uk, aUnit in pairs (allUnits) do 
 		if aUnit:isExist() and aUnit:getLife() > 1 then 		
 			local p = aUnit:getPoint()
-			if cfxZones.isPointInsideZone(p, aZone) then 			
+			local inzone, percent, dist = cfxZones.pointInZone(p, aZone)
+			if inzone then -- cfxZones.isPointInsideZone(p, aZone) then 			
+				--trigger.action.outText("zne: YAY <" .. aUnit:getName() .. "> IS IN " .. aZone.name, 30) 
 				return true
 			end 
+			--trigger.action.outText("zne: <" .. aUnit:getName() .. "> not in " .. aZone.name .. ", dist = " .. dist .. ", rad = ", aZone.radius, 30) 
 		end
 	end
 	return false
@@ -1048,7 +1059,7 @@ end
 --
 -- Flag Pulling 
 --
-function cfxZones.pollFlag(theFlag, method) 
+function cfxZones.pollFlag(theFlag, method, theZone) 
 	if cfxZones.verbose then 
 		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
 	end 
@@ -1085,6 +1096,68 @@ function cfxZones.pollFlag(theFlag, method)
 	end 
 end
 
+function cfxZones.setFlagValue(theFlag, theValue, theZone)
+	local zoneName = "<dummy>"
+	if not theZone then 
+		trigger.action.outText("+++Zne: no zone on setFlagValue")
+	else 
+		zoneName = theZone.name -- for flag wildcards
+	end
+	
+	if type(theFlag) == "number" then 
+		-- straight set, ME flag 
+		trigger.action.setUserFlag(theFlag, theValue)
+		return 
+	end
+	
+	-- we assume it's a string now
+	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces
+	local nFlag = tonumber(theFlag) 
+	if nFlag then 
+		trigger.action.setUserFlag(theFlag, theValue)
+		return 
+	end
+	
+	-- now do wildcard processing. we have alphanumeric
+	if dcsCommon.stringStartsWith(theFlag, "*") then  
+			theFlag = zoneName .. theFlag
+	end
+	trigger.action.setUserFlag(theFlag, theValue)
+end 
+
+function cfxZones.getFlagValue(theFlag, theZone)
+	local zoneName = "<dummy>"
+	if not theZone then 
+		trigger.action.outText("+++Zne: no zone on getFlagValue")
+	else 
+		zoneName = theZone.name -- for flag wildcards
+	end
+	
+	if type(theFlag) == "number" then 
+		-- straight get, ME flag 
+		return trigger.misc.getUserFlag(theFlag)
+	end
+	
+	-- we assume it's a string now
+	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces
+	local nFlag = tonumber(theFlag) 
+	if nFlag then 
+		return trigger.misc.getUserFlag(theFlag)
+	end
+	
+	-- now do wildcard processing. we have alphanumeric
+	if dcsCommon.stringStartsWith(theFlag, "*") then  
+			theFlag = zoneName .. theFlag
+	end
+	return trigger.misc.getUserFlag(theFlag)
+end
+
+function cfxZones.isMEFlag(inFlag)
+	return true 
+	-- returns true if inFlag is a pure positive number
+--	inFlag = dcsCommon.trim(inFlag)
+--	return dcsCommon.stringIsPositiveNumber(inFlag)
+end
 
 --
 -- PROPERTY PROCESSING 
@@ -1165,6 +1238,19 @@ function cfxZones.getMinMaxFromZoneProperty(theZone, theProperty)
 
 	return tonumber(theNumbers[1]), tonumber(theNumbers[2])
 	
+end
+
+function cfxZones.randomDelayFromPositiveRange(minVal, maxVal) 
+	if not maxVal then return minVal end 
+	if not minVal then return maxVal end 
+	local delay = maxVal
+	if minVal > 0 and minVal < delay then 
+		-- we want a randomized from time from minTime .. delay
+		local varPart = delay - minVal + 1
+		varPart = dcsCommon.smallRandom(varPart) - 1
+		delay = minVal + varPart
+	end
+	return delay 
 end
 
 function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default)

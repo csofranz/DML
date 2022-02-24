@@ -1,5 +1,5 @@
 cfxArtilleryZones = {}
-cfxArtilleryZones.version = "2.0.1" 
+cfxArtilleryZones.version = "2.0.2" 
 cfxArtilleryZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -24,7 +24,8 @@ cfxArtilleryZones.verbose = false
 	   - att transition time to zone info mark
 	   - made compatible with linked zones 
 	   - added silent attribute 
-	   - added transition time to arty command chatter
+	   - added transition time to arty command chatter 
+ 2.0.2 - boom?, arty? synonyms  
  
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -121,13 +122,18 @@ function cfxArtilleryZones.processArtilleryZone(aZone)
 	aZone.addMark = cfxZones.getBoolFromZoneProperty(aZone, "addMark", true) -- note: defaults to true 
 	aZone.shellVariance = cfxZones.getNumberFromZoneProperty(aZone, "shellVariance", 0.2) -- strength of explosion can vary by +/- this amount
 	if cfxZones.hasProperty(aZone, "f?") then 
-		aZone.triggerFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
+		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
 	end
+	--[[--
 	if cfxZones.hasProperty(aZone, "triggerFlag") then 
-		aZone.triggerFlag = cfxZones.getStringFromZoneProperty(aZone, "triggerFlag", "none")
+		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "triggerFlag", "none")
 	end
-	if aZone.triggerFlag then 
-		aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.triggerFlag) -- save last value
+	--]]--
+	if cfxZones.hasProperty(aZone, "artillery?") then 
+		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "artillery?", "none")
+	end
+	if aZone.artyTriggerFlag then 
+		aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.artyTriggerFlag) -- save last value
 	end
 	aZone.cooldown =cfxZones.getNumberFromZoneProperty(aZone, "cooldown", 120) -- seconds 
 	aZone.baseAccuracy = cfxZones.getNumberFromZoneProperty(aZone, "baseAccuracy", aZone.radius) -- meters from center radius shell impact
@@ -380,8 +386,8 @@ function cfxArtilleryZones.update()
 	
 	-- iterate all zones to see if a trigger has changed 
 	for idx, aZone in pairs(cfxArtilleryZones.artilleryZones) do 
-		if aZone.triggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerFlag)
+		if aZone.artyTriggerFlag then 
+			local currTriggerVal = trigger.misc.getUserFlag(aZone.artyTriggerFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue
 			then 
 				-- a triggered release!

@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.0.1"
+cfxMX.version = "1.1.0"
 --[[--
  Mission data decoder. Access to ME-built mission structures
  
@@ -8,9 +8,17 @@ cfxMX.version = "1.0.1"
  Version History
    1.0.0 - initial version 
    1.0.1 - getStaticFromDCSbyName()
+   1.1.0 - getStaticFromDCSbyName also copies groupID when not fetching orig
+	     - on start up collects a cross reference table of all 
+		   original group id 
+		 - add linkUnit for statics 
    
  
 --]]--
+cfxMX.groupNamesByID = {}
+cfxMX.groupIDbyName = {}
+cfxMX.groupDataByName = {}
+
 
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -105,6 +113,15 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one static in group!
 									for group_num, group_data in pairs(obj_type_data.group) do
+										-- get linkUnit info if it exists
+										local linkUnit = nil 
+										if group_data and group_data.route and group_data.route and group_data.route.points[1] then 
+											linkUnit = group_data.route.points[1].linkUnit
+											if linkUnit then 
+												--trigger.action.outText("MX: found missing link to " .. linkUnit .. " in " .. group_data.name, 30)
+											end 
+										end 
+										
 										if group_data and group_data.units and type(group_data.units) == 'table' 
 										then --make sure - again - that this is a valid group
 											for unit_num, unit_data in pairs(group_data.units) do -- iterate units
@@ -113,6 +130,11 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 													local theStatic = unit_data
 													if not fetchOriginal then 
 														theStatic = dcsCommon.clone(unit_data)
+														-- copy group ID from group above
+														theStatic.groupId = group_data.groupId  
+														-- copy linked unit data 
+														theStatic.linkUnit = linkUnit
+														
 													end
 													return theStatic, category, countryID, groupName  
 												
@@ -132,6 +154,51 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 	return nil, "<none>", "<none>", "<no group name>"
 end
 
+function cfxMX.createCrossReference()
+	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+		local coa_name = coa_name_miz
+		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
+			coa_name = 'neutral'
+		end
+		-- directly convert coalition into number for easier access later
+		local coaNum = 0
+		if coa_name == "red" then coaNum = 1 end 
+		if coa_name == "blue" then coaNum = 2 end 
+		
+		if type(coa_data) == 'table' then -- coalition = {bullseye, nav_points, name, county}, 
+										  -- with county being an array 
+			if coa_data.country then -- make sure there a country table for this coalition
+				for cntry_id, cntry_data in pairs(coa_data.country) do -- iterate all countries for this 
+					-- per country = {id, name, vehicle, helicopter, plane, ship, static}
+					local countryName = string.lower(cntry_data.name)
+					local countryID = cntry_data.id 
+					if type(cntry_data) == 'table' then	-- filter strings .id and .name 
+						for obj_type_name, obj_type_data in pairs(cntry_data) do
+							if obj_type_name == "helicopter" or 
+							   obj_type_name == "ship" or 
+							   obj_type_name == "plane" or 
+							   obj_type_name == "vehicle" or 
+							   obj_type_name == "static" 
+							then -- (so it's not id or name)
+								local category = obj_type_name
+								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
+									for group_num, group_data in pairs(obj_type_data.group) do
+										local aName = group_data.name 
+										local aID = group_data.groupId
+										cfxMX.groupNamesByID[aID] = aName
+										cfxMX.groupIDbyName[aName] = aID
+										cfxMX.groupDataByName[aName] = group_data
+									end
+								end --if has category data 
+							end --if plane, helo etc... category
+						end --for all objects in country 
+					end --if has country data 
+				end --for all countries in coalition
+			end --if coalition has country table 
+		end -- if there is coalition data  
+	end --for all coalitions in mission 
+end
+
 function cfxMX.catText2ID(inText) 
 	local outCat = 0 -- airplane 
 	local c = inText:lower()
@@ -144,3 +211,11 @@ function cfxMX.catText2ID(inText)
 	return outCat
 end
  
+function cfxMX.start()
+	cfxMX.createCrossReference()
+	trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)
+end
+
+-- start 
+cfxMX.start()
+

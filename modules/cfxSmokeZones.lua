@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.0.3" 
+cfxSmokeZone.version = "1.0.4" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -12,7 +12,10 @@ cfxSmokeZone.requiredLibs = {
  1.0.3 - added paused attribute 
        - added f? attribute --> onFlag 
 	   - broke out startSmoke 
-	   
+ 1.0.4 - startSmoke? synonym
+	   - alphanum flag upgrade 
+	   - random color support 
+ 
 	SMOKE ZONES *** EXTENDS ZONES ***
 	keeps 'eternal' smoke up for any zone that has the 
 	'smoke' attribute 
@@ -34,6 +37,9 @@ function cfxSmokeZone.processSmokeZone(aZone)
 	if rawVal == "white" or rawVal == "2" then theColor = 2 end 
 	if rawVal == "orange" or rawVal == "3" then theColor = 3 end 
 	if rawVal == "blue" or rawVal == "4" then theColor = 4 end 
+	if rawVal == "?" or rawVal == "random" or rawVal == "rnd" then 
+		theColor = dcsCommon.smallRandom(5) - 1
+	end
 
 	aZone.smokeColor = theColor
 	aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "altitude", 1)
@@ -46,8 +52,12 @@ function cfxSmokeZone.processSmokeZone(aZone)
 		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
 	end
 	
+	if cfxZones.hasProperty(aZone, "startSmoke?") then 
+		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "startSmoke?", "none")
+	end
+	
 	if aZone.onFlag then 
-		aZone.onFlagVal = trigger.misc.getUserFlag(aZone.onFlag) -- save last value
+		aZone.onFlagVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- save last value
 	end
 end
 
@@ -67,7 +77,7 @@ function cfxSmokeZone.addSmokeZoneWithColor(aZone, aColor, anAltitude, paused, o
 	
 	if onFlag then 
 		aZone.onFlag = onFlag 
-		aZone.onFlagVal = trigger.misc.getUserFlag(onFlag)
+		aZone.onFlagVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- trigger.misc.getUserFlag(onFlag)
 	end
 	
 	cfxSmokeZone.addSmokeZone(aZone) -- add to update loop
@@ -123,7 +133,7 @@ function cfxSmokeZone.checkFlags()
 	for idx, aZone in pairs(cfxSmokeZone.smokeZones) do 
 		if aZone.paused and aZone.onFlagVal then 
 			-- see if this changed 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.onFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- trigger.misc.getUserFlag(aZone.onFlag)
 			if currTriggerVal ~= aZone.onFlagVal then
 				-- yupp, trigger start 
 				cfxSmokeZone.startSmoke(aZone)

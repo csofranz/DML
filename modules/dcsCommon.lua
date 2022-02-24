@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.4"
+dcsCommon.version = "2.5.5"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -62,6 +62,9 @@ dcsCommon.version = "2.5.4"
 	   - removed forced error in failed pickRandom
  2.5.4 - rotateUnitData()
        - randomBetween()
+ 2.5.5 - stringStartsWithDigit()
+       - stringStartsWithLetter()
+	   - stringIsPositiveNumber()
 	   
 --]]--
 
@@ -1700,7 +1703,31 @@ dcsCommon.version = "2.5.4"
 		return trimmedArray
 	end
 	
-	-- same as cfxZones, this is the commonly used, may need to remove from zones
+	function dcsCommon.stringIsPositiveNumber(theString)
+		-- only full integer positive numbers supported 
+		if not theString then return false end 
+--		if theString == "" then return false end 
+		for i = 1, #theString do 
+			local c = theString:sub(i,i)
+			if c < "0" or c > "9" then return false end 
+		end
+		return true 
+	end
+	
+	function dcsCommon.stringStartsWithDigit(theString)
+		if #theString < 1 then return false end 
+		local c = string.sub(theString, 1, 1) 
+		return c >= "0" and c <= "9" 
+	end
+	
+	function dcsCommon.stringStartsWithLetter(theString)
+		if #theString < 1 then return false end 
+		local c = string.sub(theString, 1, 1)
+		if c >= "a" and c <= "z" then return true end  
+		if c >= "A" and c <= "Z" then return true end 
+		return false 
+	end
+	
 	function dcsCommon.stringStartsWith(theString, thePrefix)
 		return theString:find(thePrefix) == 1
 	end
@@ -2109,8 +2136,8 @@ end
 	function dcsCommon.init()
 		cbID = 0
 		dcsCommon.uuIdent = 0
-		if (dcsCommon.verbose) then
-		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded successfully", 10)
+		if (dcsCommon.verbose) or true then
+		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 10)
 		end
 	end
 

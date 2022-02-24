@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.1.1"
+cloneZones.version = "1.2.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -7,7 +7,10 @@ cloneZones.requiredLibs = {
 	"cfxMX", 
 }
 cloneZones.cloners = {}
-
+cloneZones.callbacks = {}
+cloneZones.unitXlate = {}
+cloneZones.groupXlate = {} -- used to translate original groupID to cloned. only holds last spawned group id 
+cloneZones.uniqueCounter = 9200000 -- we start group numbering here 
 --[[--
 	Clones Groups from ME mission data
 	Copyright (c) 2022 by Christian Franz and cf/x AG
@@ -18,6 +21,16 @@ cloneZones.cloners = {}
 	1.1.0 - support for static objects
 	      - despawn? attribute 
 	1.1.1 - despawnAll: isExist guard 
+	      - map in? to f? 
+	1.2.0 - Lua API integration: callbacks 
+		  - groupXlate struct
+		  - unitXlate struct 
+		  - resolveReferences 
+		  - getGroupsInZone rewritten for data 
+		  - static resolve 
+		  - linkUnit resolve 
+		  - clone? synonym
+		  - empty! and method attributes
 	
 --]]--
 
@@ -38,18 +51,82 @@ function cloneZones.getCloneZoneByName(aName)
 	
 	return nil 
 end
+
+--
+-- callbacks 
+--
+
+function cloneZones.addCallback(theCallback)
+	if not theCallback then return end 
+	table.insert(cloneZones.callbacks, theCallback)
+end
+
+-- reasons for callback 
+-- "will despawn group" - args is the group about to be despawned
+-- "did spawn group" -- args is group that was spawned
+-- "will despawn static"
+-- "did spawn static"
+-- "spawned" -- completed spawn cycle. args contains .groups and .statics spawned 
+-- "empty" -- all spawns have been killed, args is empty 
+-- "wiped" -- preWipe executed 
+-- "<none" -- something went wrong 
+
+function cloneZones.invokeCallbacks(theZone, reason, args)
+	if not theZone then return end 
+	if not reason then reason = "<none>" end 
+	if not args then args = {} end 
+	
+	-- invoke anyone who wants to know that a group 
+	-- of people was rescued.
+	for idx, cb in pairs(cloneZones.callbacks) do 
+		cb(theZone, reason, args)
+	end
+end
+
+-- group translation orig id 
+
 --
 -- reading zones
 --
+function cloneZones.partOfGroupDataInZone(theZone, theUnits)
+	local zP = cfxZones.getPoint(theZone)
+	zP.y = 0
+	
+	for idx, aUnit in pairs(theUnits) do 
+		local uP = {}
+		uP.x = aUnit.x 
+		uP.y = 0
+		uP.z = aUnit.y -- !! y-z
+		local dist = dcsCommon.dist(uP, zP)
+		if dist <= theZone.radius then return true  end 
+	end 
+	return false 
+end
 
+function cloneZones.allGroupsInZoneByData(theZone) 
+	local theGroupsInZone = {}
+	local radius = theZone.radius 
+	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
+		if groupData.units then 
+			if cloneZones.partOfGroupDataInZone(theZone, groupData.units) then 
+				theGroup = Group.getByName(groupName)
+				table.insert(theGroupsInZone, theGroup)
+			end
+		end
+	end
+	return theGroupsInZone
+end
 
 function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
-	local localZones = cfxZones.allGroupsInZone(theZone)
+	if cloneZones.verbose then 
+		trigger.action.outText("+++clnZ: new cloner " .. theZone.name, 30)
+	end
+
+	local localZones = cloneZones.allGroupsInZoneByData(theZone)  
 	local localObjects = cfxZones.allStaticsInZone(theZone)
 	theZone.cloner = true -- this is a cloner zoner 
 	theZone.mySpawns = {}
 	theZone.myStatics = {}
-	--theZone.groupVectors = {}
 	theZone.origin = cfxZones.getPoint(theZone) -- save reference point for all groupVectors 
 	
 	-- source tells us which template to use. it can be the following:
@@ -72,8 +149,15 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 			if gName then 
 				table.insert(theZone.cloneNames, gName)
 				table.insert(theZone.mySpawns, aGroup) -- collect them for initial despawn
+				-- now get group data and save a lookup for 
+				-- resolving internal references 
+				local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(gName)
+				local origID = rawData.groupId
+--				cloneZones.templateGroups[gName] = origID 
+--				cloneZones.templateGroupsReverse[origID] = gName
 			end 	
 		end
+		
 		for idx, aStatic in pairs (localObjects) do 
 			local sName = aStatic:getName()
 			if sName then 
@@ -111,6 +195,12 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
 	
+	-- synonyms
+	if cfxZones.hasProperty(theZone, "clone?") then 
+		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "clone?", "none")
+		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
+	end
+	
 	-- deSpawn?
 	if cfxZones.hasProperty(theZone, "deSpawn?") then 
 		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deSpawn?", "none")
@@ -127,16 +217,19 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.emptyFlag = cfxZones.getNumberFromZoneProperty(theZone, "empty+1", "<None>") -- note string on number default
 	end
 	
+	if cfxZones.hasProperty(theZone, "empty!") then 
+		theZone.emptyBangFlag = cfxZones.getNumberFromZoneProperty(theZone, "empty!", "<None>") -- note string on number default
+	end
+	
+	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	
 	if cfxZones.hasProperty(theZone, "masterOwner") then 
 		theZone.masterOwner = cfxZones.getStringFromZoneProperty(theZone, "masterOwner", "<none>")
 	end
 	
-	--cloneZones.spawnWithCloner(theZone)
 	theZone.turn = cfxZones.getNumberFromZoneProperty(theZone, "turn", 0)
 	
-	-- make sure we spawn at least once 
-	-- bad idea, since we may want to simply create a template
-	-- if not theZone.spawnFlag then theZone.onStart = true end 
+	-- we end with clear plate 
 end
 
 -- 
@@ -148,7 +241,10 @@ function cloneZones.despawnAll(theZone)
 		trigger.action.outText("wiping <" .. theZone.name .. ">", 30)
 	end 
 	for idx, aGroup in pairs(theZone.mySpawns) do 
+		--trigger.action.outText("++clnZ: despawn all " .. aGroup.name, 30)
+		
 		if aGroup:isExist() then 
+			cloneZones.invokeCallbacks(theZone, "will despawn group", aGroup)
 			Group.destroy(aGroup)
 		end 
 	end
@@ -156,7 +252,10 @@ function cloneZones.despawnAll(theZone)
 		-- warning! may be mismatch because we are looking at groups
 		-- not objects. let's see
 		if aStatic:isExist() then 
-			trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
+			if cloneZones.verbose then 
+				trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
+			end 
+			cloneZones.invokeCallbacks(theZone, "will despawn static", aStatic)
 			Object.destroy(aStatic) -- we don't aStatio:destroy() to find out what it is
 		end 
 	end
@@ -165,7 +264,7 @@ function cloneZones.despawnAll(theZone)
 end
 
 function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints)
-	--trigger.action.outText("Update loc - zone delta: [" .. zoneDelta.x .. "," .. zoneDelta.z .. "]", 30)
+	
 	-- remember that zoneDelta's [z] modifies theData's y!!
 	theData.x = theData.x + zoneDelta.x 
 	theData.y = theData.y + zoneDelta.z -- !!!
@@ -178,8 +277,6 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 	-- first waypoint, but only all others if asked 
 	-- to 
 	local theRoute = theData.route 
-	-- TODO: vehicles can have 'spans' - may need to program for 
-	-- those as well. we currently only go for points 
 	if theRoute then 
 		local thePoints = theRoute.points 
 		if thePoints and #thePoints > 0 then 
@@ -227,8 +324,13 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 		end
 	end
 end
+function cloneZones.uniqueID()
+	local uid = cloneZones.uniqueCounter
+	cloneZones.uniqueCounter = cloneZones.uniqueCounter + 1
+	return uid 
+end
 
-function cloneZones.uniqueNameGroupData(theData) 
+function cloneZones.uniqueNameGroupData(theData)  
 	theData.name = dcsCommon.uuid(theData.name)
 	local units = theData.units 
 	for idx, aUnit in pairs(units) do 
@@ -236,6 +338,21 @@ function cloneZones.uniqueNameGroupData(theData)
 	end 
 end 
 
+function cloneZones.uniqueIDGroupData(theData)
+	theData.groupId = cloneZones.uniqueID()
+end
+
+function cloneZones.uniqueIDUnitData(theData)
+	if not theData then return end 
+	if not theData.units then return end 
+	local units = theData.units 
+	for idx, aUnit in pairs(units) do 
+		aUnit.CZorigID = aUnit.unitId 
+		aUnit.unitId = cloneZones.uniqueID()
+		aUnit.CZTargetID = aUnit.unitId
+	end 
+
+end
 
 function cloneZones.resolveOwnership(spawnZone, ctry)
 	if not spawnZone.masterOwner then return ctry end 
@@ -254,9 +371,151 @@ function cloneZones.resolveOwnership(spawnZone, ctry)
 	return ctry 
 end
 
+--
+-- resolve external group references 
+-- 
+
+function cloneZones.resolveGroupID(gID, rawData, dataTable, reason)
+	local resolvedID = gID
+	local myOName = rawData.CZorigName
+	local groupName = cfxMX.groupNamesByID[gID]
+	--trigger.action.outText("Resolve for <" .. myOName .. "> the external ID: " .. gID .. " --> " .. groupName .. " for <" .. reason.. "> task", 30)
+	
+	-- first, check if this an internal reference, i.e. inside the same 
+	-- zone template 
+	for idx, otherData in pairs(dataTable) do
+		-- look in own data table 
+		if otherData.CZorigName == groupName then 
+			-- using cfxMX for clarity only (name access)
+			resolvedID = otherData.CZTargetID
+			--trigger.action.outText("resolved (internally) " .. gID .. " to " .. resolvedID, 30)
+			return resolvedID
+		end
+	end
+	
+	-- now check if we have spawned this before 
+	local lastClone = cloneZones.groupXlate[gID]
+	if lastClone then 
+		resolvedID = lastClone
+		--trigger.action.outText("resolved (EXT) " .. gID .. " to " .. resolvedID, 30)
+		return resolvedID	
+	end
+	
+	-- if we get here, reference is not to a cloned item 
+	--trigger.action.outText("resolved " .. gID .. " to " .. resolvedID, 30)
+	return resolvedID
+end 
+
+function cloneZones.resolveUnitID(uID, rawData, dataTable, reason)
+-- also resolves statics as they share ID with units 
+	local resolvedID = uID
+	--trigger.action.outText("Resolve reference to unitId <" .. uID .. "> for <" .. reason.. "> task", 30)
+	
+	-- first, check if this an internal reference, i.e. inside the same 
+	-- zone template 
+	for idx, otherData in pairs(dataTable) do
+		-- iterate all units
+		for idy, aUnit in pairs(otherData.units) do 
+			if aUnit.CZorigID == uID then 
+				resolvedID = aUnit.CZTargetID
+				--trigger.action.outText("resolved (internally) " .. uID .. " to " .. resolvedID, 30)
+				return resolvedID
+			end
+		end		
+
+	end
+	
+	-- now check if we have spawned this before 
+	local lastClone = cloneZones.unitXlate[uID]
+	if lastClone then 
+		resolvedID = lastClone
+		--trigger.action.outText("resolved (U-EXT) " .. uID .. " to " .. resolvedID, 30)
+		return resolvedID	
+	end
+	
+	-- if we get here, reference is not to a cloned item 
+	--trigger.action.outText("resolved G-" .. uID .. " to " .. resolvedID, 30)
+	return resolvedID
+end 
+
+function cloneZones.resolveStaticLinkUnit(uID)
+	local resolvedID = uID
+	local lastClone = cloneZones.unitXlate[uID]
+	if lastClone then 
+		resolvedID = lastClone
+		--trigger.action.outText("resolved (U-EXT) " .. uID .. " to " .. resolvedID, 30)
+		return resolvedID	
+	end
+	return resolvedID
+end
+
+function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
+-- check to see if we really need data table, as we have theZone 
+-- perform a check of route for group or unit references 
+	if not rawData then return end 
+	local myOName = rawData.CZorigName 
+
+	if rawData.route and rawData.route.points then 
+		local points = rawData.route.points 
+		for idx, aPoint in pairs(points) do 
+			-- check if there is a link unit here and resolve 
+			if aPoint.linkUnit then 
+				local gID = aPoint.linkUnit
+				local resolvedID = cloneZones.resolveUnitID(gID, rawData, dataTable, "linkUnit")
+				aPoint.linkUnit = resolvedID
+				--trigger.action.outText("resolved link unit to "..resolvedID .. " for " .. rawData.name, 30)
+			end
+			
+			-- iterate all tasks assigned to point
+			local task = aPoint.task
+			if task and task.params and task.params.tasks then
+				local tasks = task.params.tasks 
+				for idy, taskData in pairs(tasks) do
+					-- resolve group references in TASKS
+					if taskData.id and taskData.params and taskData.params.groupId
+					then 
+						-- we resolve group reference 
+						local gID = taskData.params.groupId
+						local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, taskData.id)
+						taskData.params.groupId = resolvedID
+						
+					end
+					
+					-- resolve unit references in TASKS
+					if taskData.id and taskData.params and taskData.params.unitId
+					then 
+						-- we don't look for keywords, we simply resolve 
+						local uID = taskData.params.unitId 
+						local resolvedID = cloneZones.resolveUnitID(uID, rawData, dataTable, taskData.id)
+						taskData.params.unitId = resolvedID
+					end
+					
+					-- resolve unit references in ACTIONS
+					if taskData.params and taskData.params.action and 
+					taskData.params.action.params and taskData.params.action.params.unitId then 
+						local uID = taskData.params.action.params.unitId 
+						local resolvedID = cloneZones.resolveUnitID(uID, rawData, dataTable, "Action")
+						taskData.params.action.params.unitId = resolvedID
+					end
+				end	
+			end
+		end
+	end 
+end 
+
+function cloneZones.resolveReferences(theZone, dataTable) 
+	-- when an action refers to another group, we check if 
+	-- the group referred to is also a clone, and update 
+	-- the reference to the newest incardnation 
+	
+	for idx, rawData in pairs(dataTable) do 
+		-- resolve references in waypoints
+		cloneZones.resolveWPReferences(rawData, theZone, dataTable)
+	end
+end
+
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
-	--trigger.action.outText("ENTER: Spawn with template " .. theZone.name .. " for spawnZone " .. spawnZone.name, 30)
-	-- theZone is the zoner with the template
+	-- theZone is the cloner with the template
 	-- spawnZone is the spawner with settings 
 	--if not spawnZone then spawnZone = theZone end 
 	local newCenter = cfxZones.getPoint(spawnZone) 
@@ -265,17 +524,23 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	
 	local spawnedGroups = {}
 	local spawnedStatics = {}
+	local dataToSpawn = {}
 	
 	for idx, aGroupName in pairs(theZone.cloneNames) do 
 		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(aGroupName)
-
-		if rawData.name == aGroupName then 
-		else 
+		rawData.CZorigName = rawData.name -- save original group name
+		local origID = rawData.groupId -- save original group ID 
+		rawData.CZorigID = origID 
+		cloneZones.uniqueIDGroupData(rawData) -- assign unique ID we know 
+		cloneZones.uniqueIDUnitData(rawData) -- assign unique ID for units -- saves old unitId as CZorigID
+		rawData.CZTargetID = rawData.groupId -- save 
+		if rawData.name ~= aGroupName then 
 			trigger.action.outText("Clone: FAILED name check", 30)
 		end
 		
 		-- now use raw data to spawn and see if it works outabox
 		local theCat = cfxMX.catText2ID(cat)
+		rawData.CZtheCat = theCat -- save cat 
 		
 		-- update their position if not spawning to exact same location 
 		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute)
@@ -286,29 +551,76 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- make sure unit and group names are unique 
 		cloneZones.uniqueNameGroupData(rawData)
 		
-		-- see waht country we spawn for
+		-- see what country we spawn for
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
-		
-		local theGroup = coalition.addGroup(ctry, theCat, rawData)
+		rawData.CZctry = ctry -- save ctry 
+		table.insert(dataToSpawn, rawData)
+	end 
+	
+	-- now resolve references to other cloned units for all raw data
+	-- we must do this BEFORE we spawn
+	cloneZones.resolveReferences(theZone, dataToSpawn)
+	
+	-- now spawn all raw data 
+	for idx, rawData in pairs (dataToSpawn) do 
+		-- now spawn and save to clones
+		local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
+		
+		--trigger.action.outText("spawned group " .. rawData.name .. "consisting of", 30)
+		
+		-- update groupXlate table 
+		local newGroupID = theGroup:getID() -- new ID assigned by DCS
+		local origID = rawData.CZorigID -- before we materialized
+		cloneZones.groupXlate[origID] = newGroupID
+		-- now also save all units for references 	
+		-- and verify assigned vs target ID 
+		for idx, aUnit in pairs(rawData.units) do 
+			-- access the proposed name 
+			local uName = aUnit.name 
+			local gUnit = Unit.getByName(uName)
+			if gUnit then 
+				-- unit exists. compare planned and assigned ID
+				local uID = tonumber(gUnit:getID())
+				if uID == aUnit.CZTargetID then 
+					--trigger.action.outText("unit " .. uName .. "#"..uID, 30)
+					-- all good 
+				else 
+					trigger.action.outText("clnZ: post-clone verification failed for unit <" .. uName .. ">: ÎD mismatch: " .. uID .. " -- " .. aUnit.CZTargetID, 30)
+				end 
+				cloneZones.unitXlate[aUnit.CZorigID] = uID 
+			else 
+				trigger.action.outText("clnZ: post-clone verifiaction failed for unit <" .. uName .. ">: not found", 30) 
+			end 
+		end
+		
+		-- check if our assigned ID matches the handed out by 
+		-- DCS
+		if newGroupID == rawData.CZTargetID then 
+			-- we are good
+		else 
+			trigger.action.outText("clnZ: MISMATCH " .. rawData.name .. " target ID " .. rawData.CZTargetID .. " does not match " .. newGroupID, 30)
+		end 
+
+		cloneZones.invokeCallbacks(theZone, "did spawn group", theGroup)
 	end
 
 	-- static spawns 
 	for idx, aStaticName in pairs(theZone.staticNames) do 
-		local rawData, cat, ctry, parent = cfxMX.getStaticFromDCSbyName(aStaticName)
+		local rawData, cat, ctry, parent = cfxMX.getStaticFromDCSbyName(aStaticName) -- returns a UNIT data block
 		
 		if not rawData then
-			trigger.action.outText("Static Clone: no such group <"..aStaticName .. ">", 30)
-			
+			trigger.action.outText("Static Clone: no such group <"..aStaticName .. ">", 30)			
 		elseif rawData.name == aStaticName then 
-			trigger.action.outText("Static Clone: suxess!!! <".. aStaticName ..">", 30)
-
+			-- all good
 		else 
 			trigger.action.outText("Static Clone: FAILED name check for <" .. aStaticName .. ">", 30)
 		end
-		
+		local origID = rawData.unitId -- save original unit ID
+		rawData.CZorigID = origID 
+				
 		-- now use raw data to spawn and see if it works outabox
-		local theCat = cfxMX.catText2ID(cat) -- will be "static"
+		--local theCat = cfxMX.catText2ID(cat) -- will be "static"
 		
 		-- move origin 
 		rawData.x = rawData.x + zoneDelta.x 
@@ -317,20 +629,56 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- apply turning 
 		dcsCommon.rotateUnitData(rawData, spawnZone.turn, newCenter.x, newCenter.z)
 		
-		-- make sure static name is unique 
---		cloneZones.uniqueNameGroupData(rawData)
+		-- make sure static name is unique and remember original 
 		rawData.name = dcsCommon.uuid(rawData.name)
-		rawData.unitID = nil -- simply forget, will be newly issued 
+		rawData.unitId = cloneZones.uniqueID()  
+		rawData.CZTargetID = rawData.unitId 
 		
-		-- see waht country we spawn for
+		-- see what country we spawn for
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
 		
+		-- handle linkUnit if provided  
+		if rawData.linkUnit then 
+			--trigger.action.outText("has link to " .. rawData.linkUnit, 30)
+			local lU = cloneZones.resolveStaticLinkUnit(rawData.linkUnit)
+			--trigger.action.outText("resolved to " .. lU, 30)
+			rawData.linkUnit = lU 
+			if not rawData.offsets then 
+				rawData.offsets = {}
+				rawData.offsets.angle = 0
+				rawData.offsets.x = 0
+				rawData.offsets.y = 0
+				--trigger.action.outText("clnZ: link required offset for " .. rawData.name, 30)
+			end 
+			rawData.offsets.y = rawData.offsets.y - zoneDelta.z 
+			rawData.offsets.x = rawData.offsets.x - zoneDelta.x 
+			rawData.offsets.angle = rawData.offsets.angle + spawnZone.turn
+			rawData.linkOffset = true 
+--			trigger.action.outText("zone deltas are " .. zoneDelta.x .. ", " .. zoneDelta.y, 30)
+		end
+		
 		local theStatic = coalition.addStaticObject(ctry, rawData)
+		local newStaticID = tonumber(theStatic:getID()) 
 		table.insert(spawnedStatics, theStatic)
+		-- we don't mix groups with units, so no lookup tables for 
+		-- statics 
+		if newStaticID == rawData.CZTargetID then 
+--			trigger.action.outText("Static ID OK: " .. newStaticID  .. " for " .. rawData.name, 30)
+		else 
+			trigger.action.outText("Static ID mismatch: " .. newStaticID .. " vs (target) " .. rawData.CZTargetID .. " for " .. rawData.name, 30)
+		end
+		cloneZones.unitXlate[origID] = newStaticID -- same as units 
+		
+		cloneZones.invokeCallbacks(theZone, "did spawn static", theStatic)
 		--]]--
-		trigger.action.outText("Static spawn: spawned " .. aStaticName, 30)
+		if cloneZones.verbose then 
+			trigger.action.outText("Static spawn: spawned " .. aStaticName, 30)
+		end 
 	end	
-
+	local args = {}
+	args.groups = spawnedGroups
+	args.statics = spawnedStatics
+	cloneZones.invokeCallbacks(theZone, "spawned", args)
 	return spawnedGroups, spawnedStatics 
 end
 
@@ -381,6 +729,7 @@ function cloneZones.spawnWithCloner(theZone)
 	-- pre-Wipe?
 	if theZone.preWipe then 
 		cloneZones.despawnAll(theZone)
+		cloneZones.invokeCallbacks(theZone, "wiped", {})
 	end
 	
 
@@ -454,6 +803,7 @@ function cloneZones.hasLiveUnits(theZone)
 	return false
 end
 
+-- old code, deprecated
 function cloneZones.pollFlag(flagNum, method)
 	-- we currently ignore method 
 	local num = trigger.misc.getUserFlag(flagNum)
@@ -491,16 +841,23 @@ function cloneZones.update()
 			end
 		end
 		
-		-- see if we are empty and should signal
-		if aZone.emptyFlag and aZone.hasClones then 
-			if cloneZones.countLiveUnits(aZone) < 1 then 
-				-- we are depleted. poll flag once, then remember we have 
-				-- polled 
+		-- empty handling 
+		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
+		if isEmpty then 
+			-- see if we need to bang a flag 
+			if aZone.emptyFlag then 
 				cloneZones.pollFlag(aZone.emptyFlag)
-				aZone.hasClones = false 
+			end 
+			
+			if aZone.emptyBangFlag then 
+				cfxZones.pollFlag(aZone.emptyBangFlag, aZone.method)
 			end
+			-- invoke callbacks 
+			cloneZones.invokeCallbacks(aZone, "empty", {}) 
+			
+			-- prevent isEmpty next pass
+			aZone.hasClones = false 
 		end
-		
 		
 	end
 end
@@ -571,8 +928,25 @@ function cloneZones.start()
 	return true 
 end
 
+
 -- let's go!
 if not cloneZones.start() then 
 	trigger.action.outText("cf/x Clone Zones aborted: missing libraries", 30)
 	cloneZones = nil 
 end
+
+--[[-- callback testing 
+czcb = {}
+function czcb.callback(theZone, reason, args)
+	trigger.action.outText("clone CB: " .. theZone.name .. " with " .. reason, 30)
+end
+cloneZones.addCallback(czcb.callback)
+--]]--
+
+--[[--
+	to resolve tasks 
+
+	- AFAC 
+		- FAC Assign group 
+	- set freq for unit 
+--]]--

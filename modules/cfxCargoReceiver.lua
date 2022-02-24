@@ -1,5 +1,5 @@
 cfxCargoReceiver = {}
-cfxCargoReceiver.version = "1.1.0" 
+cfxCargoReceiver.version = "1.2.0" 
 cfxCargoReceiver.ups = 1 -- once a second 
 cfxCargoReceiver.maxDirectionRange = 500 -- in m. distance when cargo manager starts talking to pilots who are carrying that cargo
 cfxCargoReceiver.requiredLibs = {
@@ -13,7 +13,9 @@ cfxCargoReceiver.requiredLibs = {
   - 1.0.0 initial vbersion
   - 1.1.0 added flag manipulation options
           no negative agl on announcement 
-          silent attribute		  
+          silent attribute		
+  - 1.2.0 method
+		  f!, cargoReceived!
   
   
   CargoReceiver is a zone enhancement you use to be automatically 
@@ -67,6 +69,17 @@ function cfxCargoReceiver.processReceiverZone(aZone) -- process attribute and ad
 	if cfxZones.hasProperty(aZone, "f-1") then 
 		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f-1", "999")
 	end
+	
+	-- new method support
+	aZone.method = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
+	
+	if cfxZones.hasProperty(aZone, "f!") then 
+		aZone.outReceiveFlag = cfxZones.getNumberFromZoneProperty(aZone, "f!", -1)
+	end
+		if cfxZones.hasProperty(aZone, "cargoReceived!") then 
+		aZone.outReceiveFlag = cfxZones.getNumberFromZoneProperty(aZone, "cargoReceived!", -1)
+	end
+	
 end
 
 function cfxCargoReceiver.addReceiverZone(aZone)
@@ -132,6 +145,9 @@ function cfxCargoReceiver.cargoEvent(event, object, name)
 					trigger.action.setUserFlag(aZone.decreaseFlag, val)
 				end
 				
+				if aZone.outReceiveFlag then 
+					cfxZones.pollFlag(aZone.outReceiveFlag, aZone.method)
+				end
 				
 				--trigger.action.outText("+++rcv: " .. name .. " delivered in zone " .. aZone.name, 30)
 				--trigger.action.outSound("Quest Snare 3.wav")

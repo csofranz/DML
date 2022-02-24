@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.1.4"
+cfxObjectSpawnZones.version = "1.1.5"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -23,6 +23,7 @@ cfxObjectSpawnZones.ups = 1
 --         - added possibility to autoUnlink
 --   1.1.3 - ME-triggered flag via f? and triggerFlag 
 --   1.1.4 - activate?, pause? attributes 
+--   1.1.5 - spawn?, spawnObjects? synonyms
 
 -- Object spawn zones have the following major uses:
 --  - dynamically spawn cargo 
@@ -82,6 +83,16 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "spawn?") then 
+		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
+	if cfxZones.hasProperty(inZone, "spawnObjects?") then 
+		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObjects?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	
