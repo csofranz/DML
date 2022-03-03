@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.1.5"
+cfxObjectSpawnZones.version = "1.2.0"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -24,35 +24,8 @@ cfxObjectSpawnZones.ups = 1
 --   1.1.3 - ME-triggered flag via f? and triggerFlag 
 --   1.1.4 - activate?, pause? attributes 
 --   1.1.5 - spawn?, spawnObjects? synonyms
-
--- Object spawn zones have the following major uses:
---  - dynamically spawn cargo 
---  - litter a zone with static obejcts quickly 
---  - linking static dynamic objects with ships, including cargo  
---
---
--- How do we recognize an object spawn zone?
--- contains a "objectSpawner" attribute
--- a spawner must also have the following attributes
---  - objectSpawner - anything, must be present to signal. put in 'ground' to be able to expand to other types  
---  - types - type strings, comma separated. They all spawn in the same spot. 
--- see here: https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
---  - count - repeat types n times. optional, defaults to 1
---  - country  - defaults to 2 (usa) -- see here https://wiki.hoggitworld.com/view/DCS_enum_country
---    some important: 0 = Russia, 2 = US, 82 = UN neutral
---    country is converted to coalition and then assigned to
---    Joint Task Force <side> upon spawn
---  - baseName - MANDATORY, for naming spawned objects - MUST BE UNIQUE!!!!
---  - heading in DEGREES (default 0 = north ) direction entire group is facing 
---  - weight - weight in kg if transportable
---  - isCargo - boolean yes means it can be carried by other units
---  - cooldown - seconds to cool down before re-spawning
---  - maxSpawns - how many times we spawn. default = 1, -1 = unlimited
---  - requestable -- via comms menu, will auto-pause 
---  - managed -- if cargo, it's automatically passed to cfx cargo manager for handling (if cargo manager is loaded) 
---  - (linkedUnit) for placing on ships 
---  - (useOffset) for not using ship's center 
-
+--   1.2.0 - DML flag upgrade 
+ 
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
 cfxObjectSpawnZones.allSpawners = {}
 cfxObjectSpawnZones.callbacks = {} -- signature: cb(reason, group, spawner)
@@ -83,30 +56,31 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
-		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	
 	if cfxZones.hasProperty(inZone, "spawn?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
-		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	
 	if cfxZones.hasProperty(inZone, "spawnObjects?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObjects?", "none")
-		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
+	
+	if theSpawner.triggerFlag then 
+		theSpawner.lastTriggerValue = cfxZones.getFlagValue(theSpawner.triggerFlag, theSpawner) -- trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	end
+	
 	
 	if cfxZones.hasProperty(inZone, "activate?") then 
 		theSpawner.activateFlag = cfxZones.getStringFromZoneProperty(inZone, "activate?", "none")
-		theSpawner.lastActivateValue = trigger.misc.getUserFlag(theSpawner.activateFlag)
+		theSpawner.lastActivateValue = cfxZones.getFlagValue(theSpawner.activateFlag, theSpawner)   --trigger.misc.getUserFlag(theSpawner.activateFlag)
 	end
 	
 	if cfxZones.hasProperty(inZone, "pause?") then 
 		theSpawner.pauseFlag = cfxZones.getStringFromZoneProperty(inZone, "pause?", "none")
-		theSpawner.lastPauseValue = trigger.misc.getUserFlag(theSpawner.pauseFlag)
+		theSpawner.lastPauseValue = cfxZones.getFlagValue(theSpawner.lastPauseValue, theSpawner) -- trigger.misc.getUserFlag(theSpawner.pauseFlag)
 	end
 	
-	--theSpawner.types = cfxZones.getZoneProperty(inZone, "types")
 	theSpawner.types = cfxZones.getStringFromZoneProperty(inZone, "types", "White_Tyre")
 	local n = cfxZones.getNumberFromZoneProperty(inZone, "count", 1) -- DO NOT CONFUSE WITH OWN PROPERTY COUNT for unique names!!!
 	if n < 1 then n = 1 end -- sanity check. 
@@ -140,13 +114,11 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	theSpawner.requestable = cfxZones.getBoolFromZoneProperty(inZone, "requestable", false)
 	if theSpawner.requestable then theSpawner.paused = true end
 	
-	
 	-- see if it is linked to a ship to set realtive orig headiong
 	
 	if inZone.linkedUnit  then
 		local shipUnit = inZone.linkedUnit
 		theSpawner.linkedUnit = shipUnit
-		--trigger.action.outText("+++obSpZ: zone " .. inZone.name .. " linked to ship (?) " .. shipUnit:getName() .. " of cat " .. shipUnit:getCategory(), 30)
 		
 		local origHeading = dcsCommon.getUnitHeadingDegrees(shipUnit)
 		
@@ -155,10 +127,7 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 		theSpawner.dx = delta.x 
 		theSpawner.dy = delta.z
 		
-		--theSpawner.dx = inZone.dx 
-		--theSpawner.dy = inZone.dy 
 		theSpawner.origHeading = origHeading
-		--trigger.action.outText("+++obSpZ: with dx = " .. theSpawner.dx .. " dy = " .. theSpawner.dy .. " hdg = " .. origHeading, 30)
 	end
 	return theSpawner
 end
@@ -198,18 +167,8 @@ function cfxObjectSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide
 		local delta = dcsCommon.dist(aPoint, cfxZones.getPoint(aZone))
 		if delta>aRange then hasMatch = false end 
 		if aSide ~= 0 then 
-		--[[--
-			-- check if side is correct for owned zone 
-			
-		--]]--
+
 		end
-		--[[--
-		if aSide ~= aSpawner.rawOwner then 
-			-- only return spawners with this side
-			-- note: this will NOT work with neutral players 
-			hasMatch = false 
-		end
-		--]]--
 		
 		if not aSpawner.requestable then 
 			hasMatch = false 
@@ -228,10 +187,6 @@ end
 -- 
 
 function cfxObjectSpawnZones.verifySpawnOwnership(spawner)
-	--[[--
-	-- returns false ONLY if masterSpawn disagrees
-	
-	--]]--
 	return true
 end
 
@@ -433,7 +388,7 @@ function cfxObjectSpawnZones.update()
 		local needsSpawn = cfxObjectSpawnZones.needsSpawning(spawner)
 		-- check if perhaps our watchtrigger causes spawn
 		if spawner.pauseFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(spawner.pauseFlag)
+			local currTriggerVal = cfxZones.getFlagValue(spawner.pauseFlag, spawner)-- trigger.misc.getUserFlag(spawner.pauseFlag)
 			if currTriggerVal ~= spawner.lastPauseValue then
 				spawner.paused = true  
 				needsSpawn = false 
@@ -442,7 +397,7 @@ function cfxObjectSpawnZones.update()
 		end
 		
 		if spawner.triggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(spawner.triggerFlag)
+			local currTriggerVal = cfxZones.getFlagValue(spawner.triggerFlag, spawner)-- trigger.misc.getUserFlag(spawner.triggerFlag)
 			if currTriggerVal ~= spawner.lastTriggerValue then
 				needsSpawn = true 
 				spawner.lastTriggerValue = currTriggerVal
@@ -450,7 +405,7 @@ function cfxObjectSpawnZones.update()
 		end		
 		
 		if spawner.activateFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(spawner.activateFlag)
+			local currTriggerVal = spawner.getFlagValue(spawner.activateFlag, spawner) -- trigger.misc.getUserFlag(spawner.activateFlag)
 			if currTriggerVal ~= spawner.lastActivateValue then
 				spawner.paused = false  
 				spawner.lastActivateValue = currTriggerVal
@@ -517,7 +472,3 @@ if not cfxObjectSpawnZones.start() then
 	cfxObjectSpawnZones = nil 
 end
 
---[[--
-IMPROVEMENTS
- 'formations' - concentric, pile, random, array etc.
---]]--

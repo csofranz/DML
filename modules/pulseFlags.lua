@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.0.3"
+pulseFlags.version = "1.1.0"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -18,6 +18,15 @@ pulseFlags.requiredLibs = {
 			uses randomDelayFromPositiveRange
 			flag! now is string 
 			WARNING: still needs full alphaNum flag upgrade 
+	- 1.1.0 Full DML flag integration 
+	        removed zone!
+			made pulse and pulse! the out flag carrier
+			done!
+			pulsesDone! synonym
+			pausePulse? synonym
+			pulseMethod synonym
+			startPulse? synonym 
+			pulseStopped synonym
 	
 --]]--
 
@@ -32,8 +41,14 @@ end
 --
 
 function pulseFlags.createPulseWithZone(theZone)
-	theZone.flag = cfxZones.getStringFromZoneProperty(theZone, "flag!", -1) -- the flag to pulse 
+	if cfxZones.hasProperty(theZone, "pulse") then 
+		theZone.pulseFlag = cfxZones.getStringFromZoneProperty(theZone, "pulse", "*none") -- the flag to pulse 
+	end
 
+	if cfxZones.hasProperty(theZone, "pulse!") then 
+		theZone.pulseFlag = cfxZones.getStringFromZoneProperty(theZone, "pulse!", "*none") -- the flag to pulse 
+	end
+	
 	-- time can be number, or number-number range
 	theZone.minTime, theZone.time = cfxZones.getPositiveRangeFromZoneProperty(theZone, "time", 1)
 	if pulseFlags.verbose then 
@@ -45,23 +60,45 @@ function pulseFlags.createPulseWithZone(theZone)
 		
 	-- trigger flags 
 	if cfxZones.hasProperty(theZone, "activate?") then 
-		theZone.activateFlag = cfxZones.getStringFromZoneProperty(theZone, "activate?", "none")
-		theZone.lastActivateValue = trigger.misc.getUserFlag(theZone.activateFlag) -- save last value
+		theZone.activatePulseFlag = cfxZones.getStringFromZoneProperty(theZone, "activate?", "none")
+		theZone.lastActivateValue = cfxZones.getFlagValue(theZone.activatePulseFlag, theZone) -- trigger.misc.getUserFlag(theZone.activatePulseFlag) -- save last value
+	end
+	
+	if cfxZones.hasProperty(theZone, "startPulse?") then 
+		theZone.activatePulseFlag = cfxZones.getStringFromZoneProperty(theZone, "startPulse?", "none")
+		theZone.lastActivateValue = cfxZones.getFlagValue(theZone.activatePulseFlag, theZone) -- trigger.misc.getUserFlag(theZone.activatePulseFlag) -- save last value
 	end
 	
 	if cfxZones.hasProperty(theZone, "pause?") then 
-		theZone.pauseFlag = cfxZones.getStringFromZoneProperty(theZone, "pause?", "none")
-		theZone.lastPauseValue = trigger.misc.getUserFlag(theZone.pauseFlag) -- save last value
+		theZone.pausePulseFlag = cfxZones.getStringFromZoneProperty(theZone, "pause?", "*none")
+		theZone.lastPauseValue = cfxZones.getFlagValue(theZone.lastPauseValue, theZone)-- trigger.misc.getUserFlag(theZone.pausePulseFlag) -- save last value
 	end
 	
-	theZone.paused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false)
+	if cfxZones.hasProperty(theZone, "pausePulse?") then 
+		theZone.pausePulseFlag = cfxZones.getStringFromZoneProperty(theZone, "pausePulse?", "*none")
+		theZone.lastPauseValue = cfxZones.getFlagValue(theZone.lastPauseValue, theZone)-- trigger.misc.getUserFlag(theZone.pausePulseFlag) -- save last value
+	end
 	
+	theZone.pulsePaused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false)
+	
+	if cfxZones.hasProperty(theZone, "pulseStopped") then 
+		theZone.pulsePaused = cfxZones.getBoolFromZoneProperty(theZone, "pulseStopped", false)
+	end
 	
 	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
 	
+	if cfxZones.hasProperty(theZone, "pulseMethod") then
+		theZone.method = cfxZones.getStringFromZoneProperty(theZone, "pulseMethod", "flip")
+	end
 	-- done flag 
 	if cfxZones.hasProperty(theZone, "done+1") then 
-		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done+1", "none")
+		theZone.pulseDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "done+1", "*none")
+	end
+	if cfxZones.hasProperty(theZone, "pulsesDone!") then 
+		theZone.pulseDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "pulsesDone!", "*none")
+	end
+	if cfxZones.hasProperty(theZone, "done!") then 
+		theZone.pulseDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "done!", "*none")
 	end
 
 	theZone.pulsing = false -- not running 
@@ -78,7 +115,7 @@ function pulseFlags.doPulse(args)
 	local theZone = args[1]
 	-- check if we have been paused. if so, simply 
 	-- exit with no new schedule 
-	if theZone.paused then 
+	if theZone.pulsePaused then 
 		theZone.pulsing = false 
 		return 
 	end 
@@ -86,7 +123,11 @@ function pulseFlags.doPulse(args)
 	-- do a poll on flags
 	-- first, we only do an initial pulse if zeroPulse is set
 	if theZone.hasPulsed or theZone.zeroPulse then 
-		cfxZones.pollFlag(theZone.flag, theZone.method, theZone) 
+		if pulseFlags.verbose then 
+			trigger.action.outText("+++pulF: will bang " .. theZone.pulseFlag, 30);
+		end
+		
+		cfxZones.pollFlag(theZone.pulseFlag, theZone.method, theZone) 
 	
 		-- decrease count
 		if theZone.pulses > 0 then
@@ -96,15 +137,15 @@ function pulseFlags.doPulse(args)
 			-- see if we are done 
 			if theZone.pulsesLeft < 1 then 
 				-- increment done flag if set 
-				if theZone.doneFlag then 
-					local currVal = trigger.misc.getUserFlag(theZone.doneFlag)
-					trigger.action.setUserFlag(theZone.doneFlag, currVal + 1)
+				if theZone.pulseDoneFlag then 
+					--local currVal = cfxZones.getFlagValue(theZone.pulseDoneFlag, theZone)-- trigger.misc.getUserFlag(theZone.pulseDoneFlag)
+					cfxZones.pollFlag(theZone.pulseDoneFlag, "inc", theZone) -- trigger.action.setUserFlag(theZone.pulseDoneFlag, currVal + 1)
 				end
 				if pulseFlags.verbose then 
 					trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> ended!", 30)
 				end 
 				theZone.pulsing = false 
-				theZone.paused = true 
+				theZone.pulsePaused = true 
 				return 
 			end
 		end
@@ -117,18 +158,8 @@ function pulseFlags.doPulse(args)
 	theZone.hasPulsed = true -- we are past initial pulse
 	
 	-- if we get here, schedule next pulse
-	--[[--
-	local delay = theZone.time
-	if theZone.minTime > 0 and theZone.minTime < delay then 
-		-- we want a randomized from time from minTime .. delay
-		local varPart = delay - theZone.minTime + 1
-		varPart = dcsCommon.smallRandom(varPart) - 1
-		delay = theZone.minTime + varPart
-	end
-	--]]--
 	local delay = cfxZones.randomDelayFromPositiveRange(theZone.minTime, theZone.time)
 	
-	--trigger.action.outText("***PulF: pulse <" .. theZone.name .. "> scheduled in ".. delay .."!", 30)
 	
 	-- schedule in delay time 
 	theZone.timerID = timer.scheduleFunction(pulseFlags.doPulse, args, timer.getTime() + delay)
@@ -162,7 +193,7 @@ function pulseFlags.update()
 		else 
 			-- this zone has not scheduled a new pulse 
 			-- let's see why 
-			if aZone.paused then 
+			if aZone.pulsePaused then 
 				-- ok, zone is paused. all clear 
 			else 
 				-- zone isn't paused. we need to start the zone 
@@ -171,24 +202,28 @@ function pulseFlags.update()
 		end
 		
 		-- see if we got a pause or activate command
-		if aZone.activateFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.activateFlag)
+		if aZone.activatePulseFlag then 
+			local currTriggerVal = cfxZones.getFlagValue(aZone.activatePulseFlag, aZone) -- trigger.misc.getUserFlag(aZone.activatePulseFlag)
 			if currTriggerVal ~= aZone.lastActivateValue
 			then 
-				trigger.action.outText("+++PulF: activating <" .. aZone.name .. ">", 30)
+				if pulseFlags.verbose then 
+					trigger.action.outText("+++PulF: activating <" .. aZone.name .. ">", 30)
+				end 
 				aZone.lastActivateValue = currTriggerVal
-				aZone.paused = false -- will start anew 
+				aZone.pulsePaused = false -- will start anew 
 				
 			end
 		end
 		
-		if aZone.pauseFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.pauseFlag)
+		if aZone.pausePulseFlag then 
+			local currTriggerVal = cfxZones.getFlagValue(aZone.pausePulseFlag, aZone)-- trigger.misc.getUserFlag(aZone.pausePulseFlag)
 			if currTriggerVal ~= aZone.lastPauseValue
 			then 
-				trigger.action.outText("+++PulF: pausing <" .. aZone.name .. ">", 30)
+				if pulseFlags.verbose then 
+					trigger.action.outText("+++PulF: pausing <" .. aZone.name .. ">", 30)
+				end 
 				aZone.lastPauseValue = currTriggerVal
-				aZone.paused = true  -- prevents new start 
+				aZone.pulsePaused = true  -- prevents new start 
 				if aZone.timerID then 
 					 timer.removeFunction(aZone.timerID)
 					 aZone.timerID = nil 
@@ -234,6 +269,15 @@ function pulseFlags.start()
 	
 	-- process RND Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("pulse")
+	
+	-- now create a pulse gen for each one and add them
+	-- to our watchlist 
+	for k, aZone in pairs(attrZones) do 
+		pulseFlags.createPulseWithZone(aZone) -- process attribute and add to zone
+		pulseFlags.addPulse(aZone) -- remember it so we can pulse it
+	end
+	
+	local attrZones = cfxZones.getZonesWithAttributeNamed("pulse!")
 	
 	-- now create a pulse gen for each one and add them
 	-- to our watchlist 

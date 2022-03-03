@@ -25,7 +25,9 @@ cfxArtilleryZones.verbose = false
 	   - made compatible with linked zones 
 	   - added silent attribute 
 	   - added transition time to arty command chatter 
- 2.0.2 - boom?, arty? synonyms  
+ 2.0.2 - boom?, arty? synonyms 
+ 2.1.0 - DML Flag Support 
+	   - code cleanup
  
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -276,8 +278,7 @@ function cfxArtilleryZones.doFireAt(aZone, maxDistFromCenter)
 		boomArgs.zone = aZone
 		local timeVar = 5 * (2 * dcsCommon.randomPercent() - 1.0) -- +/- 1.5 seconds
 		if timeVar < 0 then timeVar = -timeVar end 
---		if transitionTime + timeVar < 0 then timeVar = -timeVar end
-		--boomArgs.tDelta = timeVar 
+
 		timer.scheduleFunction(cfxArtilleryZones.doBoom, boomArgs, timer.getTime() + transitionTime + timeVar)
 	end
 	
@@ -286,22 +287,9 @@ function cfxArtilleryZones.doFireAt(aZone, maxDistFromCenter)
 end
 
 function cfxArtilleryZones.simFireAtZone(aZone, aGroup, dist)
-	-- all very simple. We simulate shellNum 
-	-- projectiles impacting in aZone 
-	-- before calling doFire, we calculate accuracy 
-	-- for given dist 
 	
 	if not dist then dist = aZone.spotRange end 
-	--local transitionTime = 20 -- seconds until shells hit
-	--transitionTime = aZone.transitionTime
-	--local shellNum = 17
-	--if aZone.shellNum then shellNum = aZone.shellNum end 
-	--local shellBaseStrength = 500
-	--if aZone.shellStrength  then 
 	local shellBaseStrength = aZone.shellStrength 
-	--local shellVariance = 0.2 -- +/-10% 
-	--shellVariance = aZone.shellVariance 
-	--local center = {x=aZone.point.x, y=aZone.landHeight, z=aZone.point.z} -- center of where shells hit 
 
 	local maxAccuracy = 100 -- m radius when close
 	local minAccuracy = 500 -- m radius whan at max sport dist 
@@ -314,23 +302,7 @@ function cfxArtilleryZones.simFireAtZone(aZone, aGroup, dist)
 	end
 	currAccuracy = math.floor(currAccuracy)
 	cfxArtilleryZones.doFireAt(aZone, currAccuracy) 
-	--[[-- Old code follows
-	for i=1, shellNum do
-		
-		local thePoint = dcsCommon.randomPointInCircle(currAccuracy, 0, center.x, center.z)
-		thePoint.y = land.getHeight({x=thePoint.x, y=thePoint.z})
-		local boomArgs = {}
-		local strVar = shellBaseStrength * shellVariance
-		strVar = strVar * (2 * dcsCommon.randomPercent() - 1.0) -- go from -1 to 1
-		
-		boomArgs.strength = shellBaseStrength + strVar
-		thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z}) + 1  -- elevate to ground height + 1
-		boomArgs.point = thePoint
-		local timeVar = 5 * (2 * dcsCommon.randomPercent() - 1.0) -- +/- 1.5 seconds
-		boomArgs.tDelta = timeVar 
-		timer.scheduleFunction(cfxArtilleryZones.doBoom, boomArgs, timer.getTime() + transitionTime + timeVar)
-	end
-	--]]--
+
 	aZone.artyCooldownTimer = timer.getTime() + aZone.cooldown -- 120 -- 2 minutes reload
 	if not aZone.silent then 
 		local addInfo = " with d=" .. dist .. ", var = " .. currAccuracy .. " pB=" .. shellBaseStrength .. " tt=" .. aZone.transitionTime
@@ -360,7 +332,6 @@ function cfxArtilleryZones.simSmokeZone(aZone, aGroup, aColor)
 	local currAccuracy = 200
 
 	local thePoint = dcsCommon.randomPointInCircle(currAccuracy, 50, center.x, center.z)
---	thePoint.y = land.getHeight({ x = thePoint.x, y = thePoint.z})
 	
 	timer.scheduleFunction(cfxArtilleryZones.doSmoke, {thePoint, aColor}, timer.getTime() + transitionTime)
 	
@@ -387,7 +358,7 @@ function cfxArtilleryZones.update()
 	-- iterate all zones to see if a trigger has changed 
 	for idx, aZone in pairs(cfxArtilleryZones.artilleryZones) do 
 		if aZone.artyTriggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.artyTriggerFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.artyTriggerFlag, aZone) -- trigger.misc.getUserFlag(aZone.artyTriggerFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue
 			then 
 				-- a triggered release!
@@ -438,17 +409,3 @@ if not cfxArtilleryZones.start() then
 	cfxArtilleryZones = nil 
 end
 
-
---[[--
-
-TODO: link artillery units that are starting fire, stop when all inside is destroyed
-TODO: "Free" link: look for closest artillery zone that is not cooling down or engaged with diofferent targets and is in range 
-DONE: smoke target zon
-DONE: add smoke to UI menu 
-DONE: move doBoom from demon to this module 
-DONE: trigger on flag 
-DONE: inflight time for arty projectiles
-DONE: invoke callback for firing
-TODO: duration param for bombardment  
-TODO: silent attribute 
---]]--

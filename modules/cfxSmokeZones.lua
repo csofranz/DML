@@ -13,7 +13,7 @@ cfxSmokeZone.requiredLibs = {
        - added f? attribute --> onFlag 
 	   - broke out startSmoke 
  1.0.4 - startSmoke? synonym
-	   - alphanum flag upgrade 
+	   - alphanum DML flag upgrade 
 	   - random color support 
  
 	SMOKE ZONES *** EXTENDS ZONES ***

@@ -1,5 +1,5 @@
 raiseFlag = {}
-raiseFlag.version = "1.0.0"
+raiseFlag.version = "1.0.1"
 raiseFlag.verbose = false 
 raiseFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -11,6 +11,8 @@ raiseFlag.flags = {}
 	
 	Version History
 	1.0.0 - initial release 
+	1.0.1 - synonym "raiseFlag!"
+	
 --]]--
 function raiseFlag.addRaiseFlag(theZone)
 	table.insert(raiseFlag.flags, theZone)
@@ -32,8 +34,12 @@ end
 --
 function raiseFlag.createRaiseFlagWithZone(theZone)
 	-- get flag from faiseFlag itself
-	theZone.raiseFlag = cfxZones.getStringFromZoneProperty(theZone, "raiseFlag", "<none>") -- the flag to raise 
-
+	if cfxZones.hasProperty(theZone, "raiseFlag") then
+		theZone.raiseFlag = cfxZones.getStringFromZoneProperty(theZone, "raiseFlag", "<none>") -- the flag to raise 
+	else 
+		theZone.raiseFlag = cfxZones.getStringFromZoneProperty(theZone, "raiseFlag!", "<none>") -- the flag to raise 
+	end 
+	
 	theZone.flagValue = cfxZones.getNumberFromZoneProperty(theZone, "value", 1) -- value to set to
 
 	theZone.minAfterTime, theZone.maxAfterTime = cfxZones.getPositiveRangeFromZoneProperty(theZone, "afterTime", -1)
@@ -109,7 +115,7 @@ function raiseFlag.start()
 		trigger.action.outText("cfx raise flag requires dcsCommon", 30)
 		return false 
 	end 
-	if not dcsCommon.libCheck("cfx Count Down", raiseFlag.requiredLibs) then
+	if not dcsCommon.libCheck("cfx Raise Flag", raiseFlag.requiredLibs) then
 		return false 
 	end
 	
@@ -118,6 +124,12 @@ function raiseFlag.start()
 	
 	-- process cloner Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("raiseFlag")
+	for k, aZone in pairs(attrZones) do 
+		raiseFlag.createRaiseFlagWithZone(aZone) -- process attributes
+		raiseFlag.addRaiseFlag(aZone) -- add to list
+	end
+	-- try synonym
+	attrZones = cfxZones.getZonesWithAttributeNamed("raiseFlag!")
 	for k, aZone in pairs(attrZones) do 
 		raiseFlag.createRaiseFlagWithZone(aZone) -- process attributes
 		raiseFlag.addRaiseFlag(aZone) -- add to list

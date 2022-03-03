@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.6"
+cfxZones.version = "2.5.7"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -50,10 +50,11 @@ cfxZones.version = "2.5.6"
 		  - extractPropertyFromDCS trims key and property 
  - 2.5.5  - pollFlag() centralized for banging 
           - allStaticsInZone
- - 2.5.6  - flag accessor setFlagValue(), getFlagValue 
+ - 2.5.6  - flag accessor setFlagValue(), getFlagValue()  
 		  - pollFlag supports theZone as final parameter
 		  - randomDelayFromPositiveRange
 		  - isMEFlag
+ - 2.5.7  - pollFlag supports dml flags
  
 --]]--
 cfxZones.verbose = false
@@ -1064,22 +1065,33 @@ function cfxZones.pollFlag(theFlag, method, theZone)
 		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
 	end 
 	
+	if not theZone then 
+		trigger.action.outText("+++zones: nil theZone on pollFlag", 30)
+	end
+	
 	method = method:lower()
-	local currVal = trigger.misc.getUserFlag(theFlag)
+	--trigger.action.outText("+++zones: polling " .. theZone.name .. " method " .. method .. " flag " .. theFlag, 30)
+	local currVal = cfxZones.getFlagValue(theFlag, theZone)
 	if method == "inc" or method == "f+1" then 
-		trigger.action.setUserFlag(theFlag, currVal + 1)
+		--trigger.action.setUserFlag(theFlag, currVal + 1)
+		cfxZones.setFlagValue(theFlag, currVal+1, theZone)
 		
 	elseif method == "dec" or method == "f-1" then 
-		trigger.action.setUserFlag(theFlag, currVal - 1)
-		
+		-- trigger.action.setUserFlag(theFlag, currVal - 1)
+		cfxZones.setFlagValue(theFlag, currVal-1, theZone)
+
 	elseif method == "off" or method == "f=0" then 
-		trigger.action.setUserFlag(theFlag, 0)
-		
+		-- trigger.action.setUserFlag(theFlag, 0)
+		cfxZones.setFlagValue(theFlag, 0, theZone)
+
 	elseif method == "flip" or method == "xor" then 
 		if currVal ~= 0 then 
-			trigger.action.setUserFlag(theFlag, 0)
+--			trigger.action.setUserFlag(theFlag, 0)
+			cfxZones.setFlagValue(theFlag, 0, theZone)
+
 		else 
-			trigger.action.setUserFlag(theFlag, 1)
+			--trigger.action.setUserFlag(theFlag, 1)
+			cfxZones.setFlagValue(theFlag, 1, theZone)
 		end
 		
 	else 
@@ -1087,11 +1099,13 @@ function cfxZones.pollFlag(theFlag, method, theZone)
 			trigger.action.outText("+++zones: unknown method <" .. method .. "> - using 'on'", 30)
 		end
 		-- default: on.
-		trigger.action.setUserFlag(theFlag, 1)
+--		trigger.action.setUserFlag(theFlag, 1)
+		cfxZones.setFlagValue(theFlag, 1, theZone)
+
 	end
 	
-	local newVal = trigger.misc.getUserFlag(theFlag)
 	if cfxZones.verbose then
+		local newVal = cfxZones.getFlagValue(theFlag, theZone)
 		trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
 	end 
 end
@@ -1120,7 +1134,7 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	
 	-- now do wildcard processing. we have alphanumeric
 	if dcsCommon.stringStartsWith(theFlag, "*") then  
-			theFlag = zoneName .. theFlag
+		theFlag = zoneName .. theFlag
 	end
 	trigger.action.setUserFlag(theFlag, theValue)
 end 
@@ -1128,7 +1142,7 @@ end
 function cfxZones.getFlagValue(theFlag, theZone)
 	local zoneName = "<dummy>"
 	if not theZone then 
-		trigger.action.outText("+++Zne: no zone on getFlagValue")
+		trigger.action.outText("+++Zne: no zone on getFlagValue", 30)
 	else 
 		zoneName = theZone.name -- for flag wildcards
 	end

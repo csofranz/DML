@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.2.0"
+cloneZones.version = "1.3.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -31,6 +31,7 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 		  - linkUnit resolve 
 		  - clone? synonym
 		  - empty! and method attributes
+	1.3.0 - DML flag upgrade 
 	
 --]]--
 
@@ -179,46 +180,54 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		end
 	end
 	
-	-- f? and spawn? map to the same 
+	-- f? and spawn? and other synonyms map to the same 
 	if cfxZones.hasProperty(theZone, "f?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
-		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
 	
 	if cfxZones.hasProperty(theZone, "in?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
-		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
 	
 	if cfxZones.hasProperty(theZone, "spawn?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "spawn?", "none")
-		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
 	end
 	
-	-- synonyms
 	if cfxZones.hasProperty(theZone, "clone?") then 
 		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "clone?", "none")
-		theZone.lastSpawnValue = trigger.misc.getUserFlag(theZone.spawnFlag) -- save last value
+	end
+	
+	if theZone.spawnFlag then 
+		theZone.lastSpawnValue = cfxZones.getFlagValue(theZone.spawnFlag, theZone)
 	end
 	
 	-- deSpawn?
 	if cfxZones.hasProperty(theZone, "deSpawn?") then 
 		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deSpawn?", "none")
-		theZone.lastDeSpawnValue = trigger.misc.getUserFlag(theZone.deSpawnFlag) -- save last value
 	end
 	
+	if cfxZones.hasProperty(theZone, "deClone?") then 
+		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deClone?", "none")
+	end
+	
+	if theZone.deSpawnFlag then 
+		theZone.lastDeSpawnValue = cfxZones.getFlagValue(theZone.deSpawnFlag, theZone)
+	end
+	
+	-- to be deprecated
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
 	
 	theZone.moveRoute = cfxZones.getBoolFromZoneProperty(theZone, "moveRoute", false)
 	
 	theZone.preWipe = cfxZones.getBoolFromZoneProperty(theZone, "preWipe", false)
 	
+	-- to be deprecated
 	if cfxZones.hasProperty(theZone, "empty+1") then 
-		theZone.emptyFlag = cfxZones.getNumberFromZoneProperty(theZone, "empty+1", "<None>") -- note string on number default
+		theZone.emptyFlag = cfxZones.getStringFromZoneProperty(theZone, "empty+1", "<None>") -- note string on number default
 	end
 	
 	if cfxZones.hasProperty(theZone, "empty!") then 
-		theZone.emptyBangFlag = cfxZones.getNumberFromZoneProperty(theZone, "empty!", "<None>") -- note string on number default
+		theZone.emptyBangFlag = cfxZones.getStringFromZoneProperty(theZone, "empty!", "<None>") -- note string on number default
 	end
 	
 	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
@@ -804,11 +813,13 @@ function cloneZones.hasLiveUnits(theZone)
 end
 
 -- old code, deprecated
+--[[--
 function cloneZones.pollFlag(flagNum, method)
 	-- we currently ignore method 
 	local num = trigger.misc.getUserFlag(flagNum)
 	trigger.action.setUserFlag(flagNum, num+1)
 end
+--]]--
 --
 -- UPDATE
 --
@@ -818,7 +829,7 @@ function cloneZones.update()
 	for idx, aZone in pairs(cloneZones.cloners) do
 		-- see if deSpawn was pulled. Must run before spawn
 		if aZone.deSpawnFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.deSpawnFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.deSpawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.deSpawnFlag)
 			if currTriggerVal ~= aZone.lastDeSpawnValue then 
 				if cloneZones.verbose then 
 					trigger.action.outText("+++clnZ: DEspawn triggered for <" .. aZone.name .. ">", 30)
@@ -830,7 +841,7 @@ function cloneZones.update()
 		
 		-- see if we got spawn? command
 		if aZone.spawnFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.spawnFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.spawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.spawnFlag)
 			if currTriggerVal ~= aZone.lastSpawnValue
 			then 
 				if cloneZones.verbose then 
@@ -846,11 +857,15 @@ function cloneZones.update()
 		if isEmpty then 
 			-- see if we need to bang a flag 
 			if aZone.emptyFlag then 
-				cloneZones.pollFlag(aZone.emptyFlag)
+				--cloneZones.pollFlag(aZone.emptyFlag)
+				cfxZones.pollFlag(aZone.emptyFlag, 'inc', aZone)
 			end 
 			
 			if aZone.emptyBangFlag then 
-				cfxZones.pollFlag(aZone.emptyBangFlag, aZone.method)
+				cfxZones.pollFlag(aZone.emptyBangFlag, aZone.method, aZone)
+				if cloneZones.verbose then 
+					trigger.action.outText("+++clnZ: bang! on " .. aZone.emptyBangFlag, 30)
+				end
 			end
 			-- invoke callbacks 
 			cloneZones.invokeCallbacks(aZone, "empty", {}) 

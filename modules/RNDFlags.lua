@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.0.0"
+rndFlags.version = "1.1.0"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,7 +13,15 @@ rndFlags.requiredLibs = {
 	
 	Version History
 	1.0.0 - Initial Version 
-
+	1.1.0 - DML flag conversion:
+				flagArrayFromString: strings OK, trim 
+				remove pollFlag
+				pollFlag from cfxZones, include zone 
+				randomBetween for pollSize
+				pollFlag to bang done with inc
+				getFlagValue in update 
+				some code clean-up
+				rndMethod synonym 
 --]]
 rndFlags.rndGen = {}
 
@@ -32,9 +40,9 @@ function rndFlags.flagArrayFromString(inString)
 	
 	local flags = {}
 	local rawElements = dcsCommon.splitString(inString, ",")
-
+	-- go over all elements 
 	for idx, anElement in pairs(rawElements) do 
-		if dcsCommon.containsString(anElement, "-") then 
+		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
 			-- interpret this as a range
 			local theRange = dcsCommon.splitString(anElement, "-")
 			local lowerBound = theRange[1]
@@ -51,7 +59,7 @@ function rndFlags.flagArrayFromString(inString)
 				-- now add add numbers to flags
 				for f=lowerBound, upperBound do 
 					table.insert(flags, f)
-					--trigger.action.outText("+++RND: added <" .. f .. "> (range)", 30)
+
 				end
 			else
 				-- bounds illegal
@@ -59,10 +67,10 @@ function rndFlags.flagArrayFromString(inString)
 			end
 		else
 			-- single number
-			f = tonumber(anElement)
+			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
 			if f then 
 				table.insert(flags, f)
-				--trigger.action.outText("+++RND: added <" .. f .. "> (single)", 30)
+
 			else 
 				trigger.action.outText("+++RND: ignored element <" .. anElement .. "> (single)", 30)
 			end
@@ -101,8 +109,16 @@ function rndFlags.createRNDWithZone(theZone)
 		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
 	end
 	
+	if cfxZones.hasProperty(theZone, "in?") then 
+		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+	end
+	
+	if cfxZones.hasProperty(theZone, "rndPoll?") then 
+		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "rndPoll?", "none")
+	end
+	
 	if theZone.triggerFlag then 
-		theZone.lastTriggerValue = trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
+		theZone.lastTriggerValue = cfxZones.getFlagValue(theZone.triggerFlag, theZone) --trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
 	end
 	
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
@@ -111,15 +127,16 @@ function rndFlags.createRNDWithZone(theZone)
 		theZone.onStart = true 
 	end
 	
-	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "on")
+	theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "on")
+	if cfxZones.hasProperty(theZone, "rndMethod") then 
+		theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "rndMethod", "on")
+	end
 	
 	theZone.reshuffle = cfxZones.getBoolFromZoneProperty(theZone, "reshuffle", false)
 	if theZone.reshuffle then 
 		-- create a backup copy we can reshuffle from 
 		theZone.flagStore = dcsCommon.copyArray(theFlags)
 	end
-	
-	--theZone.rndPollSize = cfxZones.getBoolFromZoneProperty(theZone, "rndPollSize", false)
 	
 	-- done flag 
 	if cfxZones.hasProperty(theZone, "done+1") then 
@@ -137,42 +154,6 @@ end
 --
 -- fire RND
 -- 
-function rndFlags.pollFlag(theFlag, method) 
-	if rndFlags.verbose then 
-		trigger.action.outText("+++RND: polling flag " .. theFlag .. " with " .. method, 30)
-	end 
-	
-	method = method:lower()
-	local currVal = trigger.misc.getUserFlag(theFlag)
-	if method == "inc" or method == "f+1" then 
-		trigger.action.setUserFlag(theFlag, currVal + 1)
-		
-	elseif method == "dec" or method == "f-1" then 
-		trigger.action.setUserFlag(theFlag, currVal - 1)
-		
-	elseif method == "off" or method == "f=0" then 
-		trigger.action.setUserFlag(theFlag, 0)
-		
-	elseif method == "flip" or method == "xor" then 
-		if currVal ~= 0 then 
-			trigger.action.setUserFlag(theFlag, 0)
-		else 
-			trigger.action.setUserFlag(theFlag, 1)
-		end
-		
-	else 
-		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++RND: unknown method <" .. method .. "> - using 'on'", 30)
-		end
-		-- default: on.
-		trigger.action.setUserFlag(theFlag, 1)
-	end
-	
-	local newVal = trigger.misc.getUserFlag(theFlag)
-	if rndFlags.verbose then
-		trigger.action.outText("+++RND: flag <" .. theFlag .. "> changed from " .. currVal .. " to " .. newVal, 30)
-	end 
-end
 
 function rndFlags.fire(theZone) 
 	-- fire this rnd 
@@ -181,38 +162,19 @@ function rndFlags.fire(theZone)
 		rndFlags.reshuffle(theZone)
 	end
 	
-	local availableFlags = dcsCommon.copyArray(theZone.myFlags)--{}
---	for idx, aFlag in pairs(theZone.myFlags) do 
---		table.insert(availableFlags, aFlag)
---	end
+	local availableFlags = dcsCommon.copyArray(theZone.myFlags) 
 	
 	-- do this pollSize times 
-	local pollSize = theZone.pollSize
-	local pollSizeMin = theZone.pollSizeMin
-	
-	if pollSize ~= pollSizeMin then 
-		-- pick random in range , say 3-7 --> 5 items!
-		pollSize = (pollSize - pollSizeMin) + 1 -- 7-3 + 1
-		pollSize = dcsCommon.smallRandom(pollSize) - 1 --> 0-4
---		trigger.action.outText("+++RND: RAW pollsize " ..  pollSize, 30)
-		pollSize = pollSize + pollSizeMin 
---		trigger.action.outText("+++RND: adj pollsize " ..  pollSize, 30)
-		if pollSize > theZone.pollSize then pollSize = theZone.pollSize end 
-		if pollSize < 1 then pollSize = 1 end 
-		
-		if rndFlags.verbose then 
-			trigger.action.outText("+++RND: RND " .. theZone.name .. " range " .. pollSizeMin .. "-" .. theZone.pollSize .. ": selected " .. pollSize, 30)
-		end
-	end
+	local pollSize = dcsCommon.randomBetween(theZone.pollSizeMin, theZone.pollSize)
+
 	
 	if #availableFlags < 1 then 
 		if rndFlags.verbose then 
 			trigger.action.outText("+++RND: RND " .. theZone.name .. " ran out of flags. aborting fire", 30)
 		end
 		
-		if theZone.doneFlag then 
-			local currVal = trigger.misc.getUserFlag(theZone.doneFlag)
-			trigger.action.setUserFlag(theZone.doneFlag, currVal + 1)
+		if theZone.doneFlag then
+			cfxZones.pollFlag(theZone.doneFlag, "inc", theZone)
 		end
 		
 		return 
@@ -239,8 +201,8 @@ function rndFlags.fire(theZone)
 		-- poll this flag and remove from available
 		local theFlag = table.remove(availableFlags,theFlagIndex)
 		
-		rndFlags.pollFlag(theFlag, theZone.method)
-		 
+		--rndFlags.pollFlag(theFlag, theZone.rndMethod)
+		cfxZones.pollFlag(theFlag, theZone.rndMethod, theZone) 
 	end
 	
 	-- remove if requested
@@ -258,7 +220,7 @@ function rndFlags.update()
 	
 	for idx, aZone in pairs(rndFlags.rndGen) do
 		if aZone.triggerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue
 			then 
 				if rndFlags.verbose then 
@@ -347,6 +309,3 @@ if not rndFlags.start() then
 	rndFlags = nil 
 end
 
---[[
-pulser / repeat until  
---]]

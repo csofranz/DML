@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.0.1"
+messenger.version = "1.1.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -11,6 +11,10 @@ messenger.messengers = {}
 	1.0.0 - initial version 
 	1.0.1 - messageOut? synonym
 	      - spelling types in about 
+	1.1.0 - DML flag support 
+		  - clearScreen option
+		  - inValue?
+		  - message preprocessor 
 	
 --]]--
 
@@ -41,11 +45,13 @@ function messenger.createMessengerDownWithZone(theZone)
 
 	theZone.soundFile = cfxZones.getStringFromZoneProperty(theZone, "soundFile", "<none>") 
 
+	theZone.clearScreen = cfxZones.getBoolFromZoneProperty(theZone, "clearScreen", false)
+	
 	-- alternate version: messages: list of messages, need string parser first
 	
 	theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "duration", 30)
 	
-	-- trigger flag "count" / "start?"
+	-- trigger flag f? in? messageOut?
 	if cfxZones.hasProperty(theZone, "f?") then 
 		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
 	end
@@ -60,31 +66,57 @@ function messenger.createMessengerDownWithZone(theZone)
 	end
 	
 	if theZone.triggerMessagerFlag then 
-		theZone.lastMessageTriggerValue = trigger.misc.getUserFlag(theZone.triggerMessagerFlag) -- save last value
+		theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- trigger.misc.getUserFlag(theZone.triggerMessagerFlag) -- save last value
 	end
 	
 	if cfxZones.hasProperty(theZone, "coalition") then 
 		theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
 	end 
 	
+	-- flag whose value can be read 
+	if cfxZones.hasProperty(theZone, "messageValue?") then 
+		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
+	end
+	
 end
 
 --
 -- Update 
 --
+function messenger.getMessage(theZone)
+	local msg = theZone.message
+	-- see if it has a "$val" in there 
+	local zName = theZone.name 
+	if not zName then zName = "<strange!>" end 
+	local zVal = "<n/a>"
+	if theZone.messageValue then 
+		zVal = cfxZones.getFlagValue(theZone.messageValue, theZone)
+		zVal = tostring(zVal)
+		if not zVal then zVal = "<err>" end 
+	end 
+	
+	
+	-- replace *zone and *value wildcards 
+	msg = string.gsub(msg, "*name", zName)
+	msg = string.gsub(msg, "*value", zVal)
+	
+	return msg 
+end
+
 function messenger.isTriggered(theZone)
 	-- this module has triggered 
 	local fileName = "l10n/DEFAULT/" .. theZone.soundFile
-	local msg = theZone.message 
+	local msg = messenger.getMessage(theZone)
+	
 	if theZone.spaceBefore then msg = "\n"..msg end 
 	if theZone.spaceAfter then msg = msg .. "\n" end 
 	
 	if theZone.coalition then 
-		trigger.action.outTextForCoalition(theZone.coalition, msg, theZone.duration)
+		trigger.action.outTextForCoalition(theZone.coalition, msg, theZone.duration, theZone.clearScreen)
 		trigger.action.outSoundForCoalition(theZone.coalition, fileName)
 	else 
 		-- out to all 
-		trigger.action.outText(msg, theZone.duration)
+		trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
 		trigger.action.outSound(fileName)
 	end
 end
@@ -96,14 +128,14 @@ function messenger.update()
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		if aZone.triggerMessagerFlag then 
-			local currTriggerVal = trigger.misc.getUserFlag(aZone.triggerMessagerFlag)
+			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerMessagerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerMessagerFlag)
 			if currTriggerVal ~= aZone.lastMessageTriggerValue
 			then 
 				if messenger.verbose then 
 					trigger.action.outText("+++msgr: triggered on in?", 30)
 				end
 				messenger.isTriggered(aZone)
-				aZone.lastMessageTriggerValue = trigger.misc.getUserFlag(aZone.triggerMessagerFlag) -- save last value
+				aZone.lastMessageTriggerValue = cfxZones.getFlagValue(aZone.triggerMessagerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerMessagerFlag) -- save last value
 			end
 		end
 	end
@@ -160,3 +192,8 @@ if not messenger.start() then
 	trigger.action.outText("cfx Messenger aborted: missing libraries", 30)
 	messenger = nil 
 end
+
+--[[--
+Wildcard extension: 
+  messageValue supports multiple flags like 1-3, *hi ther, *bingo and then *value[name] returns that value 	
+--]]--

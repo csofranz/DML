@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "1.2.0"
+cfxPlayerScore.version = "1.3.0"
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
 cfxPlayerScore.announcer = true 
@@ -16,6 +16,13 @@ cfxPlayerScore.announcer = true
 		  - announcer attribute 
 		  - badSound name 
 		  - scoreSound name 
+	1.3.0 - object2score 
+		  - static objects also can score 
+		  - can now also score members of group by adding group name 
+		  - scenery objects are now supported. use the 
+		    number that is given under OBJECT ID when 
+			using assign as...
+	
 		  
 --]]--
 cfxPlayerScore.requiredLibs = {
@@ -54,16 +61,46 @@ function cfxPlayerScore.cat2BaseScore(inCat)
 	return 1 
 end
 
+function cfxPlayerScore.object2score(inVictim) -- does not have group
+	if not inVictim then return end 
+	local inName = inVictim:getName()
+	if not inName then return 0 end 
+	if type(inName) == "number" then 
+		inName = tostring(inName)
+	end
+		
+	local objectScore = cfxPlayerScore.typeScore[inName]
+	if not objectScore then 
+		-- try the type desc 
+		local theType = inVictim:getTypeName()
+		objectScore = cfxPlayerScore.typeScore[theType]
+	end
+	
+	if type(objectScore) == "string" then 
+		objectScore = tonumber(objectScore)
+	end
+	if not objectScore then return 0 end 
+	return objectScore 
+end
+
 function cfxPlayerScore.unit2score(inUnit)
 	local vicGroup = inUnit:getGroup()
 	local vicCat = vicGroup:getCategory()
 	local vicType = inUnit:getTypeName()
 	local vicName = inUnit:getName() 
+	if type(vicName) == "number" then vicName = tostring(vicName) end 
 	
 	-- simply extend by adding items to the typescore table.concat
 	-- we first try by unit name. This allows individual
 	-- named hi-value targets to have individual scores 
 	local uScore = cfxPlayerScore.typeScore[vicName]
+
+	-- see if all members of group score 
+	if not uScore then 
+		local grpName = vicGroup:getName()
+		uScore = cfxPlayerScore.typeScore[grpName]
+	end
+	
 	if uScore == nil then 
 		-- WE NOW TRY TO ACCESS BY VICTIM'S TYPE STRING		
 		uScore = cfxPlayerScore.typeScore[vicType]
@@ -155,6 +192,14 @@ function cfxPlayerScore.isNamedUnit(theUnit)
 	end
 	return false 
 end
+
+function cfxPlayerScore.awardScoreTo(killSide, theScore, killerName)
+	local playerScore = cfxPlayerScore.updateScoreForPlayer(killerName, theScore)
+	
+	if cfxPlayerScore.announcer then 
+		trigger.action.outTextForCoalition(killSide, "Killscore:  " .. theScore .. " for a total of " .. playerScore .. " for " .. killerName, 30)
+	end 
+end
 --
 -- EVENT HANDLING
 --
@@ -167,22 +212,18 @@ function cfxPlayerScore.preProcessor(theEvent)
 		-- there is an initiator, and the initiator is 
 		-- a player 
 		if theEvent.initiator  == nil then 
-			-- trigger.action.outText("+++scr pre: nil INITIATOR", 30)
 			return false 
 		end 
-		--trigger.action.outText("+++scr pre: initiator is " .. theEvent.initiator:getName(), 30)
 		
 		local killer = theEvent.initiator 
 		if theEvent.target == nil then 
-			if cfxPlayerScore.verbose then trigger.action.outText("+++scr pre: nil TARGET", 30) end 
+			if cfxPlayerScore.verbose then 
+				trigger.action.outText("+++scr pre: nil TARGET", 30) 
+			end 
 			return false 
 		end 
 		
 		local wasPlayer = cfxPlayer.isPlayerUnit(killer)
-		if wasPlayer then 
-		else 
-		end
-		
 		return wasPlayer
 	end
 	return false 
@@ -196,6 +237,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- we are only getting called when and if 
 	-- a kill occured and killer was a player 
 	-- and target exists
+	
 	local killer = theEvent.initiator
 	local killerName = killer:getPlayerName()
 	if not killerName then killerName = "<nil>" end
@@ -207,12 +249,19 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- was it a player kill?
 	local pk = cfxPlayer.isPlayerUnit(victim)
 
-	-- was it a scenery object 
+	-- was it a scenery object? 
 	local wasBuilding = dcsCommon.isSceneryObject(victim)
 	if wasBuilding then 
+		-- these objects have no coalition; we simply award the score if 
+		-- it exists in look-up table. 
+		local staticScore = cfxPlayerScore.object2score(victim)
+		if staticScore > 0 then 
+			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
+			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
+		end
 		return 
 	end
-	
+
 	-- was it fraternicide?
 	local vicSide = victim:getCoalition()
 	local fraternicide = killSide == vicSide
@@ -221,8 +270,26 @@ function cfxPlayerScore.killDetected(theEvent)
 
 	-- see what kind of unit (category) we killed
     -- and look up base score 
-	if not victim.getGroup then 
-		if cfxPlayerScore.verbose then trigger.action.outText("+++scr: no group for " .. killVehicle .. ", killed by " .. killerName .. ", no score", 30) end 
+	if not victim.getGroup then
+		-- static objects have no group 
+
+		local staticName = victim:getName() -- on statics, this returns 
+		                                    -- name as entered in TOP LINE
+		local staticScore = cfxPlayerScore.object2score(victim)
+		if staticScore > 0 then 
+			-- this was a named static, return the score - unless our own
+			if fraternicide then 
+				scoreMod = -2 * scoreMod 
+				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.badSound)
+			else 
+				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
+			end
+			staticScore = scoreMod * staticScore
+			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
+		else 
+			-- no score, no mentions
+		end
+		
 		return 
 	end 
 	
@@ -276,13 +343,8 @@ function cfxPlayerScore.killDetected(theEvent)
 	end
 	
 	local totalScore = unitScore * scoreMod
-	
-	local playerScore = cfxPlayerScore.updateScoreForPlayer(killerName, totalScore)
-	
-	if cfxPlayerScore.announcer then 
-		trigger.action.outTextForCoalition(killSide, "Killscore:  " .. totalScore .. " for a total of " .. playerScore .. " for " .. killerName, 30)
-	end 
-	--trigger.action.outTextForCoalition(killSide, cfxPlayerScore.scoreTextForPlayerNamed(killerName), 30)
+	cfxPlayerScore.awardScoreTo(killSide, totalScore, killerName)
+
 end
 
 function cfxPlayerScore.readConfigZone(theZone)
