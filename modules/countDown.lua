@@ -20,6 +20,7 @@ countDown.requiredLibs = {
 	1.2.0 - DML Flags 
 		  - counterOut!
 		  - ups config 
+	1.2.1 - disableCounter?
 	
 --]]--
 
@@ -120,6 +121,13 @@ function countDown.createCountDownWithZone(theZone)
 	if cfxZones.hasProperty(theZone, "counterOut!") then 
 		theZone.counterOut = cfxZones.getStringFromZoneProperty(theZone, "counterOut!", "<none>")
 	end
+	
+	-- disableFlag 
+	theZone.counterDisabled = false 
+	if cfxZones.hasProperty(theZone, "disableCounter?") then 
+		theZone.disableCounterFlag = cfxZones.getStringFromZoneProperty(theZone, "disableCounter?", "<none>")
+		theZone.disableCounterFlagVal = cfxZones.getFlagValue(theZone.disableCounterFlag, theZone)
+	end
 end
 
 --
@@ -195,7 +203,7 @@ function countDown.update()
 		
 	for idx, aZone in pairs(countDown.counters) do
 		-- make sure to re-start before reading time limit
-		if aZone.triggerCountFlag then 
+		if aZone.triggerCountFlag and not aZone.counterDisabled then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerCountFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerCountFlag)
 			if currTriggerVal ~= aZone.lastCountTriggerValue
 			then 
@@ -204,6 +212,16 @@ function countDown.update()
 				end
 				countDown.isTriggered(aZone)
 				aZone.lastCountTriggerValue = cfxZones.getFlagValue(aZone.triggerCountFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerCountFlag) -- save last value
+			end
+		end
+		
+		if aZone.disableCounterFlag then 
+			local currVal = cfxZones.getFlagValue(aZone.disableCounterFlag, aZone)
+			if currVal ~= aZone.disableCounterFlagVal then 
+				if countDown.verbose then 
+					trigger.action.outText("+++cntD: disabling counter " .. aZone.name, 30)
+				end
+				aZone.counterDisabled = true 
 			end
 		end
 	end

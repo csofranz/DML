@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.5"
+dcsCommon.version = "2.5.6"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -65,6 +65,7 @@ dcsCommon.version = "2.5.5"
  2.5.5 - stringStartsWithDigit()
        - stringStartsWithLetter()
 	   - stringIsPositiveNumber()
+ 2.5.6 - corrected stringEndsWith() bug with str
 	   
 --]]--
 
@@ -1740,7 +1741,7 @@ dcsCommon.version = "2.5.5"
 	end
 	
 	function dcsCommon.stringEndsWith(theString, theEnding)
-		return theEnding == "" or str:sub(-#theEnding) == theEnding
+		return theEnding == "" or theString:sub(-#theEnding) == theEnding
 	end
 	
 	function dcsCommon.removeEnding(theString, theEnding) 

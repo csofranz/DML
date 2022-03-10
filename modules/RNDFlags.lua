@@ -202,6 +202,10 @@ function rndFlags.fire(theZone)
 		local theFlag = table.remove(availableFlags,theFlagIndex)
 		
 		--rndFlags.pollFlag(theFlag, theZone.rndMethod)
+		if rndFlags.verbose then 
+			trigger.action.outText("+++RND: polling " .. theFlag .. " with " .. theZone.rndMethod, 30)
+		end
+		
 		cfxZones.pollFlag(theFlag, theZone.rndMethod, theZone) 
 	end
 	
@@ -309,3 +313,4 @@ if not rndFlags.start() then
 	rndFlags = nil 
 end
 
+-- TODO: move flags to RND!, rename RND to RND!, deprecate flags!

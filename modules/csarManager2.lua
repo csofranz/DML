@@ -19,6 +19,7 @@ csarManager.version = "2.0.3"
  - 2.0.2 - use parametric csarManager.hoverAlt
 		 - use hoverDuration
  - 2.0.3 - corrected bug in hoverDuration
+ - 2.0.4 - guard in createCSARMission for cfxCommander 
  
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -28,6 +29,7 @@ csarManager.requiredLibs = {
 	"cfxPlayer", -- player monitoring and group monitoring 
 	"nameStats", -- generic data module for weight 
 	"cargoSuper",
+--	"cfxCommander", -- needed if you want to hand-create CSAR missions
 }
 
 -- *** DOES NOT EXTEND ZONES *** BUT USES OWN STRUCT 
@@ -131,6 +133,11 @@ csarManager.csarCompleteCB = {}
 -- CREATING A CSAR 
 --
 function csarManager.createDownedPilot(theMission)
+	if not cfxCommander then 
+		trigger.action.outText("+++CSAR: can't create mission, module cfxCommander is missing.", 30)
+		return 
+	end
+	
 	local aLocation = {}
 	local aHeading = 0 -- in rads
 	local newTargetZone = theMission.zone

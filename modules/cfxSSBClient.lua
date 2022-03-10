@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "2.0.0"
+cfxSSBClient.version = "2.0.2"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -36,6 +36,7 @@ Version History
 		- reUseAfter option for single-use  
 		- dcsCommon, cfxZones import
   2.0.1 - stricter verbosity: moved more comments to verbose only 
+  2.0.2 - health check code 
 	
 WHAT IT IS
 SSB Client is a small script that forms the client-side counterpart to
@@ -232,7 +233,20 @@ function cfxSSBClient.openSlotForCrashedGroupNamed(gName)
 	end 
 end
 
-function cfxSSBClient:onEvent(event)
+function cfxSSBClient:onEvent(event) 
+	if event.id == 21 then -- S_EVENT_PLAYER_LEAVE_UNIT
+		trigger.action.outText("+++SSB: Player leave unit", 30)
+		local theUnit = event.initiator
+		if not theUnit then 
+			trigger.action.outText("+++SSB: No unit left, abort", 30)
+			return 
+		end 
+		local curH = theUnit:getLife()
+		local maxH = theUnit:getLife0()
+		trigger.action.outText("+++SSB: Health check: " .. curH .. " of " .. maxH, 30)
+		return 
+	end
+	
 	if event.id == 10 then -- S_EVENT_BASE_CAPTURED
 		if cfxSSBClient.verbose then 
 			trigger.action.outText("+++SSB: CAPTURE EVENT -- RESETTING SLOTS", 30)

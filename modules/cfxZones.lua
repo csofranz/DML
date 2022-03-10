@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.7"
+cfxZones.version = "2.5.8"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -55,6 +55,8 @@ cfxZones.version = "2.5.7"
 		  - randomDelayFromPositiveRange
 		  - isMEFlag
  - 2.5.7  - pollFlag supports dml flags
+ - 2.5.8  - flagArrayFromString
+		  - getFlagNumber invokes tonumber() before returning result 
  
 --]]--
 cfxZones.verbose = false
@@ -117,7 +119,7 @@ function cfxZones.readFromDCS(clearfirst)
 		return;
 	end
 
-	-- we only retrive the data we need. At this point it is name, location and radius
+	-- we only retrieve the data we need. At this point it is name, location and radius
 	-- and put this in our own little  structure. we also convert to all upper case name for index
 	-- and assume that the name may also carry meaning, e.g. 'LZ:' defines a landing zone
 	-- so we can quickly create other sets from this
@@ -1149,28 +1151,83 @@ function cfxZones.getFlagValue(theFlag, theZone)
 	
 	if type(theFlag) == "number" then 
 		-- straight get, ME flag 
-		return trigger.misc.getUserFlag(theFlag)
+		return tonumber(trigger.misc.getUserFlag(theFlag))
 	end
 	
 	-- we assume it's a string now
 	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces
 	local nFlag = tonumber(theFlag) 
 	if nFlag then 
-		return trigger.misc.getUserFlag(theFlag)
+		return tonumber(trigger.misc.getUserFlag(theFlag))
 	end
 	
 	-- now do wildcard processing. we have alphanumeric
 	if dcsCommon.stringStartsWith(theFlag, "*") then  
 			theFlag = zoneName .. theFlag
 	end
-	return trigger.misc.getUserFlag(theFlag)
+	return tonumber(trigger.misc.getUserFlag(theFlag))
 end
 
 function cfxZones.isMEFlag(inFlag)
+	-- do NOT use me
+	trigger.action.outText("+++zne: warning: deprecated isMEFlag", 30)
 	return true 
 	-- returns true if inFlag is a pure positive number
 --	inFlag = dcsCommon.trim(inFlag)
 --	return dcsCommon.stringIsPositiveNumber(inFlag)
+end
+
+function cfxZones.flagArrayFromString(inString)
+-- original code from RND flag
+	if string.len(inString) < 1 then 
+		trigger.action.outText("+++zne: empty flags", 30)
+		return {} 
+	end
+	if cfxZones.verbose then 
+		trigger.action.outText("+++zne: processing <" .. inString .. ">", 30)
+	end 
+	
+	local flags = {}
+	local rawElements = dcsCommon.splitString(inString, ",")
+	-- go over all elements 
+	for idx, anElement in pairs(rawElements) do 
+		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
+			-- interpret this as a range
+			local theRange = dcsCommon.splitString(anElement, "-")
+			local lowerBound = theRange[1]
+			lowerBound = tonumber(lowerBound)
+			local upperBound = theRange[2]
+			upperBound = tonumber(upperBound)
+			if lowerBound and upperBound then
+				-- swap if wrong order
+				if lowerBound > upperBound then 
+					local temp = upperBound
+					upperBound = lowerBound
+					lowerBound = temp 
+				end
+				-- now add add numbers to flags
+				for f=lowerBound, upperBound do 
+					table.insert(flags, tostring(f))
+				end
+			else
+				-- bounds illegal
+				trigger.action.outText("+++zne: ignored range <" .. anElement .. "> (range)", 30)
+			end
+		else
+			-- single number
+			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
+			if f then 
+				table.insert(flags, f)
+
+			else 
+				trigger.action.outText("+++zne: ignored element <" .. anElement .. "> (single)", 30)
+			end
+		end
+	end
+	if cfxZones.verbose then 
+		trigger.action.outText("+++zne: <" .. #flags .. "> flags total", 30)
+	end 
+	return flags
 end
 
 --

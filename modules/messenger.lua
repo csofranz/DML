@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.1.0"
+messenger.version = "1.1.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,7 +15,9 @@ messenger.messengers = {}
 		  - clearScreen option
 		  - inValue?
 		  - message preprocessor 
-	
+	1.1.1 - firewalled coalition to msgCoalition
+		  - messageOn?
+		  - messageOff?
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -36,7 +38,7 @@ end
 --
 -- read attributes
 --
-function messenger.createMessengerDownWithZone(theZone)
+function messenger.createMessengerWithZone(theZone)
 	-- start val - a range
 	theZone.message = cfxZones.getStringFromZoneProperty(theZone, "message", "") 
 
@@ -68,9 +70,24 @@ function messenger.createMessengerDownWithZone(theZone)
 	if theZone.triggerMessagerFlag then 
 		theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- trigger.misc.getUserFlag(theZone.triggerMessagerFlag) -- save last value
 	end
+
+	theZone.messageOff = false 
+	if cfxZones.hasProperty(theZone, "messageOff?") then 
+		theZone.messageOffFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOff?", "*none")
+		theZone.lastMessageOff = cfxZones.getFlagValue(theZone.messageOffFlag, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "messageOn?") then 
+		theZone.messageOnFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOn?", "*none")
+		theZone.lastMessageOn = cfxZones.getFlagValue(theZone.messageOnFlag, theZone)
+	end
 	
 	if cfxZones.hasProperty(theZone, "coalition") then 
-		theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
+		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
+	end 
+	
+	if cfxZones.hasProperty(theZone, "msgCoalition") then 
+		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "msgCoalition", 0)
 	end 
 	
 	-- flag whose value can be read 
@@ -78,6 +95,9 @@ function messenger.createMessengerDownWithZone(theZone)
 		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
 	end
 	
+	if messenger.verbose then 
+		trigger.action.outText("+++Msg: new zone <".. theZone.name .."> will say <".. theZone.message .. ">", 30)
+	end
 end
 
 --
@@ -105,15 +125,25 @@ end
 
 function messenger.isTriggered(theZone)
 	-- this module has triggered 
+	if theZone.messageOff then 
+		if messenger.verbose then 
+			trigger.action.outFlag("msg: message for <".. theZone.name .."> is OFF",30)
+		end
+		return 
+	end
+	
 	local fileName = "l10n/DEFAULT/" .. theZone.soundFile
 	local msg = messenger.getMessage(theZone)
+	if messenger.verbose then 
+		trigger.action.outText("+++Msg: <".. theZone.name .."> will say <".. msg .. ">", 30)
+	end
 	
 	if theZone.spaceBefore then msg = "\n"..msg end 
 	if theZone.spaceAfter then msg = msg .. "\n" end 
 	
-	if theZone.coalition then 
-		trigger.action.outTextForCoalition(theZone.coalition, msg, theZone.duration, theZone.clearScreen)
-		trigger.action.outSoundForCoalition(theZone.coalition, fileName)
+	if theZone.msgCoalition then 
+		trigger.action.outTextForCoalition(theZone.msgCoalition, msg, theZone.duration, theZone.clearScreen)
+		trigger.action.outSoundForCoalition(theZone.msgCoalition, fileName)
 	else 
 		-- out to all 
 		trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
@@ -132,10 +162,32 @@ function messenger.update()
 			if currTriggerVal ~= aZone.lastMessageTriggerValue
 			then 
 				if messenger.verbose then 
-					trigger.action.outText("+++msgr: triggered on in?", 30)
+					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end
 				messenger.isTriggered(aZone)
 				aZone.lastMessageTriggerValue = cfxZones.getFlagValue(aZone.triggerMessagerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerMessagerFlag) -- save last value
+			end
+		end
+		
+		if aZone.messageOffFlag then 
+			local currVal = cfxZones.getFlagValue(aZone.messageOffFlag, aZone) 
+			if currVal ~= aZone.lastMessageOff then
+				aZone.messageOff = true 
+				aZone.lastMessageOff = currVal
+				if messenger.verbose then 
+					trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
+				end 
+			end
+		end
+		
+		if aZone.messageOnFlag then 
+			local currVal = cfxZones.getFlagValue(aZone.messageOnFlag, aZone) 
+			if currVal ~= aZone.lastMessageOn then
+				aZone.messageOff = false 
+				aZone.lastMessageOn = currVal
+				if messenger.verbose then 
+					trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
+				end
 			end
 		end
 	end
@@ -176,7 +228,7 @@ function messenger.start()
 	-- process cloner Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("messenger")
 	for k, aZone in pairs(attrZones) do 
-		messenger.createMessengerDownWithZone(aZone) -- process attributes
+		messenger.createMessengerWithZone(aZone) -- process attributes
 		messenger.addMessenger(aZone) -- add to list
 	end
 	
