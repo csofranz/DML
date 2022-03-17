@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "2.0.2"
+guardianAngel.version = "2.0.3"
 guardianAngel.ups = 10
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
 guardianAngel.intervention = true -- remove missiles just before hitting
@@ -35,6 +35,8 @@ guardianAngel.requiredLibs = {
 		   - private option 
      2.0.2 - poof! explosion option to show explosion on intervention
            - can be dangerous	 
+	 2.0.3 - fxDistance 
+	       - mea cupa capability 
 
 
 This script detects missiles launched against protected aircraft an 
@@ -43,7 +45,8 @@ removes them when they are about to hit
 --]]--
 
 guardianAngel.minMissileDist = 50 -- m. below this distance the missile is killed by god, not the angel :) 
-guardianAngel.myEvents = {1, 15, 20, 21, 23} -- 1 - shot, 15 - birth, 20 - enter unit, 21 - player leave unit, 23 - start shooting 
+guardianAngel.myEvents = {1, 15, 20, 21, 23, 2} -- 1 - shot, 15 - birth, 20 - enter unit, 21 - player leave unit, 23 - start shooting 
+-- added 2 (hit) event to see if angel was defeated
 guardianAngel.safetyFactor = 1.8 -- for calculating dealloc range 
 guardianAngel.unitsToWatchOver = {} -- I'll watch over these
 
@@ -123,13 +126,7 @@ function guardianAngel.createQItem(theWeapon, theTarget, detectProbability)
 	theItem.missed = false -- just keep watching for re-ack
 	return theItem 
 end
---[[--
-function guardianAngel.detectItem(theItem)
-	if theItem.detected then return end 
-	-- perform detection calculations here 
-	
-end
---]]--
+
 
 -- calculate a point in direction from plane (pln) to weapon (wpn), dist meters 
 function guardianAngel.calcSafeExplosionPoint(wpn, pln, dist)
@@ -137,7 +134,25 @@ function guardianAngel.calcSafeExplosionPoint(wpn, pln, dist)
 	local v = dcsCommon.vNorm(dirToWpn) -- |v| = 1
 	local v = dcsCommon.vMultScalar(v, dist) -- |v| = dist 
 	local newPoint = dcsCommon.vAdd(pln, v)
+	--trigger.action.outText("+++ gA: safe dist is ".. dist, 30)
 	return newPoint
+end
+
+function guardianAngel.bubbleCheck(wPos, w)
+	if true then return false end 
+	for idx, aProtectee in pairs (guardianAngel.unitsToWatchOver) do 
+		local uP = aProtectee:getPoint()
+		local d = math.floor(dcsCommon.dist(wPos, uP))
+		if d < guardianAngel.minMissileDist * 2 then 
+			trigger.action.outText("+++gA: gazing at w=" .. w:getName() .. " APR:" .. aProtectee:getName() .. ", d=" .. d .. ", cutoff=" .. guardianAngel.minMissileDist, 30)
+			if w:getTarget() then 
+				trigger.action.outText("+++gA: w is targeting " .. w:getTarget():getName(), 30)
+			else 
+				trigger.action.outText("+++gA: w is NOT targeting anything")
+			end
+		end
+	end
+	return false 
 end
 
 function guardianAngel.monitorItem(theItem)
@@ -164,6 +179,10 @@ function guardianAngel.monitorItem(theItem)
 	local oldWPos = theItem.wP
 	local A = w:getPoint() -- A is new point of weapon
 	theItem.wp = A -- update new position, old is in oldWPos
+	
+	-- new code: safety check with ALL protected wings
+	local bubbleThreat = guardianAngel.bubbleCheck(A, w)
+	
 	local B 
 	if currentTarget then B = currentTarget:getPoint() else B = A end 
 	
@@ -202,7 +221,7 @@ function guardianAngel.monitorItem(theItem)
 			-- now add some showy explosion so the missile
 			-- doesn't just disappear 
 			if guardianAngel.explosion > 0 then 
-				local xP = guardianAngel.calcSafeExplosionPoint(A,B, 500)
+				local xP = guardianAngel.calcSafeExplosionPoint(A,B, guardianAngel.fxDistance)
 				trigger.action.explosion(xP, guardianAngel.explosion)
 			end
 			
@@ -226,7 +245,7 @@ function guardianAngel.monitorItem(theItem)
 			guardianAngel.invokeCallbacks("intervention", theItem.targetName, theItem.weaponName)
 			w:destroy()
 			if guardianAngel.explosion > 0 then 
-				local xP = guardianAngel.calcSafeExplosionPoint(A,B, 500)
+				local xP = guardianAngel.calcSafeExplosionPoint(A,B, guardianAngel.fxDistance)
 				trigger.action.explosion(xP, guardianAngel.explosion) 
 			end
 			return false -- remove from list 
@@ -415,6 +434,54 @@ function guardianAngel.somethingHappened(event)
 		return
 	end
 	
+	if ID == 2 then 
+		if not guardianAngel.intervention then return end -- we don't intervene 
+		if not event.weapon then return end -- no weapon, no interest 
+		local theWeapon = event.weapon
+		local wName = theWeapon:getName()
+		local theTarget = event.target 	
+		if not theTarget then return end -- should not happen, better safe then dead
+		local tName = theTarget:getName()
+		
+		local theProtegee = nil
+		for idx, aProt in pairs(guardianAngel.unitsToWatchOver) do 
+			if tName == aProt:getName() then 
+				theProtegee = aProt 
+			end
+		end 
+		
+		if not theProtegee then return end 
+		
+		-- one of our protegees was hit 
+		--trigger.action.outText("+++gA: Protegee " .. tName .. " was hit", 30)		
+		trigger.action.outText("+++gA: I:" .. theUnit:getName() .. " hit " .. tName .. " with " .. wName, 30)
+		-- let's see if the victim was in our list of protected 
+		-- units 
+		local thePerp = nil 
+		for idx, anItem in pairs(guardianAngel.missilesInTheAir) do 
+			if anItem.weaponName == wName then 
+				thePerp = anItem
+			end
+		end
+
+		if not thePerp then return end 
+		--trigger.action.outText("+++gA: offender was known to gA: " .. wName, 30)
+		
+		-- stats only: do target and intended target match?
+		local theWTarget = theWeapon:getTarget()
+		if not theWTarget then return end -- no target no interest
+		local wtName = theWTarget:getName()
+		if wtName == tName then 
+			trigger.action.outText("+++gA: perp's ill intent confirmed", 30)
+		else 
+			trigger.action.outText("+++gA: UNINTENDED CONSEQUENCES", 30)
+		end
+
+		-- if we should have protected: mea maxima culpa 
+		trigger.action.outText("[+++gA: Angel hangs her head in shame. Mea Culpa, " .. tName.."]", 30)
+		return 
+	end
+	
 	local myType = theUnit:getTypeName()
 	if guardianAngel.verbose then 
 		trigger.action.outText("+++gA: event " .. ID .. " for unit " .. theUnit:getName() .. " of type " .. myType, 30)
@@ -469,6 +536,7 @@ function guardianAngel.readConfigZone()
 	guardianAngel.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
 	guardianAngel.private = cfxZones.getBoolFromZoneProperty(theZone, "private", false)
 	guardianAngel.explosion = cfxZones.getNumberFromZoneProperty(theZone, "explosion", -1)
+	guardianAngel.fxDistance = cfxZones.getNumberFromZoneProperty(theZone, "fxDistance", 500) 
 end
 
 

@@ -36,7 +36,8 @@ Version History
 		- reUseAfter option for single-use  
 		- dcsCommon, cfxZones import
   2.0.1 - stricter verbosity: moved more comments to verbose only 
-  2.0.2 - health check code 
+  2.0.2 - health check code (initial) 
+		- added verbosity
 	
 WHAT IT IS
 SSB Client is a small script that forms the client-side counterpart to
@@ -235,15 +236,21 @@ end
 
 function cfxSSBClient:onEvent(event) 
 	if event.id == 21 then -- S_EVENT_PLAYER_LEAVE_UNIT
-		trigger.action.outText("+++SSB: Player leave unit", 30)
+		if cfxSSBClient.verbose then 
+			trigger.action.outText("+++SSB: Player leave unit", 30)
+		end
 		local theUnit = event.initiator
-		if not theUnit then 
-			trigger.action.outText("+++SSB: No unit left, abort", 30)
+		if not theUnit then
+			if cfxSSBClient.verbose then
+				trigger.action.outText("+++SSB: No unit left, abort", 30)
+			end
 			return 
 		end 
 		local curH = theUnit:getLife()
 		local maxH = theUnit:getLife0()
-		trigger.action.outText("+++SSB: Health check: " .. curH .. " of " .. maxH, 30)
+		if cfxSSBClient.verbose then
+			trigger.action.outText("+++SSB: Health check: " .. curH .. " of " .. maxH, 30)
+		end
 		return 
 	end
 	

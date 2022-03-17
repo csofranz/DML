@@ -1,11 +1,13 @@
 cloneZones = {}
-cloneZones.version = "1.3.0"
+cloneZones.version = "1.3.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 	"cfxMX", 
 }
+-- groupTracker is OPTIONAL! and required only with trackWith attribute
+
 cloneZones.cloners = {}
 cloneZones.callbacks = {}
 cloneZones.unitXlate = {}
@@ -32,6 +34,8 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 		  - clone? synonym
 		  - empty! and method attributes
 	1.3.0 - DML flag upgrade 
+	1.3.1 - groupTracker interface 
+		  - trackWith: attribute
 	
 --]]--
 
@@ -237,6 +241,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end
 	
 	theZone.turn = cfxZones.getNumberFromZoneProperty(theZone, "turn", 0)
+	
+	-- interface to groupTracker 
+	if cfxZones.hasProperty(theZone, "trackWith:") then 
+		theZone.trackWith = cfxZones.getStringFromZoneProperty(theZone, "trackWith:", "<None>")
+	end
 	
 	-- we end with clear plate 
 end
@@ -523,6 +532,23 @@ function cloneZones.resolveReferences(theZone, dataTable)
 	end
 end
 
+
+function cloneZones.handoffTracking(theGroup, theZone)
+	if not groupTracker then 
+		trigger.action.outText("+++clne: <" .. theZone.name .. "> trackWith requires groupTracker module", 30) 
+		return 
+	end
+	local trackerName = theZone.trackWith
+	if trackerName == "*" then trackerName = theZone.name end 
+	local theTracker = groupTracker.getTrackerByName(trackerName)
+	if not theTracker then 
+		trigger.action.outText("+++clne: <" .. theZone.name .. ">: cannot find tracker named <".. trackerName .. ">", 30) 
+		return 
+	end 
+
+	groupTracker.addGroupToTracker(theGroup, theTracker)
+end
+
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	-- theZone is the cloner with the template
 	-- spawnZone is the spawner with settings 
@@ -612,6 +638,10 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end 
 
 		cloneZones.invokeCallbacks(theZone, "did spawn group", theGroup)
+		-- interface to groupTracker 
+		if theZone.trackWith then 
+			cloneZones.handoffTracking(theGroup, theZone) 
+		end
 	end
 
 	-- static spawns 

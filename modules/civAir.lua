@@ -20,7 +20,7 @@ civAir.version = "1.4.0"
 	
 --]]--
 
-civAir.ups = 0.05 -- updates per second
+civAir.ups = 0.05 -- updates per second. 0.05  = once every 20 seconds 
 civAir.initialAirSpawns = true -- when true has population spawn in-air at start
 civAir.verbose = false 
 

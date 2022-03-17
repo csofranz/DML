@@ -1,5 +1,8 @@
 csarManager = {}
-csarManager.version = "2.0.3"
+csarManager.version = "2.1.0"
+csarManager.verbose = false 
+csarManager.ups = 1 
+
 --[[-- VERSION HISTORY
  - 1.0.0 initial version 
  - 1.0.1 - smoke optional 
@@ -20,6 +23,18 @@ csarManager.version = "2.0.3"
 		 - use hoverDuration
  - 2.0.3 - corrected bug in hoverDuration
  - 2.0.4 - guard in createCSARMission for cfxCommander 
+ - 2.1.0 - startCSAR?
+		 - deferrable missions 
+		 - verbose 
+		 - ups 
+		 - useSmoke
+		 - smokeColor 
+		 - reworked smoking the loc
+		 - config zone 
+		 - csarRedDelivered
+		 - csarBlueDelivered
+		 - finally fixed smoke performance bug 
+		 - csarManager.vectoring optional 
  
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -33,6 +48,7 @@ csarManager.requiredLibs = {
 }
 
 -- *** DOES NOT EXTEND ZONES *** BUT USES OWN STRUCT 
+-- *** extends zones for csarMission zones though
 
 --[[--
 	CSAR MANAGER
@@ -103,6 +119,7 @@ csarManager.requiredLibs = {
 -- OPTIONS
 --
 csarManager.useSmoke = false -- smoke is a performance killer, so you can turn it off 
+csarManager.smokeColor = 4 -- when using smoke
 
 
 -- unitConfigs contain the config data for any helicopter
@@ -115,6 +132,7 @@ csarManager.myEvents = {3, 4, 5} -- 3 = take off, 4 = land, 5 = crash
 --
 csarManager.openMissions = {} -- all currently available missions
 csarManager.csarBases = {} -- all bases where we can drop off rescued pilots
+csarManager.csarZones = {} -- zones for spawning 
 
 csarManager.missionID = 1 -- to create uuid
 csarManager.rescueRadius = 70 -- must land within 50m to rescue
@@ -124,6 +142,7 @@ csarManager.hoverDuration = 20 -- must hover for this duration
 csarManager.rescueTriggerRange = 2000 -- when the unit pops smoke and radios
 csarManager.beaconSound = "Radio_beacon_of_distress_on_121,5_MHz.ogg"
 csarManager.pilotWeight = 120 -- kg for the rescued person. added to the unit's weight
+csarManager.vectoring = true -- provide bearing and range 
 --
 -- callbacks
 -- 
@@ -176,7 +195,7 @@ function csarManager.createDownedPilot(theMission)
 	cfxCommander.scheduleCommands(theCommands, 2) -- in 2 seconds, so unit has time to percolate through DCS
 end
 
-function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, timeLimit, mapMarker)
+function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, timeLimit, mapMarker, inRadius)
 	-- create a type 
 	if not timeLimit then timeLimit = -1 end
 	if not point then return nil end 
@@ -186,9 +205,10 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 		-- remove "downed" - it will be added again later
 		name = dcsCommon.removePrefix(name, "(downed) ")
 	end
+	if not inRadius then inRadius = csarManager.rescueRadius end 
 	
 	newMission.name = "(downed) " .. name .. "-" .. csarManager.missionID -- make it uuid-capable
-	newMission.zone = cfxZones.createSimpleZone(newMission.name, point, csarManager.rescueRadius)
+	newMission.zone = cfxZones.createSimpleZone(newMission.name, point, inRadius) --csarManager.rescueRadius)
 	newMission.marker = mapMarker -- so it can be removed later
 	newMission.isHot = false -- creating adversaries will make it hot, or when units are near. maybe implement a search later?
 	-- detection and load stuff
@@ -354,10 +374,24 @@ function csarManager.successMission(who, where, theMission)
 	-- now call callback for coalition side 
 	-- callback has format callback(coalition, success true/false, numberSaved, descriptionText)
 	
-	for idx, callback in pairs(csarManager.csarCompleteCB) do 
-		callback(theMission.side, true, 1, "test")
-	end
+	csarManager.invokeCallbacks(theMission.side, true, 1, "success")
+--	for idx, callback in pairs(csarManager.csarCompleteCB) do 
+--		callback(theMission.side, true, 1, "test")
+--	end
 	trigger.action.outSoundForCoalition(theMission.side, "Quest Snare 3.wav")
+	
+	if csarManager.csarRedDelivered and theMission.side == 1 then 
+		cfxZones.pollFlag(csarManager.csarRedDelivered, "inc", csarManager.configZone)
+	end
+	
+	if csarManager.csarBlueDelivered and theMission.side == 2 then 
+		cfxZones.pollFlag(csarManager.csarBlueDelivered, "inc", csarManager.configZone)
+	end
+	
+	if csarManager.csarDelivered then 
+		cfxZones.pollFlag(csarManager.csarDelivered, "inc", csarManager.configZone)
+		trigger.action.outText("+++csar: banging csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+	end
 end
 
 function csarManager.heloLanded(theUnit)
@@ -687,7 +721,12 @@ function csarManager.doListCSARRequests(args)
 			d = math.floor(d * 10) / 10
 			local b = dcsCommon.bearingInDegreesFromAtoB(point, mission.zone.point)
 			local status = "alive"
-			report = report .. "\n".. mission.name .. ", bearing " .. b .. ", " ..d .."nm, " .. " ADF " .. mission.freq .. "0 kHz - " .. status 
+			if csarManager.vectoring then 
+				report = report .. "\n".. mission.name .. ", bearing " .. b .. ", " ..d .."nm, " .. " ADF " .. mission.freq .. "0 kHz - " .. status
+			else 
+				-- leave out vectoring 
+				report = report .. "\n".. mission.name .. " ADF " .. mission.freq .. "0 kHz - " .. status
+			end
 		end
 	end
 	
@@ -879,7 +918,7 @@ end
 
 function csarManager.update() -- every second
 	-- schedule next invocation
-	timer.scheduleFunction(csarManager.update, {}, timer.getTime() + 1)
+	timer.scheduleFunction(csarManager.update, {}, timer.getTime() + 1/csarManager.ups)
 
 	-- first, check the health of all csar misions and update the table of live units
 	csarManager.updateCSARMissions()
@@ -924,8 +963,11 @@ function csarManager.update() -- every second
 						end
 						-- also pop smoke if not popped already, or more than 3 minutes ago
 						if csarManager.useSmoke and  timer.getTime() - csarMission.lastSmokeTime > 179 then 
-							local smokePoint = cfxZones.createHeightCorrectedPoint(csarMission.zone.point)
-							trigger.action.smoke(smokePoint, 4 )
+							local smokePoint = dcsCommon.randomPointOnPerimeter(
+								50, csarMission.zone.point.x, csarMission.zone.point.z) --cfxZones.createHeightCorrectedPoint(csarMission.zone.point)
+							-- trigger.action.smoke(smokePoint, 4 )
+							dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor)
+							csarMission.lastSmokeTime = timer.getTime()
 						end
 						
 						-- now check if we are inside hover range and alt 
@@ -990,6 +1032,32 @@ function csarManager.update() -- every second
 			end -- if troop carrier 
 		end -- if exists 
 	end -- for all players 
+	
+	-- now see and check if we need to spawn from a csar zone
+	-- that has been told to spawn 
+	for idx, theZone in pairs(csarManager.csarZones) do 
+		-- check if their flag value has changed
+		if theZone.startCSAR then 
+			-- this should always be true, but you never know
+			local currVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
+			if currVal ~= theZone.lastCSARVal then 
+				local theMission = csarManager.createCSARMissionData(
+						cfxZones.getPoint(theZone), 
+						theZone.csarSide, 
+						theZone.csarFreq, 
+						theZone.csarName, 
+						theZone.numCrew, 
+						theZone.timeLimit, 
+						theZone.csarMapMarker,
+						theZone.radius)
+				csarManager.addMission(theMission)
+				theZone.lastCSARVal = currVal
+				if csarManager.verbose then 
+					trigger.action.outText("+++csar: started CSAR mission " .. theZone.csarName, 30)
+				end
+			end
+		end
+	end
 end
 
 --
@@ -1036,10 +1104,9 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent)
 end
 
 
-
 --
--- Init & Start 
---
+-- csar (mission) zones 
+-- 
 
 function csarManager.processCSARBASE()
 	local csarBases = cfxZones.zonesWithProperty("CSARBASE")
@@ -1051,15 +1118,85 @@ function csarManager.processCSARBASE()
 	end
 end
 
-function csarManager.processCASRZones()
+function csarManager.addCSARZone(theZone)
+	table.insert(csarManager.csarZones, theZone)
+end
+
+function csarManager.readCSARZone(theZone)
+	-- zones have attribute "CSAR" 
+	-- gather data, and then create a mission from this
+	local theSide = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
+	theZone.csarSide = theSide 
+	theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "name", "<none>")
+	if cfxZones.hasProperty(theZone, "csarName") then 
+		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "csarName", "<none>")
+	end
+	if cfxZones.hasProperty(theZone, "pilotName") then 
+		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "pilotName", "<none>")
+	end
+	
+	if cfxZones.hasProperty(theZone, "victimName") then 
+		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "victimName", "<none>")
+	end
+	
+	theZone.csarFreq = cfxZones.getNumberFromZoneProperty(theZone, "freq", 0)
+	if theZone.csarFreq == 0 then theZone.csarFreq = nil end 
+	theZone.numCrew = 1 
+	theZone.csarMapMarker = nil 
+	theZone.timeLimit = cfxZones.getNumberFromZoneProperty(theZone, "timeLimit", 0)
+	if theZone.timeLimit == 0 then theZone.timeLimit = nil else theZone.timeLimit = timeLimit * 60 end 
+	
+	local deferred = cfxZones.getBoolFromZoneProperty(theZone, "deferred", false)
+	
+	if cfxZones.hasProperty(theZone, "in?") then
+		theZone.startCSAR = cfxZones.getStringFromZoneProperty(theZone, "in?", "*none")
+		theZone.lastCSARVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
+	end 
+	
+	if cfxZones.hasProperty(theZone, "startCSAR?") then
+		theZone.startCSAR = cfxZones.getStringFromZoneProperty(theZone, "startCSAR?", "*none")
+		theZone.lastCSARVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
+	end 
+	
+	
+	if (not deferred) then 
+		local theMission = csarManager.createCSARMissionData(
+			theZone.point, 
+			theZone.csarSide, 
+			theZone.csarFreq, 
+			theZone.csarName, 
+			theZone.numCrew, 
+			theZone.timeLimit, 
+			theZone.csarMapMarker,
+			theZone.radius)
+		csarManager.addMission(theMission)
+	end
+
+	-- add to list of startable csar
+	if theZone.startCSAR then 
+		csarManager.addCSARZone(theZone)
+		trigger.action.outText("csar: added <".. theZone.name .."> to deferred csar missions", 30)
+	end 
+	
+	if deferred and not theZone.startCSAR then 
+		trigger.action.outText("+++csar: warning - CSAR Mission in Zone <" .. theZone.name .. "> can't be started", 30)
+	end
+end
+
+function csarManager.processCSARZones()
 	local csarBases = cfxZones.zonesWithProperty("CSAR")
 	
 	-- now add all zones to my zones table, and init additional info
 	-- from properties
 	for k, aZone in pairs(csarBases) do
+	
+		csarManager.readCSARZone(aZone)
+	--[[--
 		-- gather data, and then create a mission from this
 		local theSide = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0)
+		aZone.csarSide = theSide 
 		local name = cfxZones.getZoneProperty(aZone, "name")
+		aZone.
 		local freq = cfxZones.getNumberFromZoneProperty(aZone, "freq", 0)
 		if freq == 0 then freq = nil end 
 		local numCrew = 1 
@@ -1075,8 +1212,16 @@ function csarManager.processCASRZones()
 			timeLimit, 
 			mapMarker)
 		csarManager.addMission(theMission)
+		--]]--
+		
 	end
 end
+
+--
+-- Init & Start 
+--
+
+
 
 
 function csarManager.invokeCallbacks(theCoalition, success, numRescued, notes)
@@ -1091,6 +1236,53 @@ function csarManager.installCallback(theCB)
 	table.insert(csarManager.csarCompleteCB, theCB)
 end
 
+function csarManager.readConfigZone()
+	local theZone = cfxZones.getZoneByName("csarManagerConfig") 
+	if not theZone then 
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: NO config zone!", 30)
+		end 
+		return 
+	end 
+	csarManager.configZone = theZone -- save for flag banging compatibility 
+	
+	csarManager.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	
+	csarManager.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 1)
+	
+	csarManager.useSmoke = cfxZones.getBoolFromZoneProperty(theZone, "useSmoke", true)
+	csarManager.smokeColor = cfxZones.getSmokeColorStringFromZoneProperty(theZone, "smokeColor", "blue")
+	csarManager.smokeColor = dcsCommon.smokeColor2Num(csarManager.smokeColor)
+	
+	
+	if cfxZones.hasProperty(theZone, "csarRedDelivered!") then 
+		csarManager.csarRedDelivered = cfxZones.getStringFromZoneProperty(theZone, "csarRedDelivered!", "*<none>")
+	end
+	
+	if cfxZones.hasProperty(theZone, "csarBlueDelivered!") then 
+		csarManager.csarBlueDelivered = cfxZones.getStringFromZoneProperty(theZone, "csarBlueDelivered!", "*<none>")
+	end
+	
+	if cfxZones.hasProperty(theZone, "csarDelivered!") then 
+		csarManager.csarDelivered = cfxZones.getStringFromZoneProperty(theZone, "csarDelivered!", "*<none>")
+		trigger.action.outText("+++csar: will bang csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+	end
+	
+	csarManager.rescueRadius = cfxZones.getNumberFromZoneProperty(theZone, "rescueRadius", 70) --70 -- must land within 50m to rescue
+	csarManager.hoverRadius = cfxZones.getNumberFromZoneProperty(theZone, "hoverRadius", 30) -- 30 -- must hover within 10m of unit 
+	csarManager.hoverAlt = cfxZones.getNumberFromZoneProperty(theZone, "hoverAlt", 40) -- 40 -- must hover below this alt 
+	csarManager.hoverDuration = cfxZones.getNumberFromZoneProperty(theZone, "hoverDuration", 20) -- 20 -- must hover for this duration
+	csarManager.rescueTriggerRange = cfxZones.getNumberFromZoneProperty(theZone, "rescueTriggerRange", 2000) -- 2000 -- when the unit pops smoke and radios
+	csarManager.beaconSound = cfxZones.getStringFromZoneProperty(theZone, "beaconSound", "Radio_beacon_of_distress_on_121.ogg") --"Radio_beacon_of_distress_on_121,5_MHz.ogg"
+	csarManager.pilotWeight = cfxZones.getNumberFromZoneProperty(theZone, "pilotWeight", 120) -- 120
+	
+	csarManager.vectoring = cfxZones.getBoolFromZoneProperty(theZone, "vectoring", true)
+	
+	if csarManager.verbose then 
+		trigger.action.outText("+++csar: read config", 30)
+	end 
+end
+
 
 function csarManager.start()
 	-- make sure we have loaded all relevant libraries 
@@ -1098,6 +1290,9 @@ function csarManager.start()
 		trigger.action.outText("cf/x CSAR aborted: missing libraries", 30)
 		return false 
 	end
+
+	-- read config
+	csarManager.readConfigZone()
 
 	-- install callbacks for helo-relevant events
 	dcsCommon.addEventHandler(csarManager.somethingHappened, csarManager.preProcessor, csarManager.postProcessor)
@@ -1118,7 +1313,7 @@ function csarManager.start()
 	
 	-- now scan all zones to create ME-placed CSAR missions
 	-- and populate the available mission.
-	csarManager.processCASRZones()
+	csarManager.processCSARZones()
 	
 	-- now call update so we can monitor progress of all helos, and alert them
 	-- when they are close to a CSAR

@@ -155,7 +155,7 @@ function unitZone.checkZoneStatus(theZone)
 		end 
         
 	else 
-		-- we perform group cehck 
+		-- we perform group check 
 		for idx, aGroup in pairs(theGroups) do 
 			local gName=aGroup:getName()
 			local hasMatch = false 
