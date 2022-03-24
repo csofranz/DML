@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.1.1"
+messenger.version = "1.2.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -18,6 +18,8 @@ messenger.messengers = {}
 	1.1.1 - firewalled coalition to msgCoalition
 		  - messageOn?
 		  - messageOff?
+	1.2.0 - triggerMethod (original Watchflag integration) 
+	
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -52,6 +54,9 @@ function messenger.createMessengerWithZone(theZone)
 	-- alternate version: messages: list of messages, need string parser first
 	
 	theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "duration", 30)
+	
+	-- triggerMethod
+	theZone.triggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 	
 	-- trigger flag f? in? messageOut?
 	if cfxZones.hasProperty(theZone, "f?") then 
@@ -157,37 +162,26 @@ function messenger.update()
 		
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
-		if aZone.triggerMessagerFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerMessagerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerMessagerFlag)
-			if currTriggerVal ~= aZone.lastMessageTriggerValue
-			then 
-				if messenger.verbose then 
+		-- new trigger code 
+		if cfxZones.testZoneFlag(aZone, 				aZone.triggerMessagerFlag, aZone.triggerMethod, 			"lastMessageTriggerValue") then 
+			if messenger.verbose then 
 					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end
-				messenger.isTriggered(aZone)
-				aZone.lastMessageTriggerValue = cfxZones.getFlagValue(aZone.triggerMessagerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerMessagerFlag) -- save last value
-			end
+			messenger.isTriggered(aZone)
+		end 
+		
+		-- old trigger code 		
+		if cfxZones.testZoneFlag(aZone, aZone.messageOffFlag, "change", "lastMessageOff") then 
+			aZone.messageOff = true
+			if messenger.verbose then 
+				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
+			end 
 		end
 		
-		if aZone.messageOffFlag then 
-			local currVal = cfxZones.getFlagValue(aZone.messageOffFlag, aZone) 
-			if currVal ~= aZone.lastMessageOff then
-				aZone.messageOff = true 
-				aZone.lastMessageOff = currVal
-				if messenger.verbose then 
-					trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
-				end 
-			end
-		end
-		
-		if aZone.messageOnFlag then 
-			local currVal = cfxZones.getFlagValue(aZone.messageOnFlag, aZone) 
-			if currVal ~= aZone.lastMessageOn then
-				aZone.messageOff = false 
-				aZone.lastMessageOn = currVal
-				if messenger.verbose then 
-					trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
-				end
+		if cfxZones.testZoneFlag(aZone, 				aZone.messageOnFlag, "change", "lastMessageOn") then 
+			aZone.messageOff = false
+			if messenger.verbose then 
+				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
 			end
 		end
 	end

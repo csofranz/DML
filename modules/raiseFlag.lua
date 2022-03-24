@@ -1,5 +1,5 @@
 raiseFlag = {}
-raiseFlag.version = "1.0.1"
+raiseFlag.version = "1.2.0"
 raiseFlag.verbose = false 
 raiseFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,6 +12,8 @@ raiseFlag.flags = {}
 	Version History
 	1.0.0 - initial release 
 	1.0.1 - synonym "raiseFlag!"
+	1.1.0 - DML update
+	1.2.0 - Watchflag update 
 	
 --]]--
 function raiseFlag.addRaiseFlag(theZone)
@@ -43,6 +45,14 @@ function raiseFlag.createRaiseFlagWithZone(theZone)
 	theZone.flagValue = cfxZones.getNumberFromZoneProperty(theZone, "value", 1) -- value to set to
 
 	theZone.minAfterTime, theZone.maxAfterTime = cfxZones.getPositiveRangeFromZoneProperty(theZone, "afterTime", -1)
+
+	-- method for triggering 
+	-- watchflag:
+	-- triggerMethod
+	theZone.raiseTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "raiseTriggerMethod") then 
+		theZone.raiseTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "raiseTriggerMethod", "change")
+	end
 
 	if cfxZones.hasProperty(theZone, "stopFlag?") then 
 		theZone.triggerStopFlag = cfxZones.getStringFromZoneProperty(theZone, "stopFlag?", "none")
@@ -79,6 +89,12 @@ function raiseFlag.update()
 		
 	for idx, aZone in pairs(raiseFlag.flags) do
 		-- make sure to re-start before reading time limit
+		if cfxZones.testZoneFlag(aZone, aZone.triggerStopFlag, aZone.raiseTriggerMethod, "lastTriggerStopValue") then
+			theZone.raiseStopped = true -- we are done, no flag! 
+		end
+		
+		-- old code 
+		--[[--
 		if aZone.triggerStopFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerStopFlag, theZone)
 			if currTriggerVal ~= aZone.lastTriggerStopValue
@@ -86,6 +102,7 @@ function raiseFlag.update()
 				theZone.raiseStopped = true -- we are done, no flag! 
 			end
 		end
+		--]]--
 	end
 end
 

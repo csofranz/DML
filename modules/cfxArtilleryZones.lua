@@ -1,5 +1,5 @@
 cfxArtilleryZones = {}
-cfxArtilleryZones.version = "2.0.2" 
+cfxArtilleryZones.version = "2.2.0" 
 cfxArtilleryZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -28,6 +28,7 @@ cfxArtilleryZones.verbose = false
  2.0.2 - boom?, arty? synonyms 
  2.1.0 - DML Flag Support 
 	   - code cleanup
+ 2.2.0 - DML Watchflag integration 
  
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -123,6 +124,15 @@ function cfxArtilleryZones.processArtilleryZone(aZone)
 	aZone.transitionTime = cfxZones.getNumberFromZoneProperty(aZone, "transitionTime", 20) -- average time of travel for projectiles 
 	aZone.addMark = cfxZones.getBoolFromZoneProperty(aZone, "addMark", true) -- note: defaults to true 
 	aZone.shellVariance = cfxZones.getNumberFromZoneProperty(aZone, "shellVariance", 0.2) -- strength of explosion can vary by +/- this amount
+	
+	-- watchflag:
+	-- triggerMethod
+	aZone.artyTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "artyTriggerMethod", "change")
+
+	if cfxZones.hasProperty(aZone, "triggerMethod") then 
+		aZone.artyTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
+	end
+	
 	if cfxZones.hasProperty(aZone, "f?") then 
 		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
 	end
@@ -134,6 +144,10 @@ function cfxArtilleryZones.processArtilleryZone(aZone)
 	if cfxZones.hasProperty(aZone, "artillery?") then 
 		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "artillery?", "none")
 	end
+	if cfxZones.hasProperty(aZone, "in?") then 
+		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "in?", "none")
+	end
+	
 	if aZone.artyTriggerFlag then 
 		aZone.lastTriggerValue = trigger.misc.getUserFlag(aZone.artyTriggerFlag) -- save last value
 	end
@@ -357,6 +371,17 @@ function cfxArtilleryZones.update()
 	
 	-- iterate all zones to see if a trigger has changed 
 	for idx, aZone in pairs(cfxArtilleryZones.artilleryZones) do 
+		if cfxZones.testZoneFlag(aZone, aZone.artyTriggerFlag, aZone.artyTriggerMethod, "lastTriggerValue") then
+			-- a triggered release!
+			cfxArtilleryZones.doFireAt(aZone) -- all from zone vars!	
+			if cfxArtilleryZones.verbose then 
+				local addInfo = " with var = " .. aZone.baseAccuracy .. " pB=" .. aZone.shellStrength
+				trigger.action.outText("Artillery T-Firing on ".. aZone.name .. addInfo, 30)
+			end 
+		end
+		
+	
+		-- old code
 		if aZone.artyTriggerFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.artyTriggerFlag, aZone) -- trigger.misc.getUserFlag(aZone.artyTriggerFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue

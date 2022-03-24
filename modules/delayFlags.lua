@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.1.0"
+delayFlag.version = "1.2.0"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -28,6 +28,7 @@ delayFlag.flags = {}
 		  - delayDone! synonym
 		  - pauseDelay?
 		  - unpauseDelay?
+	1.2.0 - Watchflags 
 	
 --]]--
 
@@ -58,7 +59,14 @@ function delayFlag.createTimerWithZone(theZone)
 	if delayFlag.verbose then 
 		trigger.action.outText("+++dlyF: time delay is <" .. theZone.delayMin .. ", " .. theZone.delayMax .. "> seconds", 30)
 	end
-	
+
+	-- watchflags:
+	-- triggerMethod
+	theZone.delayTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+
+	if cfxZones.hasProperty(theZone, "delayTriggerMethod") then 
+		theZone.delayTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "delayTriggerMethod", "change")
+	end
 
 	-- trigger flag 
 	if cfxZones.hasProperty(theZone, "f?") then 
@@ -142,6 +150,14 @@ function delayFlag.update()
 	
 	for idx, aZone in pairs(delayFlag.flags) do
 		-- see if we need to stop 
+		if cfxZones.testZoneFlag(aZone, aZone.triggerStopDelay, aZone.delayTriggerMethod, "lastTriggerStopValue") then
+			aZone.delayRunning = false -- simply stop.
+				if delayFlag.verbose then 
+					trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
+				end 
+		end
+		-- old code 
+		--[[--
 		if aZone.triggerStopDelay then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerStopDelay, aZone)
 			if currTriggerVal ~= lastTriggerStopValue then 
@@ -151,7 +167,20 @@ function delayFlag.update()
 				end 
 			end 
 		end		
+		--]]--
 		
+		if cfxZones.testZoneFlag(aZone, aZone.triggerDelayFlag, aZone.delayTriggerMethod, "lastDelayTriggerValue") then
+			if delayFlag.verbose then 
+				if aZone.delayRunning then 
+					trigger.action.outText("+++dlyF: re-starting timer " .. aZone.name, 30)	
+				else 
+					trigger.action.outText("+++dlyF: init timer for " .. aZone.name, 30)
+				end
+			end 
+			delayFlag.startDelay(aZone) -- we restart even if running 
+		end
+		-- old code 
+		--[[--
 		-- make sure to re-start before reading time limit
 		if aZone.triggerDelayFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerDelayFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerDelayFlag)
@@ -168,6 +197,7 @@ function delayFlag.update()
 				aZone.lastDelayTriggerValue = currTriggerVal
 			end
 		end
+		--]]--
 		
 		if aZone.delayRunning then 
 			-- check expiry 

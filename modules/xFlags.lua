@@ -1,5 +1,5 @@
 xFlags = {}
-xFlags.version = "1.0.0"
+xFlags.version = "1.0.1"
 xFlags.verbose = false 
 xFlags.ups = 1 -- overwritten in get config!
 xFlags.requiredLibs = {
@@ -11,6 +11,8 @@ xFlags.requiredLibs = {
 	
 	Version History 
 	1.0.0 - Initial version 
+	1.0.1 - allow flags names for ops as well 
+	        modelled on cfxZones.testFlagByMethodForZone()
 --]]--
 xFlags.xFlagZones = {}
 
@@ -99,7 +101,6 @@ function xFlags.evaluateFlags(theZone)
 		-- we must preserve the order of the array
 		local flagName = theZone.flagNames[i]
 		currVals[i] = cfxZones.getFlagValue(flagName, theZone)
-
 	end
 	
 	-- now perform comparison flag by flag 
@@ -109,6 +110,11 @@ function xFlags.evaluateFlags(theZone)
 	local firstChar = string.sub(op, 1, 1) 
 	local remainder = string.sub(op, 2)
 	local rNum = tonumber(remainder)
+	if not rNum then 
+		-- interpret remainder as flag name 
+		-- so we can say >*killMax
+		rNum = cfxZones.getFlagValue(remainder, theZone)
+	end 
 	
 	for i = 1, #theZone.flagNames do 
 		local lastHits = hits 

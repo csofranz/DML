@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.5.8"
+cfxZones.version = "2.6.1"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -57,6 +57,10 @@ cfxZones.version = "2.5.8"
  - 2.5.7  - pollFlag supports dml flags
  - 2.5.8  - flagArrayFromString
 		  - getFlagNumber invokes tonumber() before returning result 
+ - 2.5.9  - removed pass-back flag in getPoint() 
+ - 2.6.0  - testZoneFlag() method based flag testing
+ - 2.6.1  - Watchflag parsing of zone condition for number-named flags
+          - case insensitive  
  
 --]]--
 cfxZones.verbose = false
@@ -884,6 +888,7 @@ end
 -- from center to rim, with 100% being entirely in center, 0 = outside
 -- the third value returned is the distance to center
 function cfxZones.pointInZone(thePoint, theZone)
+
 	if not (theZone) then return false, 0, 0 end
 		
 	local pflat = {x = thePoint.x, y = 0, z = thePoint.z}
@@ -1176,6 +1181,146 @@ function cfxZones.isMEFlag(inFlag)
 --	inFlag = dcsCommon.trim(inFlag)
 --	return dcsCommon.stringIsPositiveNumber(inFlag)
 end
+
+-- method-based flag testing 
+function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
+	-- return true/false based on theMethod's contraints 
+	-- simple constraints
+	-- ONLY RETURN TRUE IF CHANGE AND CONSTRAINT MET 
+	local lMethod = string.lower(theMethod)
+	if lMethod == "#" or lMethod == "change" then 
+		-- check if currVal different from lastVal
+		return currVal ~= lastVal  
+	end
+	
+	if lMethod == "0" or lMethod == "no" or lMethod == "false" 
+	   or lMethod == "off" then 
+		-- WARNING: ONLY RETURNS TRUE IF FALSE AND lastval not zero!
+		return currVal == 0 and currVal ~= lastVal  
+	end
+	
+	if lMethod == "1" or lMethod == "yes" or lMethod == "true" 
+	   or lMethod == "on" then 
+	    -- WARNING: only returns true if lastval was false!!!!
+		return (currVal ~= 0 and lastVal == 0)  
+	end
+	
+	if lMethod == "inc" or lMethod == "+1" then 
+		return currVal == lastVal+1
+	end
+	
+	if lMethod == "dec" or lMethod == "-1" then 
+		return currVal == lastVal-1
+	end 
+	
+	-- number constraints
+	-- or flag constraints 
+	-- ONLY RETURN TRUE IF CHANGE AND CONSTRAINT MET 
+	local op = string.sub(theMethod, 1, 1) 
+	local remainder = string.sub(theMethod, 2)
+	remainder = dcsCommon.trim(remainder) -- remove all leading and trailing spaces
+	local rNum = tonumber(remainder)
+	if not rNum then 
+		-- we use remainder as name for flag 
+		-- PROCESS ESCAPE SEQUENCES
+		local esc = string.sub(remainder, 1, 1)
+		local last = string.sub(remainder, -1)
+		if esc == "@" then 
+			remainder = string.sub(remainder, 2)
+			remainder = dcsCommon.trim(remainder)
+		end
+		
+		if esc == "(" and last == ")" and string.len(remainder) > 2 then 
+			-- note: iisues with startswith("(") ???
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if esc == "\"" and last == "\"" and string.len(remainder) > 2 then 
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if cfxZones.verbose then 
+			trigger.action.outText("+++zne: accessing flag <" .. remainder .. ">", 30)
+		end 
+		rNum = cfxZones.getFlagValue(remainder, theZone)
+	end 
+	if rNum then 
+		-- we have a comparison = ">", "=", "<" followed by a number 
+		-- THEY TRIGGER EACH TIME lastVal <> currVal AND condition IS MET  
+		if op == "=" then 
+			return currVal == rNum and lastVal ~= currVal
+		end
+		
+		if op == "#" or op == "~" then 
+			return currVal ~= rNum and lastVal ~= currVal 
+		end 
+		
+		if op == "<" then 
+			return currVal < rNum and lastVal ~= currVal
+		end
+		
+		if op == ">" then 
+			return currVal > rNum and lastVal ~= currVal
+		end
+	end
+	
+	-- if we get here, we have an error 
+	local zoneName = "<NIL>"
+	if theZone then zoneName = theZone.name end 
+	trigger.action.outText("+++Zne: illegal method constraints |" .. theMethod .. "| for zone " .. zoneName, 30 )
+	return false 
+end
+
+function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
+	-- returns true if method contraints are met for flag theFlagName
+	-- as defined by theMethod 
+	if not theMethod then 
+		theMethod = "change"
+	end 
+	
+	-- will read and update theZone[latchName] as appropriate 
+	if not theZone then 
+		trigger.action.outText("+++Zne: no zone for testZoneFlag", 30)
+		return
+	end 
+	if not theFlagName then 
+		-- this is common, no error, only on verbose 
+		if cfxZones.verbose then 
+			trigger.action.outText("+++Zne: no flagName for zone " .. theZone.name .. " for testZoneFlag", 30)
+		end 
+		return
+	end
+	if not latchName then 
+		trigger.action.outText("+++Zne: no latchName for zone " .. theZone.name .. " for testZoneFlag", 30)
+		return	
+	end
+	-- get current value 
+	local currVal = cfxZones.getFlagValue(theFlagName, theZone)
+	
+	-- get last value from latch
+	local lastVal = theZone[latchName]
+	if not lastVal then 
+		trigger.action.outText("+++Zne: latch <" .. latchName .. "> not valid for zone " .. theZone.name, 30)
+		return 
+	end
+	
+	-- now, test by method 
+	-- we should only test if currVal <> lastVal 
+	if currVal == lastVal then
+		return false 
+	end 
+	
+	--trigger.action.outText("+++Zne: about to test: c = " .. currVal .. ", l = " .. lastVal, 30)
+	local testResult = cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
+
+	-- update latch by method
+	theZone[latchName] = currVal 
+
+	-- return result
+	return testResult
+end
+
+
 
 function cfxZones.flagArrayFromString(inString)
 -- original code from RND flag
@@ -1500,8 +1645,13 @@ function cfxZones.getPoint(aZone) -- always works, even linked, point can be reu
 	thePos.x = aZone.point.x
 	thePos.y = 0 -- aZone.y 
 	thePos.z = aZone.point.z
-	-- since we are at it, update the zone as well
-	aZone.point = thePos 
+	-- update the zone as well -- that's stupid!
+	--[[-- aZone.point = thePos 
+	local retPoint = {} -- create new copy to pass back 
+	retPoint.x = thePos.x
+	retPoint.y = 0 
+	retPoint.z = thePos.z
+	--]]--
 	return thePos 
 end
 

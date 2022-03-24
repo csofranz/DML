@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.1.0"
+rndFlags.version = "1.2.0"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -22,6 +22,7 @@ rndFlags.requiredLibs = {
 				getFlagValue in update 
 				some code clean-up
 				rndMethod synonym 
+	1.2.0 - Watchflag integration
 --]]
 rndFlags.rndGen = {}
 
@@ -104,6 +105,14 @@ function rndFlags.createRNDWithZone(theZone)
 	
 	theZone.remove = cfxZones.getBoolFromZoneProperty(theZone, "remove", false)
 
+	-- watchflag:
+	-- triggerMethod
+	theZone.rndTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+
+	if cfxZones.hasProperty(theZone, "rndTriggerMethod") then 
+		theZone.rndTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "rndTriggerMethod", "change")
+	end
+
 	-- trigger flag 
 	if cfxZones.hasProperty(theZone, "f?") then 
 		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
@@ -116,6 +125,7 @@ function rndFlags.createRNDWithZone(theZone)
 	if cfxZones.hasProperty(theZone, "rndPoll?") then 
 		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "rndPoll?", "none")
 	end
+	
 	
 	if theZone.triggerFlag then 
 		theZone.lastTriggerValue = cfxZones.getFlagValue(theZone.triggerFlag, theZone) --trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
@@ -223,6 +233,13 @@ function rndFlags.update()
 	timer.scheduleFunction(rndFlags.update, {}, timer.getTime() + 1)
 	
 	for idx, aZone in pairs(rndFlags.rndGen) do
+		if cfxZones.testZoneFlag(aZone, aZone.triggerFlag, aZone.rndTriggerMethod, "lastTriggerValue") then
+			if rndFlags.verbose then 
+				trigger.action.outText("+++RND: triggering " .. aZone.name, 30)
+			end 
+			rndFlags.fire(aZone)
+		end
+--[[-- old code pre watchflag		
 		if aZone.triggerFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerFlag)
 			if currTriggerVal ~= aZone.lastTriggerValue
@@ -235,6 +252,7 @@ function rndFlags.update()
 			end
 
 		end
+--]]--
 	end
 end
 

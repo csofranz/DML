@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.6"
+dcsCommon.version = "2.5.7"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -66,6 +66,7 @@ dcsCommon.version = "2.5.6"
        - stringStartsWithLetter()
 	   - stringIsPositiveNumber()
  2.5.6 - corrected stringEndsWith() bug with str
+ 2.5.7 - point2text(p) 
 	   
 --]]--
 
@@ -1770,6 +1771,15 @@ dcsCommon.version = "2.5.6"
 		if not theBool then theBool = false end 
 		if theBool then return "yes" end 
 		return "no"
+	end
+
+	function dcsCommon.point2text(p) 
+		if not p then return "<!NIL!>" end 
+		local t = "[x="
+		if p.x then t = t .. p.x .. ", " else t = t .. "<nil>, " end 
+		if p.y then t = t .. p.y .. ", " else t = t .. "<nil>, " end 
+		if p.z then t = t .. p.z .. "]" else t = t .. "<nil>]" end 
+		return t 
 	end
 
 	-- recursively show the contents of a variable

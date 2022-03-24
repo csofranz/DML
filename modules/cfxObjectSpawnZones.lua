@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.2.0"
+cfxObjectSpawnZones.version = "1.2.1"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -7,7 +7,7 @@ cfxObjectSpawnZones.requiredLibs = {
 	"cfxZones", -- Zones, of course. MUST HAVE RUN
 }
 cfxObjectSpawnZones.ups = 1
-
+cfxObjectSpawnZones.verbose = false
 --
 -- Zones that conform with this requirements spawn toops automatically
 --   *** DOES NOT EXTEND ZONES *** 
@@ -25,6 +25,8 @@ cfxObjectSpawnZones.ups = 1
 --   1.1.4 - activate?, pause? attributes 
 --   1.1.5 - spawn?, spawnObjects? synonyms
 --   1.2.0 - DML flag upgrade 
+--   1.2.1 - config zone 
+--         - autoLink bug (zone instead of spaneer accessed)
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
 cfxObjectSpawnZones.allSpawners = {}
@@ -191,6 +193,20 @@ function cfxObjectSpawnZones.verifySpawnOwnership(spawner)
 end
 
 function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container) 
+	if cfxObjectSpawnZones.verbose then 
+		trigger.action.outText("+++oSpwn: enter spawnNT for " .. theType .. " with spawner " .. aSpawner.name .. " for zone " .. aSpawner.zone.name , 30)
+		if aSpawner.zone.linkedUnit then 
+			trigger.action.outText("linked to unit " .. aSpawner.zone.linkedUnit:getName(), 30)
+			if aSpawner.autoLink then 
+				trigger.action.outText("autolink", 30)
+			else 
+				trigger.action.outText("UNAUTO", 30)
+			end
+		else 
+			trigger.action.outText("Unlinked", 30)
+		end
+	end 
+	
 	if not aSpawner then return end
 	if not container then container = {} end 
 	if not n then n = 1 end
@@ -220,7 +236,11 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 		-- if linked, relative-link instead to ship 
 		-- NOTE: it is possible that we have to re-calc heading
 		-- if ship turns relative to original designation position.
-		if aZone.linkedUnit and aZone.autoLink then
+		if aZone.linkedUnit and aSpawner.autoLink then
+			-- remember there is identical code for when more than 1 item!!!!
+			if cfxObjectSpawnZones.verbose then 
+				trigger.action.outText("+++oSpwn: linking <" .. aZone.name .. ">'s objects to unit " .. aZone.linkedUnit:getName(), 30)
+			end 
 			dcsCommon.linkStaticDataToUnit(
 				theStaticData, 
 				aZone.linkedUnit, 
@@ -269,7 +289,7 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 		aSpawner.count = aSpawner.count + 1
 		dcsCommon.moveStaticDataTo(theStaticData, ox, oy)
 
-		if aZone.linkedUnit and aZone.autoLink then
+		if aZone.linkedUnit and aSpawner.autoLink then
 			dcsCommon.linkStaticDataToUnit(theStaticData, aZone.linkedUnit, aSpawner.dx + rx, aSpawner.dy + ry, aSpawner.origHeading)
 		end
 		
@@ -430,11 +450,32 @@ function cfxObjectSpawnZones.update()
 	end
 end
 
+function cfxObjectSpawnZones.readConfigZone()
+	local theZone = cfxZones.getZoneByName("objectSpawnZonesConfig") 
+	if not theZone then 
+		if cfxObjectSpawnZones.verbose then 
+			trigger.action.outText("+++oSpwn: NO config zone!", 30)
+		end 
+		return 
+	end 
+	
+	cfxObjectSpawnZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	
+	cfxObjectSpawnZones.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 1)
+	
+	if cfxObjectSpawnZones.verbose then 
+		trigger.action.outText("+++oSpwn: read config", 30)
+	end 
+end
+
 function cfxObjectSpawnZones.start()
 	if not dcsCommon.libCheck("cfx Object Spawn Zones", 
 		cfxObjectSpawnZones.requiredLibs) then
 		return false 
 	end
+	
+	-- read config 
+	cfxObjectSpawnZones.readConfigZone()
 	
 	-- collect all spawn zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("objectSpawner")

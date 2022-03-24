@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "1.3.0"
+cfxPlayerScore.version = "1.3.1"
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
 cfxPlayerScore.announcer = true 
@@ -22,6 +22,7 @@ cfxPlayerScore.announcer = true
 		  - scenery objects are now supported. use the 
 		    number that is given under OBJECT ID when 
 			using assign as...
+	1.3.1 - isStaticObject() to better detect buildings after Match 22 patch
 	
 		  
 --]]--
@@ -233,6 +234,13 @@ function cfxPlayerScore.postProcessor(theEvent)
 	-- don't do anything
 end
 
+function cfxPlayerScore.isStaticObject(theUnit) 
+	if not theUnit.getGroup then return true end 
+	local aGroup = theUnit:getGroup()
+	if aGroup then return false end 
+	return true 
+end
+
 function cfxPlayerScore.killDetected(theEvent)
 	-- we are only getting called when and if 
 	-- a kill occured and killer was a player 
@@ -270,7 +278,9 @@ function cfxPlayerScore.killDetected(theEvent)
 
 	-- see what kind of unit (category) we killed
     -- and look up base score 
-	if not victim.getGroup then
+	local isStO = cfxPlayerScore.isStaticObject(victim) 
+	--if not victim.getGroup then
+	if isStO then 
 		-- static objects have no group 
 
 		local staticName = victim:getName() -- on statics, this returns 
@@ -279,7 +289,7 @@ function cfxPlayerScore.killDetected(theEvent)
 		if staticScore > 0 then 
 			-- this was a named static, return the score - unless our own
 			if fraternicide then 
-				scoreMod = -2 * scoreMod 
+				scoreMod = -1 * scoreMod -- blue on blue static kills award negative
 				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.badSound)
 			else 
 				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
@@ -294,7 +304,15 @@ function cfxPlayerScore.killDetected(theEvent)
 	end 
 	
 	local vicGroup = victim:getGroup()
+	if not vicGroup then 
+		trigger.action.outText("+++scr: strange stuff:group, outta here", 30)
+		return 
+	end 
 	local vicCat = vicGroup:getCategory()
+		if not vicCat then 
+		trigger.action.outText("+++scr: strange stuff:cat, outta here", 30)
+		return 
+	end
 	local unitScore = cfxPlayerScore.unit2score(victim)
 
 	-- see which weapon was used. gun kills score 2x 
@@ -308,9 +326,7 @@ function cfxPlayerScore.killDetected(theEvent)
 		else 
 			local kWeapon = killWeap:getTypeName()
 			killMeth = " with " .. kWeapon
-		end
-	else 
-		
+		end		
 	end
 	
 	if pk then 

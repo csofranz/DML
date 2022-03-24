@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.3.1"
+cloneZones.version = "1.4.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -36,6 +36,7 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 	1.3.0 - DML flag upgrade 
 	1.3.1 - groupTracker interface 
 		  - trackWith: attribute
+	1.4.0 - Watchflags 
 	
 --]]--
 
@@ -182,6 +183,14 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		if cloneZones.verbose then 
 			trigger.action.outText(theZone.name .. " clone template saved", 30)
 		end
+	end
+	
+	-- watchflag:
+	-- triggerMethod
+	theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+
+	if cfxZones.hasProperty(theZone, "cloneTriggerMethod") then 
+		theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "cloneTriggerMethod", "change")
 	end
 	
 	-- f? and spawn? and other synonyms map to the same 
@@ -870,6 +879,14 @@ function cloneZones.update()
 		end
 		
 		-- see if we got spawn? command
+		if cfxZones.testZoneFlag(aZone, aZone.spawnFlag, aZone.cloneTriggerMethod, "lastSpawnValue") then
+			if cloneZones.verbose then 
+				trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. ">", 30)
+			end 
+			cloneZones.spawnWithCloner(aZone)
+		end
+		-- old code 
+		--[[--
 		if aZone.spawnFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.spawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.spawnFlag)
 			if currTriggerVal ~= aZone.lastSpawnValue
@@ -881,6 +898,7 @@ function cloneZones.update()
 				aZone.lastSpawnValue = currTriggerVal
 			end
 		end
+		--]]--
 		
 		-- empty handling 
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		

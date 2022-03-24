@@ -1,7 +1,12 @@
 cfxArtilleryDemon = {}
-cfxArtilleryDemon.version = "1.0.2"
+cfxArtilleryDemon.version = "1.0.3"
 -- based on cfx stage demon v 1.0.2
-
+--[[--
+	Version History
+	1.0.2 - taken from stageDemon
+	1.0.3 - corrected 'messageOut' bug 
+	
+--]]--
 cfxArtilleryDemon.messageToAll = true -- set to false if messages should be sent only to the group that set the mark
 cfxArtilleryDemon.messageTime = 30 -- how long a message stays on the sceeen
 
@@ -181,7 +186,7 @@ function cfxArtilleryDemon:onEvent(theEvent)
 		local theGroup = cfxArtilleryDemon.retrieveGroupFromEvent(theEvent)
 		if not theGroup then 
 			args.toAll = true
-			trigger.action.messageOut("*** WARNING: cfxArtilleryDemon can't find group for command", 30)
+			trigger.action.outText("*** WARNING: cfxArtilleryDemon can't find group for command", 30)
 		else 
 			args.group = theGroup
 		end

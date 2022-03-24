@@ -1,5 +1,5 @@
 cfxCargoReceiver = {}
-cfxCargoReceiver.version = "1.2.0" 
+cfxCargoReceiver.version = "1.2.1" 
 cfxCargoReceiver.ups = 1 -- once a second 
 cfxCargoReceiver.maxDirectionRange = 500 -- in m. distance when cargo manager starts talking to pilots who are carrying that cargo
 cfxCargoReceiver.requiredLibs = {
@@ -16,6 +16,7 @@ cfxCargoReceiver.requiredLibs = {
           silent attribute		
   - 1.2.0 method
 		  f!, cargoReceived!
+  - 1.2.1 cargoMethod 
   
   
   CargoReceiver is a zone enhancement you use to be automatically 
@@ -71,13 +72,17 @@ function cfxCargoReceiver.processReceiverZone(aZone) -- process attribute and ad
 	end
 	
 	-- new method support
-	aZone.method = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
+	aZone.cargoMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
+	if cfxZones.hasProperty(aZone, "cargoMethod") then 
+		aZone.cargoMethod = cfxZones.getStringFromZoneProperty(aZone, "cargoMethod", "inc")
+	end
 	
 	if cfxZones.hasProperty(aZone, "f!") then 
-		aZone.outReceiveFlag = cfxZones.getNumberFromZoneProperty(aZone, "f!", -1)
+		aZone.outReceiveFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*<none>")
 	end
-		if cfxZones.hasProperty(aZone, "cargoReceived!") then 
-		aZone.outReceiveFlag = cfxZones.getNumberFromZoneProperty(aZone, "cargoReceived!", -1)
+
+	if cfxZones.hasProperty(aZone, "cargoReceived!") then 
+		aZone.outReceiveFlag = cfxZones.getStringFromZoneProperty(aZone, "cargoReceived!", "*<none>")
 	end
 	
 end
@@ -146,7 +151,7 @@ function cfxCargoReceiver.cargoEvent(event, object, name)
 				end
 				
 				if aZone.outReceiveFlag then 
-					cfxZones.pollFlag(aZone.outReceiveFlag, aZone.method)
+					cfxZones.pollFlag(aZone.outReceiveFlag, aZone.cargoMethod)
 				end
 				
 				--trigger.action.outText("+++rcv: " .. name .. " delivered in zone " .. aZone.name, 30)
