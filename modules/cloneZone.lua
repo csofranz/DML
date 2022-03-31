@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.4.0"
+cloneZones.version = "1.4.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -37,6 +37,7 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 	1.3.1 - groupTracker interface 
 		  - trackWith: attribute
 	1.4.0 - Watchflags 
+	1.4.1 - trackWith: accepts list of trackers 
 	
 --]]--
 
@@ -548,14 +549,31 @@ function cloneZones.handoffTracking(theGroup, theZone)
 		return 
 	end
 	local trackerName = theZone.trackWith
-	if trackerName == "*" then trackerName = theZone.name end 
-	local theTracker = groupTracker.getTrackerByName(trackerName)
-	if not theTracker then 
-		trigger.action.outText("+++clne: <" .. theZone.name .. ">: cannot find tracker named <".. trackerName .. ">", 30) 
-		return 
+	--if trackerName == "*" then trackerName = theZone.name end 
+	-- now assemble a list of all trackers
+	if cloneZones.verbose or theZone.verbose then 
+		trigger.action.outText("+++clne: clone pass-off: " .. trackerName, 30)
 	end 
-
-	groupTracker.addGroupToTracker(theGroup, theTracker)
+	
+	local trackerNames = {}
+	if dcsCommon.containsString(trackerName, ',') then
+		trackerNames = dcsCommon.splitString(trackerName, ',')
+	else 
+		table.insert(trackerNames, trackerName)
+	end
+	for idx, aTrk in pairs(trackerNames) do 
+		local theName = dcsCommon.trim(aTrk)
+		if theName == "*" then theName = theZone.name end 
+		local theTracker = groupTracker.getTrackerByName(theName)
+		if not theTracker then 
+			trigger.action.outText("+++clne: <" .. theZone.name .. ">: cannot find tracker named <".. theName .. ">", 30) 
+		else 
+			groupTracker.addGroupToTracker(theGroup, theTracker)
+			 if cloneZones.verbose or theZone.verbose then 
+				trigger.action.outText("+++clne: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
+			 end
+		end 
+	end 
 end
 
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)

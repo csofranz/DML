@@ -1,11 +1,19 @@
 unitZone={}
-unitZone.version = "1.0.0"
+unitZone.version = "1.1.0"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
+--[[--
+	Version History 
+	1.0.0 - Initial Version
+	1.1.0 - DML flag integration 
+		  - method/uzMethod 
+		  
+--]]--
+
 unitZone.unitZones = {}
 
 function unitZone.addUnitZone(theZone)
@@ -62,7 +70,17 @@ function unitZone.createUnitZone(theZone)
 	-- coalition 
 	theZone.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0) -- 0 = all
 	if cfxZones.hasProperty(theZone, "uzCoalition") then 
-		cfxZones.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "uzCoalition", 0)
+		theZone.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "uzCoalition", 0)
+	end
+	
+	if unitZone.verbose then 
+		trigger.action.outText("+++uZne: set coa " .. theZone.uzCoalition .. " for <" .. theZone.name .. ">", 30)
+	end
+
+	-- DML M;ethod 
+	theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	if cfxZones.hasProperty(theZone, "uzMethod") then 
+		theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "uzMethod", "inc")
 	end
 
 	theZone.enterZone = cfxZones.getStringFromZoneProperty(theZone, "enterZone!", "<none>")
@@ -184,16 +202,16 @@ end
 --
 function unitZone.bangState(theZone, newState)
 	
-	cfxZones.pollFlag(theZone.changeZone, "inc", theZone)
+	cfxZones.pollFlag(theZone.changeZone, theZone.uzMethod, theZone)
 	if newState then 
-		cfxZones.pollFlag(theZone.enterZone, "inc", theZone)
+		cfxZones.pollFlag(theZone.enterZone, theZone.uzMethod, theZone)
 		if unitZone.verbose then 
-			trigger.action.outText("+++uZone: banging enter!  on <" .. theZone.enterZone .. "> for " .. theZone.name, 30)
+			trigger.action.outText("+++uZone: banging enter! with <" .. theZone.uzMethod .. "> on <" .. theZone.enterZone .. "> for " .. theZone.name, 30)
 		end 
 	else 
-		cfxZones.pollFlag(theZone.exitZone, "inc", theZone)
+		cfxZones.pollFlag(theZone.exitZone, theZone.uzMethod, theZone)
 		if unitZone.verbose then 
-			trigger.action.outText("+++uZone: banging exit! on <" .. theZone.exitZone .. "> for " .. theZone.name, 30)
+			trigger.action.outText("+++uZone: banging exit! with <" .. theZone.uzMethod .. "> on <" .. theZone.exitZone .. "> for " .. theZone.name, 30)
 		end
 	end
 end

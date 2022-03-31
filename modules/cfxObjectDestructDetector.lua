@@ -1,5 +1,5 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "1.1.0" 
+cfxObjectDestructDetector.version = "1.2.0" 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -10,6 +10,7 @@ cfxObjectDestructDetector.verbose = false
    1.0.0 initial version, based on parashoo, arty zones  
    1.0.1 fixed bug: trigger.MISC.getUserFlag()
    1.1.0 added support for method, f! and destroyed! 
+   1.2.0 DML / Watchflag support 
    
    
    Detect when an object with OBJECT ID as assigned in ME dies 
@@ -73,13 +74,21 @@ function cfxObjectDestructDetector.processObjectDestructZone(aZone)
 	end
 	
 	-- new method support
-	aZone.method = cfxZones.getStringFromZoneProperty(aZone, "method", "flip")
+	aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "flip")
+	if cfxZones.hasProperty(aZone, "oddMethod") then 
+		aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "oddMethod", "flip")
+	end
+	
 	
 	if cfxZones.hasProperty(aZone, "f!") then 
-		aZone.outDestroyFlag = cfxZones.getNumberFromZoneProperty(aZone, "f!", -1)
+		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*none")
 	end
-		if cfxZones.hasProperty(aZone, "destroyed!") then 
-		aZone.outDestroyFlag = cfxZones.getNumberFromZoneProperty(aZone, "destroyed!", -1)
+	if cfxZones.hasProperty(aZone, "destroyed!") then 
+		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "destroyed!", "*none")
+	end
+
+	if cfxZones.hasProperty(aZone, "objectDestroyed!") then 
+		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "objectDestroyed!", "*none")
 	end
 end
 --
@@ -95,6 +104,7 @@ function cfxObjectDestructDetector:onEvent(event)
 		for idx, aZone in pairs(cfxObjectDestructDetector.objectZones) do 
 			if aZone.ID == id then 
 				-- flag manipulation 
+				-- OLD FLAG SUPPORT, SOON TO BE REMOVED
 				if aZone.setFlag then 
 					trigger.action.setUserFlag(aZone.setFlag, 1)
 				end
@@ -109,10 +119,11 @@ function cfxObjectDestructDetector:onEvent(event)
 					local val = trigger.misc.getUserFlag(aZone.decreaseFlag) - 1
 					trigger.action.setUserFlag(aZone.decreaseFlag, val)
 				end
+				-- END OF OLD CODE, TO BE REMOVED 
 				
 				-- support for banging 
 				if aZone.outDestroyFlag then 
-					cfxZones.pollFlag(aZone.outDestroyFlag, aZone.method)
+					cfxZones.pollFlag(aZone.outDestroyFlag, aZone.oddMethod, aZone)
 				end
 				
 				-- invoke callbacks 

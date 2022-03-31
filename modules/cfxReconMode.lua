@@ -1,10 +1,13 @@
 cfxReconMode = {}
-cfxReconMode.version = "1.4.1"
+cfxReconMode.version = "1.5.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
 cfxReconMode.prioList = {} -- group names that are high prio and generate special event
 cfxReconMode.blackList = {} -- group names that are NEVER detected. Comma separated strings, e.g. {"Always Hidden", "Invisible Group"}
+
+cfxReconMode.removeWhenDestroyed = true 
+cfxReconMode.activeMarks = {} -- all marks and their groups, indexed by groupName 
 
 cfxReconMode.requiredLibs = {
 	"dcsCommon", -- always
@@ -42,7 +45,9 @@ VERSION HISTORY
 	   - recon sound 
 	   - read all flight groups at start to get rid of the 
 	   - late activation work-around 
- 
+ 1.5.0 - removeWhenDestroyed()
+	   - autoRemove()
+	   - readConfigZone creates default config zone so we get correct defaulting 
  
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -279,14 +284,16 @@ function cfxReconMode.removeMarkForArgs(args)
 	local theID = args[4]
 	local theName = args[5]
 	
---	if not theGroup then return end 
---	if not theGroup:isExist then return end 
+	-- only remove if it wasn't already removed.
+	-- this method is called async *and* sync!
+	if cfxReconMode.activeMarks[theName] then 
+		trigger.action.removeMark(theID)
+		-- invoke callbacks
+		cfxReconMode.invokeCallbacks("removed", theSide, theScout, theGroup, theName)
+		cfxReconMode.activeMarks[theName] = nil -- also remove from list of groups being checked
+	end 
 	
-	trigger.action.removeMark(theID)
-	cfxReconMode.detectedGroups[theName] = nil 
-	
-	-- invoke callbacks
-	cfxReconMode.invokeCallbacks("removed", theSide, theScout, theGroup, theName)
+	cfxReconMode.detectedGroups[theName] = nil -- some housekeeping. 
 end 
 
 
@@ -294,18 +301,23 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	-- put a mark on the map 
 	if cfxReconMode.applyMarks then 
 		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup)
-	
+		local gName = theGroup:getName()
+		local args = {mySide, theScout, theGroup, theID, gName}
+		cfxReconMode.activeMarks[gName] = args
 		-- schedule removal if desired 
-		if cfxReconMode.marksFadeAfter > 0 then 
-			args = {mySide, theScout, theGroup, theID, theGroup:getName()}
+		if cfxReconMode.marksFadeAfter > 0 then 	
 			timer.scheduleFunction(cfxReconMode.removeMarkForArgs, args, timer.getTime() + cfxReconMode.marksFadeAfter)
 		end
 	end 
+	
 	-- say something
 	if cfxReconMode.announcer then 
 		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
+		trigger.action.outText("+++recon: announced for side " .. mySide, 30)
 		-- play a sound 
 		trigger.action.outSoundForCoalition(mySide, cfxReconMode.reconSound)
+	else 
+		--trigger.action.outText("+++recon: announcer off", 30)
 	end 
 	
 	-- see if it was a prio target 
@@ -420,6 +432,38 @@ function cfxReconMode.updateQueues()
 	end 
 end
 
+function cfxReconMode.isGroupStillAlive(gName)
+		local theGroup = Group.getByName(gName)
+		if not theGroup then return false end 
+		if not theGroup:isExist() then return false end 
+		local allUnits = theGroup:getUnits()
+		for idx, aUnit in pairs (allUnits) do 
+			if aUnit:getLife() >= 1 then return true end 
+		end
+		return false 
+end
+
+function cfxReconMode.autoRemove()
+	-- schedule next call 
+	timer.scheduleFunction(cfxReconMode.autoRemove, {}, timer.getTime() + 1/cfxReconMode.ups)
+	
+	local toRemove = {}
+	-- scan all marked groups, and when they no longer exist, remove them 
+	for idx, args in pairs (cfxReconMode.activeMarks) do
+		-- args = {mySide, theScout, theGroup, theID, gName}
+		local gName = args[5]
+		if not cfxReconMode.isGroupStillAlive(gName) then 
+			-- remove mark, remove group from set 
+			table.insert(toRemove, args)
+		end
+	end 
+	
+	for idx, args in pairs(toRemove) do 
+		cfxReconMode.removeMarkForArgs(args)
+		trigger.action.outText("+++recn: removed mark: " .. args[5], 30)
+	end
+end
+
 -- event handler 
 function cfxReconMode:onEvent(event) 
 	if not event then return end 
@@ -509,10 +553,11 @@ function cfxReconMode.readConfigZone()
 		if cfxReconMode.verbose then
 			trigger.action.outText("+++rcn: no config zone!", 30) 
 		end 
-		return 
-	end 
-	if cfxReconMode.verbose then 
-		trigger.action.outText("+++rcn: found config zone!", 30) 
+		theZone = cfxZones.createSimpleZone("reconModeConfig")
+	else  
+		if cfxReconMode.verbose then 
+			trigger.action.outText("+++rcn: found config zone!", 30) 
+		end 
 	end 
 	
 	cfxReconMode.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
@@ -539,10 +584,13 @@ function cfxReconMode.readConfigZone()
 	
 	cfxReconMode.applyMarks = cfxZones.getBoolFromZoneProperty(theZone, "applyMarks", true)
 	cfxReconMode.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
-	
+	-- trigger.action.outText("recon: announcer is " .. dcsCommon.bool2Text(cfxReconMode.announcer), 30) -- announced
 	if cfxZones.hasProperty(theZone, "reconSound") then 
 		cfxReconMode.reconSound = cfxZones.getStringFromZoneProperty(theZone, "reconSound", "<nosound>")
 	end
+	
+	cfxReconMode.removeWhenDestroyed = cfxZones.getBoolFromZoneProperty(theZone, "autoRemove", true)
+	
 end
 
 --
@@ -563,7 +611,13 @@ function cfxReconMode.start()
 	
 	-- start update cycle
 	cfxReconMode.updateQueues()
-		
+	
+	-- if dead groups are removed from map,
+	-- schedule housekeeping 
+	if cfxReconMode.removeWhenDestroyed then 
+		cfxReconMode.autoRemove()
+	end
+	
 	if cfxReconMode.autoRecon then 
 		-- install own event handler to detect 
 		-- when a unit takes off and add it to scout

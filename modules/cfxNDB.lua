@@ -1,9 +1,9 @@
 cfxNDB = {}
-cfxNDB.version = "1.1.0"
+cfxNDB.version = "1.2.0"
 
 --[[--
 	cfxNDB:
-	Copyright (c) 2021 by Christian Franz and cf/x AG
+	Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 	
 	Zone enhancement that simulates an NDB for a zone.
 	If zone is linked, the NDB's location is updated 
@@ -21,6 +21,7 @@ cfxNDB.version = "1.1.0"
 		  - paused flag, paused handling 
 		  - startNDB() can accept string 
 		  - stopNDB() can accept string
+	1.2.0 - DML full integration 
 		  
 --]]--
 
@@ -112,13 +113,19 @@ function cfxNDB.createNDBWithZone(theZone)
 	-- paused 
 	theZone.paused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false) 
 	
+	-- watchflags 
+	theZone.ndbTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "ndbTriggerMethod") then 
+		theZone.ndbTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "ndbTriggerMethod", "change")
+	end 
+	
 	-- on/offf query flags 
 	if cfxZones.hasProperty(theZone, "on?") then 
 		theZone.onFlag = cfxZones.getStringFromZoneProperty(theZone, "on?", "none")
 	end
 	
 	if theZone.onFlag then 
-		theZone.onFlagVal = trigger.misc.getUserFlag(theZone.onFlag) -- save last value
+		theZone.onFlagVal = cfxZones.getFlagValue(theZone.onFlag, theZone) -- trigger.misc.getUserFlag(theZone.onFlag) -- save last value
 	end
 	
 	if cfxZones.hasProperty(theZone, "off?") then 
@@ -126,7 +133,7 @@ function cfxNDB.createNDBWithZone(theZone)
 	end
 	
 	if theZone.offFlag then 
-		theZone.offFlagVal = trigger.misc.getUserFlag(theZone.offFlag) -- save last value
+		theZone.offFlagVal = cfxZones.getFlagValue(theZone.offFlag, theZone) --trigger.misc.getUserFlag(theZone.offFlag) -- save last value
 	end
 	
 	-- start it 
@@ -158,24 +165,17 @@ function cfxNDB.update()
 		end
 		
 		-- now check triggers to start/stop 
-		if theNDB.onFlagVal then 
-			-- see if this changed 
-			local currTriggerVal = trigger.misc.getUserFlag(theNDB.onFlag)
-			if currTriggerVal ~= theNDB.onFlagVal then
-				-- yupp, trigger start 
-				cfxNDB.startNDB(theNDB)
-				theNDB.onFlagVal = currTriggerVal
-			end			
+		if cfxZones.testZoneFlag(theNDB, theNDB.onFlag, theNDB.ndbTriggerMethod, "onFlagVal") then
+			-- yupp, trigger start 
+			cfxNDB.startNDB(theNDB)
 		end
 		
-		if theNDB.offFlagVal then 
-			local currTriggerVal = trigger.misc.getUserFlag(theNDB.offFlag)
-			if currTriggerVal ~= theNDB.offFlagVal then
-				-- yupp, trigger start 
-				cfxNDB.stopNDB(theNDB)
-				theNDB.offFlagVal = currTriggerVal
-			end		
-		end
+		
+		if cfxZones.testZoneFlag(theNDB, theNDB.offFlag, theNDB.ndbTriggerMethod, "offFlagVal") then
+			-- yupp, trigger start 
+			cfxNDB.stopNDB(theNDB)
+		end 
+		
 	end
 end
 

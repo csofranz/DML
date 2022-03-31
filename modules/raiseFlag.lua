@@ -1,5 +1,5 @@
 raiseFlag = {}
-raiseFlag.version = "1.2.0"
+raiseFlag.version = "1.2.1"
 raiseFlag.verbose = false 
 raiseFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,6 +14,7 @@ raiseFlag.flags = {}
 	1.0.1 - synonym "raiseFlag!"
 	1.1.0 - DML update
 	1.2.0 - Watchflag update 
+	1.2.1 - support for 'inc', 'dec', 'flip'
 	
 --]]--
 function raiseFlag.addRaiseFlag(theZone)
@@ -42,7 +43,8 @@ function raiseFlag.createRaiseFlagWithZone(theZone)
 		theZone.raiseFlag = cfxZones.getStringFromZoneProperty(theZone, "raiseFlag!", "<none>") -- the flag to raise 
 	end 
 	
-	theZone.flagValue = cfxZones.getNumberFromZoneProperty(theZone, "value", 1) -- value to set to
+	theZone.flagValue = cfxZones.getStringFromZoneProperty(theZone, "value", "inc") -- value to set to. default is command 'inc' 
+	theZone.flagValue = theZone.flagValue:lower()
 
 	theZone.minAfterTime, theZone.maxAfterTime = cfxZones.getPositiveRangeFromZoneProperty(theZone, "afterTime", -1)
 
@@ -77,7 +79,19 @@ function raiseFlag.triggered(args)
 	local theZone = args.theZone 
 	if theZone.raiseStopped then return end 
 	-- if we get here, we aren't stopped and do the flag pull
-	cfxZones.setFlagValue(theZone.raiseFlag, theZone.flagValue, theZone)
+	local command = theZone.flagValue
+	command = dcsCommon.trim(command)
+	if command == "inc" or command == "dec" or command == "flip" then 
+		cfxZones.pollFlag(theZone.raiseFlag, command, theZone)
+		if raiseFlag.verbose or theZone.verbose then 
+			trigger.action.outText("+++rFlg - raising <" .. theZone.raiseFlag .. "> with method " .. command ,30)
+		end
+	else 
+		cfxZones.setFlagValue(theZone.raiseFlag, theZone.flagValue, theZone)
+		if raiseFlag.verbose or theZone.verbose then 
+			trigger.action.outText("+++rFlg - raising <" .. theZone.raiseFlag .. "> to value: " .. theZone.flagValue ,30)
+		end
+	end
 end
 
 --
@@ -164,3 +178,6 @@ if not raiseFlag.start() then
 	trigger.action.outText("cfx Raise Flag aborted: missing libraries", 30)
 	raiseFlag = nil 
 end
+
+-- add rnd(a,b) support to value 
+-- better: if value is a range, make it a random. problem: negative values are legal, so we need formula

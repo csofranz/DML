@@ -1,7 +1,7 @@
 xFlags = {}
 xFlags.version = "1.0.1"
 xFlags.verbose = false 
-xFlags.ups = 1 -- overwritten in get config!
+xFlags.ups = 1 -- overwritten in get config when configZone is present
 xFlags.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -12,7 +12,8 @@ xFlags.requiredLibs = {
 	Version History 
 	1.0.0 - Initial version 
 	1.0.1 - allow flags names for ops as well 
-	        modelled on cfxZones.testFlagByMethodForZone()
+	1.1.0 - Watchflags harmonization 
+	
 --]]--
 xFlags.xFlagZones = {}
 
@@ -75,9 +76,13 @@ function xFlags.createXFlagsWithZone(theZone)
 	
 	theZone.matchNum = cfxZones.getNumberFromZoneProperty(theZone, "#hits", 0)
 	
-	theZone.lookFor = cfxZones.getStringFromZoneProperty(theZone, "lookFor", "change") -- (<>=[number or reference flag], off, on, yes, no, true, false, change
-	theZone.lookFor = string.lower(theZone.lookFor)
-	theZone.lookFor = dcsCommon.trim(theZone.lookFor)
+	theZone.xTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "xTriggerMethod", "change") -- (<>=[number or reference flag], off, on, yes, no, true, false, change
+	if cfxZones.hasProperty(theZone, "xTrigger") then 
+		theZone.xTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "xTrigger", "change")
+	end 
+	
+	theZone.xTriggerMethod = string.lower(theZone.xTriggerMethod)
+	theZone.xTriggerMethod = dcsCommon.trim(theZone.xTriggerMethod)
 	
 	if cfxZones.hasProperty(theZone, "xReset?") then 
 		theZone.xReset = cfxZones.getStringFromZoneProperty(theZone, "xReset?", "<none>")
@@ -104,7 +109,7 @@ function xFlags.evaluateFlags(theZone)
 	end
 	
 	-- now perform comparison flag by flag 
-	local op = theZone.lookFor
+	local op = theZone.xTriggerMethod
 	local hits = 0
 	local checkSum = ""
 	local firstChar = string.sub(op, 1, 1) 
@@ -116,6 +121,9 @@ function xFlags.evaluateFlags(theZone)
 		rNum = cfxZones.getFlagValue(remainder, theZone)
 	end 
 	
+	-- this mimics cfxZones.testFlagByMethodForZone method (and is 
+    -- that method's genesis), but is different enough not to invoke that 
+	-- method 
 	for i = 1, #theZone.flagNames do 
 		local lastHits = hits 
 		if op == "change" then 
@@ -167,7 +175,7 @@ function xFlags.evaluateFlags(theZone)
 			end
 
 		else 
-			trigger.action.outText("+++xF: unknown lookFor: <" .. op .. ">", 30)
+			trigger.action.outText("+++xF: unknown xTriggerMethod: <" .. op .. ">", 30)
 			return 0, ""
 		end
 		if xFlags.verbose and lastHits ~= hits then 

@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.0.0"
+groupTracker.version = "1.1.0"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -11,6 +11,9 @@ groupTracker.trackers = {}
 --[[--
 	Version History 
 	1.0.0 - Initial version 
+	1.1.0 - filtering  added 
+	      - array support for trackers 
+	      - array support for trackers 
 	
 --]]--
 
@@ -37,7 +40,19 @@ end
 -- adding a group to a tracker - called by other modules and API
 -- 
 function groupTracker.addGroupToTracker(theGroup, theTracker)
-	if groupTracker.verbose then 
+	-- check if filtering is enabled for this tracker
+	if theTracker.groupFilter then 
+		cat = theGroup:getCategory()
+		if not cat then return end -- strange, but better safe than sorry
+		if cat ~= theTracker.groupFilter then 
+			if groupTracker.verbose then 
+				trigger.action.outText("+++gTrk: Tracker <" .. theTracker.name .. "> rejected <" .. theGroup:getName() .. "> for class mismatch. Expect: " .. theTracker.groupFilter .. " received: " .. cat , 30)
+			end
+			return 
+		end 
+	end
+
+	if groupTracker.verbose or theTracker.verbose then 
 		trigger.action.outText("+++gTrk: will add group <" .. theGroup:getName() .. "> to tracker " .. theTracker.name, 30)
 	end 
 	
@@ -96,6 +111,13 @@ function groupTracker.createTrackerWithZone(theZone)
 		-- we may need to zero this flag 
 	end
 	
+	if cfxZones.hasProperty(theZone, "groupFilter") then 
+		local filterString = cfxZones.getStringFromZoneProperty(theZone, "groupFilter", "2") -- ground 
+		theZone.groupFilter = dcsCommon.string2GroupCat(filterString)
+		if groupTracker.verbose or theZone.verbose then 
+			trigger.action.outText("+++gTrck: filtering " .. theZone.groupFilter .. " in " .. theZone.name, 30)
+		end 
+	end	
 end
 
 --
@@ -121,7 +143,7 @@ function groupTracker.checkGroups(theZone)
 		
 		if isDead then 
 			-- bang deceased
-			if groupTracker.verbose then 
+			if groupTracker.verbose or theZone.verbose then 
 				trigger.action.outText("+++gTrk: dead group detected in " .. theZone.name .. ", discarding.", 30)
 			end
 			if theZone.tRemoveGroup then 
@@ -157,6 +179,35 @@ end
 function groupTracker.trackGroupsInZone(theZone)
 
 	local trackerName = cfxZones.getStringFromZoneProperty(theZone, "addToTracker:", "<none>")
+	
+	local theGroups = cfxZones.allGroupsInZone(theZone, nil)
+	
+	-- now init array processing
+	local trackerNames = {}
+	if dcsCommon.containsString(trackerName, ',') then
+		trackerNames = dcsCommon.splitString(trackerName, ',')
+	else 
+		table.insert(trackerNames, trackerName)
+	end
+	
+	for idx, aTrk in pairs(trackerNames) do 
+		local theName = dcsCommon.trim(aTrk)
+		if theName == "*" then theName = theZone.name end 
+		local theTracker = groupTracker.getTrackerByName(theName)
+		if not theTracker then 
+			trigger.action.outText("+++gTrk-TW: <" .. theZone.name .. ">: cannot find tracker named <".. theName .. ">", 30) 
+		else 
+			for idy, aGroup in pairs(theGroups) do
+				groupTracker.addGroupToTracker(aGroup, theTracker)
+				if cloneZones.verbose or theZone.verbose then 
+					trigger.action.outText("+++gTrk-TW: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
+				end
+			end
+		end 
+	end 
+	
+	-- old code, non-array capable
+	--[[--
 	if trackerName == "*" then trackerName = theZone.name end 
 	
 	local theTracker = groupTracker.getTrackerByName(trackerName)
@@ -172,7 +223,7 @@ function groupTracker.trackGroupsInZone(theZone)
 		end
 		groupTracker.addGroupToTracker(aGroup, theTracker)
 	end
-	
+	--]]--
 end
 
 
@@ -215,7 +266,7 @@ function groupTracker.start()
 	end
 	
 	-- find and process all zones that want me to immediately add
-	-- units to the tracker 
+	-- units to the tracker. Must run AFTER we have gathered all trackers
 	local attrZones = cfxZones.getZonesWithAttributeNamed("addToTracker:")
 	for k, aZone in pairs(attrZones) do 
 		groupTracker.trackGroupsInZone(aZone) -- process attributes
@@ -234,9 +285,3 @@ if not groupTracker.start() then
 	messenger = nil 
 end
 
---[[--
-	add a pass to immediately add units in zones with 'addToTracker' 
-	after zone pass 
-	
-	add an output flag for the total number of units it watches, so when that changes, a change is instigated automatically 
---]]--

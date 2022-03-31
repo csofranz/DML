@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.2.0"
+messenger.version = "1.2.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -18,8 +18,8 @@ messenger.messengers = {}
 	1.1.1 - firewalled coalition to msgCoalition
 		  - messageOn?
 		  - messageOff?
-	1.2.0 - triggerMethod (original Watchflag integration) 
-	
+	1.2.0 - msgTriggerMethod (original Watchflag integration) 
+	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value 
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -40,9 +40,24 @@ end
 --
 -- read attributes
 --
+function messenger.preProcMessage(inMsg, theZone)
+	if not inMsg then return "<nil inMsg>" end
+	local formerType = type(inMsg)
+	if formerType ~= "string" then inMsg = tostring(inMsg) end  
+	if not inMsg then inMsg = "<inMsg is incompatible type " .. formerType .. ">" end 
+	local outMsg = ""
+	-- replace line feeds 
+	outMsg = inMsg:gsub("<n>", "\n")
+	if theZone then 
+		outMsg = outMsg:gsub("<z>", theZone.name)
+	end
+	return outMsg
+end 
+
 function messenger.createMessengerWithZone(theZone)
 	-- start val - a range
-	theZone.message = cfxZones.getStringFromZoneProperty(theZone, "message", "") 
+	local aMessage = cfxZones.getStringFromZoneProperty(theZone, "message", "") 
+	theZone.message = messenger.preProcMessage(aMessage, theZone)
 
 	theZone.spaceBefore = cfxZones.getBoolFromZoneProperty(theZone, "spaceBefore", false)
 	theZone.spaceAfter = cfxZones.getBoolFromZoneProperty(theZone, "spaceAfter", false)
@@ -55,8 +70,11 @@ function messenger.createMessengerWithZone(theZone)
 	
 	theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "duration", 30)
 	
-	-- triggerMethod
-	theZone.triggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	-- msgTriggerMethod
+	theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "msgTriggerMethod") then 
+		theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "msgTriggerMethod", "change")
+	end 
 	
 	-- trigger flag f? in? messageOut?
 	if cfxZones.hasProperty(theZone, "f?") then 
@@ -124,6 +142,7 @@ function messenger.getMessage(theZone)
 	-- replace *zone and *value wildcards 
 	msg = string.gsub(msg, "*name", zName)
 	msg = string.gsub(msg, "*value", zVal)
+	msg = string.gsub(msg, "<v>", zVal) 
 	
 	return msg 
 end
@@ -163,7 +182,7 @@ function messenger.update()
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
-		if cfxZones.testZoneFlag(aZone, 				aZone.triggerMessagerFlag, aZone.triggerMethod, 			"lastMessageTriggerValue") then 
+		if cfxZones.testZoneFlag(aZone, 				aZone.triggerMessagerFlag, aZone.msgTriggerMethod, 			"lastMessageTriggerValue") then 
 			if messenger.verbose then 
 					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end
@@ -171,14 +190,14 @@ function messenger.update()
 		end 
 		
 		-- old trigger code 		
-		if cfxZones.testZoneFlag(aZone, aZone.messageOffFlag, "change", "lastMessageOff") then 
+		if cfxZones.testZoneFlag(aZone, aZone.messageOffFlag, aZone.msgTriggerMethod, "lastMessageOff") then 
 			aZone.messageOff = true
 			if messenger.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
 			end 
 		end
 		
-		if cfxZones.testZoneFlag(aZone, 				aZone.messageOnFlag, "change", "lastMessageOn") then 
+		if cfxZones.testZoneFlag(aZone, 				aZone.messageOnFlag, aZone.msgTriggerMethod, "lastMessageOn") then 
 			aZone.messageOff = false
 			if messenger.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)

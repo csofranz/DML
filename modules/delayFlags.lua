@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.2.0"
+delayFlag.version = "1.2.1"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -29,6 +29,8 @@ delayFlag.flags = {}
 		  - pauseDelay?
 		  - unpauseDelay?
 	1.2.0 - Watchflags 
+	1.2.1 - method goes to dlyMethod
+	      - delay done is correctly inited 
 	
 --]]--
 
@@ -86,15 +88,18 @@ function delayFlag.createTimerWithZone(theZone)
 	end
 	
 	
-	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
+	theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
 	
-	-- out flag 
-	if cfxZones.hasProperty(theZone, "out!") then 
-		theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "out!", -1)
+	if cfxZones.hasProperty(theZone, "delayMethod") then
+		theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "delayMethod", "flip")
 	end
 	
+	-- out flag 
+	theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
+
+	
 	if cfxZones.hasProperty(theZone, "delayDone!") then 
-		theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "delayDone!", -1)
+		theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "delayDone!", "*<none>")
 	end
 
 	-- stop the press!
@@ -205,10 +210,11 @@ function delayFlag.update()
 				-- end timer 
 				aZone.delayRunning = false 
 				-- poll flag 
-				cfxZones.pollFlag(aZone.delayDoneFlag, aZone.method, aZone)
-				if delayFlag.verbose then 
+				if delayFlag.verbose or aZone.verbose then 
 					trigger.action.outText("+++dlyF: banging on " .. aZone.delayDoneFlag, 30)
-				end 
+				end
+				cfxZones.pollFlag(aZone.delayDoneFlag, aZone.delayMethod, aZone)
+ 
 			end
 		end
 		
