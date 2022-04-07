@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.1.0"
+unitZone.version = "1.2.0"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -11,6 +11,7 @@ unitZone.requiredLibs = {
 	1.0.0 - Initial Version
 	1.1.0 - DML flag integration 
 		  - method/uzMethod 
+	1.2.0 - uzOn?, uzOff?, triggerMethod
 		  
 --]]--
 
@@ -73,11 +74,11 @@ function unitZone.createUnitZone(theZone)
 		theZone.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "uzCoalition", 0)
 	end
 	
-	if unitZone.verbose then 
+	if unitZone.verbose or theZone.verbose then 
 		trigger.action.outText("+++uZne: set coa " .. theZone.uzCoalition .. " for <" .. theZone.name .. ">", 30)
 	end
 
-	-- DML M;ethod 
+	-- DML Method 
 	theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	if cfxZones.hasProperty(theZone, "uzMethod") then 
 		theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "uzMethod", "inc")
@@ -90,16 +91,30 @@ function unitZone.createUnitZone(theZone)
 	if cfxZones.hasProperty(theZone, "filterFor") then 
 		local filterString = cfxZones.getStringFromZoneProperty(theZone, "filterFor", "1") -- ground 
 		theZone.filterFor = unitZone.string2cat(filterString)
-		if unitZone.verbose then 
+		if unitZone.verbose or theZone.verbose then 
 			trigger.action.outText("+++uZne: filtering " .. theZone.filterFor .. " in " .. theZone.name, 30)
 		end 
 	end	
 	
+	-- on/off flags
+	theZone.uzPaused = false -- we are turned on 
+	theZone.triggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOn?", "*<none1>")
+	theZone.lastTriggerOnValue = cfxZones.getFlagValue(theZone.triggerOnFlag, theZone)
+		
+	theZone.triggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOff?", "*<none2>")
+	theZone.lastTriggerOffValue = cfxZones.getFlagValue(theZone.triggerOffFlag, theZone)
+	
+	theZone.uzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "uzTriggerMethod") then 
+		theZone.uzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "uzTriggerMethod", "change")
+	end 
+	
 	-- now get initial zone status ?
 	theZone.lastStatus = unitZone.checkZoneStatus(theZone)
-	if unitZone.verbose then 
+	if unitZone.verbose or theZone.verbose then 
 		trigger.action.outText("+++uZne: processsed unit zone " .. theZone.name, 30)
 	end
+	
 end
 
 
@@ -221,14 +236,31 @@ function unitZone.update()
 	timer.scheduleFunction(unitZone.update, {}, timer.getTime() + 1/unitZone.ups)
 		
 	for idx, aZone in pairs(unitZone.unitZones) do
-		-- scan all zones 
-		local newState = unitZone.checkZoneStatus(aZone)
-
-		if newState ~= aZone.lastStatus then 
-			-- bang on change! 
-			unitZone.bangState(aZone, newState)
-			aZone.lastStatus = newState 
+		-- check if we need to pause/unpause 
+		if cfxZones.testZoneFlag(aZone, aZone.triggerOnFlag, aZone.uzTriggerMethod, "lastTriggerOnValue") then 
+			if unitZone.verbose or aZone.verbose then 
+				trigger.action.outText("+++uZone: turning " .. aZone.name .. " on", 30)
+			end 
+			aZone.uzPaused = false 
 		end
+		
+		if cfxZones.testZoneFlag(aZone, aZone.triggerOffFlag, aZone.uzTriggerMethod, "lastTriggerOffValue") then 
+			if unitZone.verbose or aZone.verbose then 
+				trigger.action.outText("+++uZone: turning " .. aZone.name .. " OFF", 30)
+			end 
+			aZone.uzPaused = true 
+		end
+		
+		-- scan all zones 
+		if not aZone.uzPaused then 
+			local newState = unitZone.checkZoneStatus(aZone)
+
+			if newState ~= aZone.lastStatus then 
+				-- bang on change! 
+				unitZone.bangState(aZone, newState)
+				aZone.lastStatus = newState 
+			end
+		end 
 	end
 end
 

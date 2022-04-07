@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.8"
+dcsCommon.version = "2.5.9"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -68,6 +68,7 @@ dcsCommon.version = "2.5.8"
  2.5.6 - corrected stringEndsWith() bug with str
  2.5.7 - point2text(p) 
  2.5.8 - string2GroupCat()
+ 2.5.9 - string2ObjectCat()
 	   
 --]]--
 
@@ -1806,6 +1807,28 @@ dcsCommon.version = "2.5.8"
 		return catNum
 	end
 
+	function dcsCommon.string2ObjectCat(inString)
+
+		if not inString then return 3 end -- default static 
+		inString = inString:lower()
+		inString = dcsCommon.trim(inString)
+
+		local catNum = tonumber(inString)
+		if catNum then 
+			if catNum < 0 then catNum = 0 end 
+			if catNum > 6 then catNum = 6 end 
+			return catNum 
+		end
+	
+		catNum = 3 -- static default 
+		if dcsCommon.stringStartsWith(inString, "uni") then catNum = 1 end 
+		if dcsCommon.stringStartsWith(inString, "wea") then catNum = 2 end
+		if dcsCommon.stringStartsWith(inString, "bas") then catNum = 4 end
+		if dcsCommon.stringStartsWith(inString, "sce") then catNum = 5 end
+		if dcsCommon.stringStartsWith(inString, "car") then catNum = 6 end
+
+		return catNum
+	end
 
 	-- recursively show the contents of a variable
 	function dcsCommon.dumpVar(key, value, prefix, inrecursion)

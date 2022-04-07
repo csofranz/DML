@@ -1,5 +1,5 @@
 xFlags = {}
-xFlags.version = "1.0.1"
+xFlags.version = "1.2.0"
 xFlags.verbose = false 
 xFlags.ups = 1 -- overwritten in get config when configZone is present
 xFlags.requiredLibs = {
@@ -13,6 +13,8 @@ xFlags.requiredLibs = {
 	1.0.0 - Initial version 
 	1.0.1 - allow flags names for ops as well 
 	1.1.0 - Watchflags harmonization 
+	1.2.0 - xDirect flag, 
+	      - direct array support  
 	
 --]]--
 xFlags.xFlagZones = {}
@@ -62,13 +64,17 @@ function xFlags.createXFlagsWithZone(theZone)
 	theZone.xHasFired = false 
 	
 	theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "xSuccess!", "<none>")
+	
 	if cfxZones.hasProperty(theZone, "out!") then
-		theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "out!", "<none>")
+		theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
 	end
 	
 	if cfxZones.hasProperty(theZone, "xChange!") then 
-		theZone.xChange = cfxZones.getStringFromZoneProperty(theZone, "xChange!", "<none>")
+		theZone.xChange = cfxZones.getStringFromZoneProperty(theZone, "xChange!", "*<none>")
 	end 
+	
+	theZone.xDirect = cfxZones.getStringFromZoneProperty(theZone, "xDirect!", "*<none>") 
+	
 	theZone.inspect = cfxZones.getStringFromZoneProperty(theZone, "require", "or") -- same as any 
 	-- supported any/or, all/and, moreThan, atLeast, exactly 
 	theZone.inspect = string.lower(theZone.inspect)
@@ -89,12 +95,14 @@ function xFlags.createXFlagsWithZone(theZone)
 		theZone.xLastReset = cfxZones.getFlagValue(theZone.xReset, theZone)
 	end 
 	
-	theZone.xMethod = cfxZones.getStringFromZoneProperty(theZone, "xMethod", "flip")
+	theZone.xMethod = cfxZones.getStringFromZoneProperty(theZone, "xMethod", "inc")
 	if cfxZones.hasProperty(theZone, "method") then 
-		theZone.xMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
+		theZone.xMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	end
 	
 	theZone.xOneShot = cfxZones.getBoolFromZoneProperty(theZone, "oneShot", true)
+	
+	
 	
 end
 
@@ -187,20 +195,27 @@ end
 
 function xFlags.evaluateZone(theZone)
 	
+	-- short circuit if we are done 
+	if theZone.xHasFired and theZone.xOneShot then return end 
+
 	local hits, checkSum = xFlags.evaluateFlags(theZone)
 	-- depending on inspect see what the outcome is 
 	-- supported any/or, all/and, moreThan, atLeast, exactly
 	local op = theZone.inspect
 	local evalResult = false 
-	if (op == "or" or op == "any") and hits > 0 then 
+	if (op == "or" or op == "any" or op == "some") and hits > 0 then 
 		evalResult = true 
 	elseif (op == "and" or op == "all") and hits == #theZone.flagNames then 
 		evalResult = true 
 	elseif (op == "morethan" or op == "more than") and hits > theZone.matchNum then 
 		evalResult = true 
-	elseif (op == "atleast" or op == "at lest") and hits >= theZone.matchNum then
+	elseif (op == "atleast" or op == "at least") and hits >= theZone.matchNum then
 		evalResult = true 
 	elseif op == "exactly" and hits == theZone.matchNum then 
+		evalResult = true 
+	elseif (op == "none" or op == "nor") and hits == 0 then 
+		evalResult = true 
+	elseif (op == "not all" or op == "notall" or op == "nand") and hits < #theZone.flagNames then 
 		evalResult = true 
 	end
 
@@ -219,7 +234,17 @@ function xFlags.evaluateZone(theZone)
 		theZone.flagChecksum = checkSum
 	end
 	
-	if theZone.xHasFired and theZone.xOneShot then return end 
+	-- now directly set the value of evalResult (0 = false, 1 = true) 
+	-- to "xDirect!". Always sets output to current result of evaluation
+	-- true (1)/false(0), no matter if changed or not  
+	
+	if evalResult then 
+		cfxZones.setFlagValueMult(theZone.xDirect, 1, theZone)
+	else 
+		cfxZones.setFlagValueMult(theZone.xDirect, 0, theZone)
+	end 
+	
+	-- now see if we bang the output according to method 
 	if evalResult then 
 		if xFlags.verbose then 
 			trigger.action.outText("+++xFlag: success bang! on " .. theZone.xSuccess .. " for " .. theZone.name, 30)

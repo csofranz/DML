@@ -64,6 +64,7 @@ cfxZones.version = "2.7.0"
 		  - verbose for zone-local accepted (but not acted upon)
 		  - hasProperty now offers active information when looking for '*?' and '*!'
  - 2.7.0  - doPollFlag - fully support multiple flags per bang!
+ - 2.7.1  - setFlagValueMult()
  
 --]]--
 cfxZones.verbose = false
@@ -2881,6 +2882,25 @@ function cfxZones.pollFlag(theFlag, method, theZone)
 	
 end
 
+function cfxZones.setFlagValueMult(theFlag, theValue, theZone)
+	local allFlags = {}
+	if dcsCommon.containsString(theFlag, ",") then 
+		if cfxZones.verbose then 
+			trigger.action.outText("+++zones: will multi-set flags <" .. theFlag .. "> to " .. theValue, 30)
+		end
+		allFlags = dcsCommon.splitString(theFlag, ",")
+	else 
+		table.insert(allFlags, theFlag)
+	end
+	
+	for idx, aFlag in pairs(allFlags) do 
+		aFlag = dcsCommon.trim(aFlag)
+		-- note: mey require range preprocessing, but that's not
+		-- a priority 
+		cfxZones.setFlagValue(aFlag, theValue, theZone)
+	end 
+end
+
 function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	local zoneName = "<dummy>"
 	if not theZone then 
@@ -3036,7 +3056,7 @@ function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
 end
 
 function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
-	-- returns true if method contraints are met for flag theFlagName
+	-- returns true if method constraints are met for flag theFlagName
 	-- as defined by theMethod 
 	if not theMethod then 
 		theMethod = "change"

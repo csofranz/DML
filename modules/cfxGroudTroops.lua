@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "1.7.4"
+cfxGroundTroops.version = "1.7.5"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -59,6 +59,7 @@ cfxGroundTroops.deployedTroops = {}
 --         - callback when group is being engaged under guard orders 
 --   1.7.3 - callbacks for lase:tracking and lase:stop 
 --   1.7.4 - verbose flag, warnings suppressed 
+--   1.7.5 - some troop.group hardening with isExist()
 
 
 
@@ -199,6 +200,11 @@ end
 -- enemies are an attribute of the troop structure
 function cfxGroundTroops.makeTroopsEngageEnemies(troop)
 	local group = troop.group
+	if not group:isExist() then 
+		trigger.action.outText("+++gndT: troup don't exist, dropping", 30)
+		return 
+	end
+	
 	local enemies = troop.enemy
 	local from = dcsCommon.getGroupLocation(group)
 	if not from then return end -- the commandos died
@@ -218,6 +224,11 @@ end
 -- attribute 
 function cfxGroundTroops.makeTroopsEngageZone(troop)
 	local group = troop.group
+	if not group:isExist() then 
+		trigger.action.outText("+++gndT: make engage zone: troops do not exist, exiting", 30)
+		return 
+	end
+	
 	local enemyZone = troop.destination -- must be cfxZone 
 	local from = dcsCommon.getGroupLocation(group)
 	if not from then return end -- the group died
@@ -250,6 +261,10 @@ function cfxGroundTroops.switchToOffroad(troops)
 	-- on their route for longer than allowed
 	-- we now force a direct approach 
 	local group = troops.group
+	if not group.isExist() then 
+		return
+	end 
+	
 	local enemies = troops.destination
 	local from = dcsCommon.getGroupLocation(group)
 	if not from then return end -- the commandos died
@@ -315,6 +330,7 @@ end
 function cfxGroundTroops.updateAttackers(troop) 
 	if not troop then return end 
 	if not troop.destination then return end 
+	if not troop.group:isExist() then return end 
 	
 	if cfxZones.isGroupPartiallyInZone(troop.group, troop.destination) then
 		-- we have arrived
@@ -335,6 +351,10 @@ end
 -- 'engaged' means that the troop.enemy attribute is set
  
 function cfxGroundTroops.updateGuards(troop)
+	if not troop.group:isExist() then 
+		return 
+	end 
+	
 	local theEnemy = troop.enemy
 	if theEnemy then 
 		-- see if enemy is dead 
@@ -807,7 +827,7 @@ function cfxGroundTroops.checkPileUp()
 	for idx, troop in pairs(cfxGroundTroops.deployedTroops) do 
 		-- get each group and count them if they are inside
 		-- their destination 
-		if troop.insideDestination then
+		if troop.insideDestination and troop.group:isExist() then
 			local side = troop.group:getCoalition()
 			local thePile = thePiles[troop.destination]
 			local theSide = troop.group:getCoalition()
@@ -879,7 +899,7 @@ function cfxGroundTroops.checkSchedules()
 		-- plan and needs to be scheduled 
 		if troop.updateID == nil then 
 			troop.unscheduleCount = troop.unscheduleCount + 1
-			if (troop.unscheduleCount > 1) then 
+			if (troop.unscheduleCount > 1) and troop.group:isExist() then 
 				trigger.action.outText("+++ groundT: unscheduled group  " .. troop.group:getName() .. " cnt=" .. troop.unscheduleCount , 30)
 			end 
 		end
@@ -896,7 +916,7 @@ function cfxGroundTroops.getTroopReport(theSide, ignoreInfantry)
 	if not ignoreInfantry then ignoreInfantry = false end 
 	local report = "GROUND FORCES REPORT"
 	for idx, troop in pairs(cfxGroundTroops.deployedTroops) do 
-		if troop.side == theSide then 
+		if troop.side == theSide and troop.group:isExist() then 
 			local unitNum = troop.group:getSize()
 			report = report .. "\n" .. troop.name .. " (".. unitNum .."): <" .. troop.orders .. ">" 
 			if troop.orders == "attackOwnedZone" then 
@@ -975,8 +995,14 @@ function cfxGroundTroops.addGroundTroopsToPool(troops) -- troops MUST be a table
 end
 
 function cfxGroundTroops.removeTroopsFromPool(troops)
+	
 	if not troops then return end 
 	if troops.signature ~= "cfx" then return end
+
+	if not troops.group:isExist() then 
+		trigger.action.outText("warning: removeFromPool called with inexistant group", 30)
+		return 
+	end
 	
 	if cfxGroundTroops.deployedTroops[troops.group:getName()] then 
 		local troop = cfxGroundTroops.deployedTroops[troops.group:getName()]
@@ -1066,7 +1092,9 @@ function cfxGroundTroops.manageQueues()
 		-- trnasfer items from the front to the managed queue 
 		local theTroops = cfxGroundTroops.troopQueue[1]
 		table.remove(cfxGroundTroops.troopQueue, 1)
-		cfxGroundTroops.deployedTroops[theTroops.group:getName()] = theTroops
+		if theTroops.group:isExist() then 
+			cfxGroundTroops.deployedTroops[theTroops.group:getName()] = theTroops
+		end
 		-- trigger.action.outText("+++gT: dequed and activaed " .. theTroops.group:getName(), 30)
 	end
 end

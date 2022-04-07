@@ -1,6 +1,6 @@
 countDown = {}
 countDown.version = "1.3.0"
-countDown.verbose = true 
+countDown.verbose = false 
 countDown.ups = 1 
 countDown.requiredLibs = {
 	"dcsCommon", -- always
