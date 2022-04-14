@@ -69,6 +69,7 @@ dcsCommon.version = "2.5.9"
  2.5.7 - point2text(p) 
  2.5.8 - string2GroupCat()
  2.5.9 - string2ObjectCat()
+ 2.6.0 - unified uuid, removed uuIdent
 	   
 --]]--
 
@@ -78,7 +79,8 @@ dcsCommon.version = "2.5.9"
 
 	dcsCommon.verbose = false -- set to true to see debug messages. Lots of them
 	dcsCommon.uuidStr = "uuid-"
-
+	dcsCommon.simpleUUID = 76543 -- a number to start. as good as any
+	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
 	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50 and Gazelle can't carry troops
@@ -1896,16 +1898,16 @@ dcsCommon.version = "2.5.9"
 	end
 	
 
-	dcsCommon.simpleUUID = 76543 -- a number to start. as good as any
+	
 	function dcsCommon.numberUUID()
 		dcsCommon.simpleUUID = dcsCommon.simpleUUID + 1
 		return dcsCommon.simpleUUID
 	end
 
 	function dcsCommon.uuid(prefix)
-		dcsCommon.uuIdent = dcsCommon.uuIdent + 1
+		--dcsCommon.uuIdent = dcsCommon.uuIdent + 1
 		if not prefix then prefix = dcsCommon.uuidStr end
-		return prefix .. "-" .. dcsCommon.uuIdent
+		return prefix .. "-" .. dcsCommon.numberUUID() -- dcsCommon.uuIdent
 	end
 	
 	function dcsCommon.event2text(id) 
@@ -2194,7 +2196,7 @@ end
 	-- init any variables the lib requires internally
 	function dcsCommon.init()
 		cbID = 0
-		dcsCommon.uuIdent = 0
+		--dcsCommon.uuIdent = 0
 		if (dcsCommon.verbose) or true then
 		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 10)
 		end

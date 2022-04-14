@@ -62,8 +62,6 @@ cfxGroundTroops.deployedTroops = {}
 --   1.7.5 - some troop.group hardening with isExist()
 
 
-
-
 -- an entry into the deployed troop has the following attributes
 --  - group - the group 
 --  - orders: "guard" - will guard the spot and look for enemies in range

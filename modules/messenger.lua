@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.2.1"
+messenger.version = "1.3.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -19,7 +19,8 @@ messenger.messengers = {}
 		  - messageOn?
 		  - messageOff?
 	1.2.0 - msgTriggerMethod (original Watchflag integration) 
-	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value 
+	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value
+	1.3.0 - messenger? saves messageOut? attribute 
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -56,6 +57,7 @@ end
 
 function messenger.createMessengerWithZone(theZone)
 	-- start val - a range
+	
 	local aMessage = cfxZones.getStringFromZoneProperty(theZone, "message", "") 
 	theZone.message = messenger.preProcMessage(aMessage, theZone)
 
@@ -76,10 +78,13 @@ function messenger.createMessengerWithZone(theZone)
 		theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "msgTriggerMethod", "change")
 	end 
 	
-	-- trigger flag f? in? messageOut?
+	-- trigger flag f? in? messageOut?, add messenger?
+	
 	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
-	end
+		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")	
+		-- may want to add deprecated note later
+	end 
+
 	
 	-- can also use in? for counting. we always use triggerMessagerFlag 
 	if cfxZones.hasProperty(theZone, "in?") then 
@@ -90,9 +95,17 @@ function messenger.createMessengerWithZone(theZone)
 		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOut?", "none")
 	end
 	
-	if theZone.triggerMessagerFlag then 
-		theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- trigger.misc.getUserFlag(theZone.triggerMessagerFlag) -- save last value
-	end
+	-- try default only if no other is set 
+	if not theZone.triggerMessagerFlag then 
+		if not cfxZones.hasProperty(theZone, "messenger?") then 
+			trigger.action.outText("*** Note: messenger in <" .. theZone.name .. "> can't be triggered", 30)
+		end
+		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "messenger?", "none")
+	end 
+		
+--	if theZone.triggerMessagerFlag then 
+	theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- save last value	
+--	end
 
 	theZone.messageOff = false 
 	if cfxZones.hasProperty(theZone, "messageOff?") then 
@@ -238,8 +251,16 @@ function messenger.start()
 	-- read config 
 	messenger.readConfigZone()
 	
-	-- process cloner Zones 
+	-- process messenger Zones 
+	-- old style
 	local attrZones = cfxZones.getZonesWithAttributeNamed("messenger")
+	for k, aZone in pairs(attrZones) do 
+		messenger.createMessengerWithZone(aZone) -- process attributes
+		messenger.addMessenger(aZone) -- add to list
+	end
+	
+	-- new style that saves messageOut? flag by reading flags
+	attrZones = cfxZones.getZonesWithAttributeNamed("messenger?")
 	for k, aZone in pairs(attrZones) do 
 		messenger.createMessengerWithZone(aZone) -- process attributes
 		messenger.addMessenger(aZone) -- add to list

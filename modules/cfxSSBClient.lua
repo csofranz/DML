@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "2.0.2"
+cfxSSBClient.version = "2.0.3"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -38,6 +38,8 @@ Version History
   2.0.1 - stricter verbosity: moved more comments to verbose only 
   2.0.2 - health check code (initial) 
 		- added verbosity
+  2.0.3 - getPlayerName nil-trap on cloned player planes guard 
+          in onEvent
 	
 WHAT IT IS
 SSB Client is a small script that forms the client-side counterpart to
@@ -268,7 +270,12 @@ function cfxSSBClient:onEvent(event)
 		local theUnit = event.initiator -- we know this exists
 		local uName = theUnit:getName()
 		if not uName then return end 
-		-- player entered unit
+		-- player entered unit? 
+		-- check if this is cloned impostor
+		if not theUnit.getPlayerName then 
+			trigger.action.outText("+++SSBC: non-player client " .. uName .. " detected, ignoring.", 30)
+			return
+		end
 		local playerName = theUnit:getPlayerName()
 		if not playerName then 
 			return -- NPC plane

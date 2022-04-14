@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.1.0"
+groupTracker.version = "1.1.1"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -14,6 +14,7 @@ groupTracker.trackers = {}
 	1.1.0 - filtering  added 
 	      - array support for trackers 
 	      - array support for trackers 
+	1.1.1 - corrected clone zone reference bug
 	
 --]]--
 
@@ -199,7 +200,7 @@ function groupTracker.trackGroupsInZone(theZone)
 		else 
 			for idy, aGroup in pairs(theGroups) do
 				groupTracker.addGroupToTracker(aGroup, theTracker)
-				if cloneZones.verbose or theZone.verbose then 
+				if groupTracker.verbose or theZone.verbose then 
 					trigger.action.outText("+++gTrk-TW: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
 				end
 			end

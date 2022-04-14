@@ -1,5 +1,5 @@
 xFlags = {}
-xFlags.version = "1.2.0"
+xFlags.version = "1.2.1"
 xFlags.verbose = false 
 xFlags.ups = 1 -- overwritten in get config when configZone is present
 xFlags.requiredLibs = {
@@ -15,6 +15,13 @@ xFlags.requiredLibs = {
 	1.1.0 - Watchflags harmonization 
 	1.2.0 - xDirect flag, 
 	      - direct array support  
+	1.2.1 - verbosity changes 
+	      - "most" operator 
+		  - "half or more" operator 
+		  - fixed reset
+		  - xSuccess optimizations
+		  - inc, dec, quoted flags 
+		  - matchNum can carry flag 
 	
 --]]--
 xFlags.xFlagZones = {}
@@ -25,7 +32,7 @@ end
 --
 -- create xFlag 
 --
-function xFlags.reset()
+function xFlags.reset(theZone)
 	for i = 1, #theZone.flagNames do 
 		-- since the checksum is order dependent, 
 		-- we must preserve the order of the array
@@ -33,7 +40,9 @@ function xFlags.reset()
 		theZone.startFlagValues[i] = cfxZones.getFlagValue(flagName, theZone)
 		theZone.flagResults[i] = false 
 		theZone.flagChecksum = theZone.flagChecksum .. "0"
-		trigger.action.outText("+++xF: flag " .. flagName, 30)
+		if xFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++xF: zone <" .. theZone.name  .. "> flag " .. flagName, 30)
+		end 
 	end
 	theZone.xHasFired = false 
 end
@@ -59,15 +68,22 @@ function xFlags.createXFlagsWithZone(theZone)
 		theZone.startFlagValues[i] = cfxZones.getFlagValue(flagName, theZone)
 		theZone.flagResults[i] = false 
 		theZone.flagChecksum = theZone.flagChecksum .. "0"
-		trigger.action.outText("+++xF: flag " .. flagName, 30)
+		if xFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++xFlag: <" .. theZone.name .. "> monitors flag " .. flagName, 30)
+		end 
 	end
 	theZone.xHasFired = false 
-	
-	theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "xSuccess!", "<none>")
+	if cfxZones.hasProperty(theZone, "xSuccess!") then
+		theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "xSuccess!", "<none>")
+	end
 	
 	if cfxZones.hasProperty(theZone, "out!") then
 		theZone.xSuccess = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
 	end
+	
+	if not theZone.xSuccess then 
+		theZone.xSuccess = "*<none>" 
+	end 
 	
 	if cfxZones.hasProperty(theZone, "xChange!") then 
 		theZone.xChange = cfxZones.getStringFromZoneProperty(theZone, "xChange!", "*<none>")
@@ -80,12 +96,10 @@ function xFlags.createXFlagsWithZone(theZone)
 	theZone.inspect = string.lower(theZone.inspect)
 	theZone.inspect = dcsCommon.trim(theZone.inspect)
 	
-	theZone.matchNum = cfxZones.getNumberFromZoneProperty(theZone, "#hits", 0)
+	theZone.matchNum = cfxZones.getStringFromZoneProperty(theZone, "#hits", "1")
 	
-	theZone.xTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "xTriggerMethod", "change") -- (<>=[number or reference flag], off, on, yes, no, true, false, change
-	if cfxZones.hasProperty(theZone, "xTrigger") then 
-		theZone.xTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "xTrigger", "change")
-	end 
+	theZone.xTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "xFlagMethod", "change") -- (<>=[number or reference flag], off, on, yes, no, true, false, change
+	
 	
 	theZone.xTriggerMethod = string.lower(theZone.xTriggerMethod)
 	theZone.xTriggerMethod = dcsCommon.trim(theZone.xTriggerMethod)
@@ -102,8 +116,31 @@ function xFlags.createXFlagsWithZone(theZone)
 	
 	theZone.xOneShot = cfxZones.getBoolFromZoneProperty(theZone, "oneShot", true)
 	
-	
-	
+end
+
+function xFlags.evaluateNumOrFlag(theAttribute, theZone)
+	-- on entry, theAttribute contains a string
+	-- if it's a number, we return that, if it's a 
+	-- string, we see if it's a quoted flag or 
+	-- direct flag. in any way, we fetch and return 
+	-- that flag's value 
+	local aNum = tonumber(theAttribute)
+	if aNum then return aNum end 
+	local remainder = dcsCommon.trim(theAttribute)
+	local esc = string.sub(remainder, 1, 1)
+	local last = string.sub(remainder, -1)
+
+	if esc == "(" and last == ")" and string.len(remainder) > 2 then 
+		remainder = string.sub(remainder, 2, -2)
+		remainder = dcsCommon.trim(remainder)		
+	end
+
+	if esc == "\"" and last == "\"" and string.len(remainder) > 2 then 
+		remainder = string.sub(remainder, 2, -2)
+		remainder = dcsCommon.trim(remainder)		
+	end
+
+	rNum = cfxZones.getFlagValue(remainder, theZone)		
 end
 
 function xFlags.evaluateFlags(theZone)
@@ -122,10 +159,34 @@ function xFlags.evaluateFlags(theZone)
 	local checkSum = ""
 	local firstChar = string.sub(op, 1, 1) 
 	local remainder = string.sub(op, 2)
+	remainder = dcsCommon.trim(remainder) -- remove all leading and trailing spaces
 	local rNum = tonumber(remainder)
 	if not rNum then 
 		-- interpret remainder as flag name 
-		-- so we can say >*killMax
+		-- so we can say >*killMax or "22" with 22 a flag name  
+		
+		-- we use remainder as name for flag 
+		-- PROCESS ESCAPE SEQUENCES
+		local esc = string.sub(remainder, 1, 1)
+		local last = string.sub(remainder, -1)
+		if esc == "@" then 
+			remainder = string.sub(remainder, 2)
+			remainder = dcsCommon.trim(remainder)
+		end
+		
+		if esc == "(" and last == ")" and string.len(remainder) > 2 then 
+			-- note: iisues with startswith("(") ???
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if esc == "\"" and last == "\"" and string.len(remainder) > 2 then 
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if cfxZones.verbose then 
+			trigger.action.outText("+++zne: accessing flag <" .. remainder .. ">", 30)
+		end 
+		
 		rNum = cfxZones.getFlagValue(remainder, theZone)
 	end 
 	
@@ -142,14 +203,14 @@ function xFlags.evaluateFlags(theZone)
 			else 
 				checkSum = checkSum .. "0"
 			end 
-		elseif op == "on" or op == "yes" or op == "true" then 
+		elseif op == "on" or op == "yes" or op == "true" or op == "1" then 
 			if currVals[i] ~= 0 then 
 				hits = hits + 1 
 				checkSum = checkSum .. "X"
 			else 
 				checkSum = checkSum .. "0"
 			end 
-		elseif op == "off" or op == "no" or op == "false" 
+		elseif op == "off" or op == "no" or op == "false" or op == "0"
 		then 
 			if currVals[i] == 0 then 
 				hits = hits + 1 
@@ -157,6 +218,22 @@ function xFlags.evaluateFlags(theZone)
 			else 
 				checkSum = checkSum .. "0"
 			end
+		
+		elseif op == "inc" or op == "+1" then 
+			if currVals[i] == theZone.startFlagValues[i] + 1 then 
+				hits = hits + 1 
+				checkSum = checkSum .. "X"
+			else 
+				checkSum = checkSum .. "0"
+			end 
+		
+		elseif op == "dec" or op == "-1" then 
+			if currVals[i] == theZone.startFlagValues[i] - 1 then 
+				hits = hits + 1 
+				checkSum = checkSum .. "X"
+			else 
+				checkSum = checkSum .. "0"
+			end 
 		
 		elseif firstChar == "<" and rNum then 
 			if currVals[i] < rNum then 
@@ -183,7 +260,7 @@ function xFlags.evaluateFlags(theZone)
 			end
 
 		else 
-			trigger.action.outText("+++xF: unknown xTriggerMethod: <" .. op .. ">", 30)
+			trigger.action.outText("+++xF: unknown xFlagMethod: <" .. op .. ">", 30)
 			return 0, ""
 		end
 		if xFlags.verbose and lastHits ~= hits then 
@@ -197,7 +274,9 @@ function xFlags.evaluateZone(theZone)
 	
 	-- short circuit if we are done 
 	if theZone.xHasFired and theZone.xOneShot then return end 
-
+	-- calculate matchNum
+	local matchNum = xFlags.evaluateNumOrFlag(theZone.matchNum, theZone) -- convert or fetch
+	
 	local hits, checkSum = xFlags.evaluateFlags(theZone)
 	-- depending on inspect see what the outcome is 
 	-- supported any/or, all/and, moreThan, atLeast, exactly
@@ -207,21 +286,28 @@ function xFlags.evaluateZone(theZone)
 		evalResult = true 
 	elseif (op == "and" or op == "all") and hits == #theZone.flagNames then 
 		evalResult = true 
-	elseif (op == "morethan" or op == "more than") and hits > theZone.matchNum then 
+	elseif (op == "morethan" or op == "more than") and hits > matchNum then 
 		evalResult = true 
-	elseif (op == "atleast" or op == "at least") and hits >= theZone.matchNum then
+	elseif (op == "atleast" or op == "at least") and hits >= matchNum then
 		evalResult = true 
-	elseif op == "exactly" and hits == theZone.matchNum then 
+	elseif op == "exactly" and hits == matchNum then 
 		evalResult = true 
 	elseif (op == "none" or op == "nor") and hits == 0 then 
 		evalResult = true 
 	elseif (op == "not all" or op == "notall" or op == "nand") and hits < #theZone.flagNames then 
 		evalResult = true 
+	elseif (op == "most") and hits > (#theZone.flagNames / 2) then 
+		evalResult = true 
+	elseif (op == "half" or op == "at least half" or op == "half or more") and hits >= (#theZone.flagNames / 2) then 
+		-- warning: 'half' means really 'at least half"
+		evalResult = true 
 	end
+
+	-- add "most" to more than 50% of flagnum 
 
 	-- now check if changed and if result true 
 	if checkSum ~= theZone.flagChecksum then 
-		if xFlags.verbose then 
+		if xFlags.verbose or theZone.verbose then 
 			trigger.action.outText("+++xFlag: change detected for " .. theZone.name .. ": " .. theZone.flagChecksum .. "-->" ..checkSum, 30)
 		end
 		
@@ -232,6 +318,10 @@ function xFlags.evaluateZone(theZone)
 			end
 		end
 		theZone.flagChecksum = checkSum
+	else 
+		if xFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++xFlag: no change, checksum is |" .. checkSum .. "| for <" .. theZone.name .. ">", 10)
+		end
 	end
 	
 	-- now directly set the value of evalResult (0 = false, 1 = true) 
@@ -246,8 +336,8 @@ function xFlags.evaluateZone(theZone)
 	
 	-- now see if we bang the output according to method 
 	if evalResult then 
-		if xFlags.verbose then 
-			trigger.action.outText("+++xFlag: success bang! on " .. theZone.xSuccess .. " for " .. theZone.name, 30)
+		if xFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++xFlag: success bang! on <" .. theZone.xSuccess .. "> for <" .. theZone.name .. ">", 30)
 		end
 		cfxZones.pollFlag(theZone.xSuccess, theZone.xMethod, theZone)
 		theZone.xHasFired = true 
@@ -269,8 +359,8 @@ function xFlags.update()
 			local currVal = cfxZones.getFlagValue(theZone.xReset, theZone)
 			if currVal ~= theZone.xLastReset then 
 				theZone.xLastReset = currVal
-				if xFlags.verbose then 
-					trigger.action.outText("+++xF: reset command for " .. theZone.name, 30)
+				if xFlags.verbose or theZone.verbose then 
+					trigger.action.outText("+++xFlag: reset command for " .. theZone.name, 30)
 				end 
 				xFlags.reset(theZone)
 			end 
@@ -285,7 +375,7 @@ function xFlags.readConfigZone()
 	local theZone = cfxZones.getZoneByName("xFlagsConfig") 
 	if not theZone then 
 		if xFlags.verbose then 
-			trigger.action.outText("***xFlg: NO config zone!", 30)
+			trigger.action.outText("***xFlag: NO config zone!", 30)
 		end 
 		return 
 	end 
@@ -343,3 +433,8 @@ if not xFlags.start() then
 	trigger.action.outText("cf/x xFlags aborted: missing libraries", 30)
 	xFlags = nil 
 end
+
+--[[--
+	Additional features:
+	- make #hits compatible to flags and numbers 
+--]]--
