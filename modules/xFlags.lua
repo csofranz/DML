@@ -1,6 +1,7 @@
 xFlags = {}
 xFlags.version = "1.2.1"
 xFlags.verbose = false 
+xFlags.hiVerbose = false 
 xFlags.ups = 1 -- overwritten in get config when configZone is present
 xFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -22,6 +23,9 @@ xFlags.requiredLibs = {
 		  - xSuccess optimizations
 		  - inc, dec, quoted flags 
 		  - matchNum can carry flag 
+	1.2.2 - on/off/suspend commands 
+		  - hiVerbose option
+		  - corrected bug in reset checksum
 	
 --]]--
 xFlags.xFlagZones = {}
@@ -33,6 +37,7 @@ end
 -- create xFlag 
 --
 function xFlags.reset(theZone)
+	theZone.flagChecksum = "" -- reset checksum
 	for i = 1, #theZone.flagNames do 
 		-- since the checksum is order dependent, 
 		-- we must preserve the order of the array
@@ -116,6 +121,18 @@ function xFlags.createXFlagsWithZone(theZone)
 	
 	theZone.xOneShot = cfxZones.getBoolFromZoneProperty(theZone, "oneShot", true)
 	
+	-- on / off commands
+	-- on/off flags
+	theZone.xSuspended = cfxZones.getBoolFromZoneProperty(theZone, "xSuspended", false) -- we are turned on 
+	if theZone.xSuspended and (xFlags.verbose or theZone.verbose) then 
+		trigger.action.outText("+++xFlg: <" .. theZone.name .. "> starts suspended", 30)
+	end
+	
+	theZone.xtriggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "xOn?", "*<none1>")
+	theZone.xlastTriggerOnValue = cfxZones.getFlagValue(theZone.xtriggerOnFlag, theZone)
+		
+	theZone.xtriggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "xOff?", "*<none2>")
+	theZone.xlastTriggerOffValue = cfxZones.getFlagValue(theZone.xtriggerOffFlag, theZone)
 end
 
 function xFlags.evaluateNumOrFlag(theAttribute, theZone)
@@ -282,30 +299,41 @@ function xFlags.evaluateZone(theZone)
 	-- supported any/or, all/and, moreThan, atLeast, exactly
 	local op = theZone.inspect
 	local evalResult = false 
-	if (op == "or" or op == "any" or op == "some") and hits > 0 then 
-		evalResult = true 
-	elseif (op == "and" or op == "all") and hits == #theZone.flagNames then 
-		evalResult = true 
-	elseif (op == "morethan" or op == "more than") and hits > matchNum then 
-		evalResult = true 
-	elseif (op == "atleast" or op == "at least") and hits >= matchNum then
-		evalResult = true 
-	elseif op == "exactly" and hits == matchNum then 
-		evalResult = true 
-	elseif (op == "none" or op == "nor") and hits == 0 then 
-		evalResult = true 
-	elseif (op == "not all" or op == "notall" or op == "nand") and hits < #theZone.flagNames then 
-		evalResult = true 
-	elseif (op == "most") and hits > (#theZone.flagNames / 2) then 
-		evalResult = true 
-	elseif (op == "half" or op == "at least half" or op == "half or more") and hits >= (#theZone.flagNames / 2) then 
-		-- warning: 'half' means really 'at least half"
-		evalResult = true 
+	if (op == "or" or op == "any" or op == "some") then 
+		if hits > 0 then evalResult = true end  
+	elseif (op == "and" or op == "all") then 
+		if hits == #theZone.flagNames then evalResult = true end 
+		
+	elseif (op == "morethan" or op == "more than") then 
+		if hits > matchNum then evalResult = true end 
+		
+	elseif (op == "atleast" or op == "at least") then 
+		if hits >= matchNum then evalResult = true end 
+		
+	elseif op == "exactly" then 
+		if hits == matchNum then evalResult = true end 
+		
+	elseif (op == "none" or op == "nor") then 
+		if hits == 0 then evalResult = true end 
+		
+	elseif (op == "not all" or op == "notall" or op == "nand") then 
+		if hits < #theZone.flagNames then evalResult = true end 
+		
+	elseif (op == "most") then 
+		if hits > (#theZone.flagNames / 2) then evalResult = true end 
+		
+	elseif (op == "half" or op == "at least half" or op == "half or more") then 
+		if hits >= (#theZone.flagNames / 2) then 
+			-- warning: 'half' means really 'at least half"
+			evalResult = true 
+		end 
+	else 
+		trigger.action.outText("+++xFlg: WARNING: <" .. theZone.name .. "> has unknown requirement: <" .. op .. ">", 30)
 	end
 
-	-- add "most" to more than 50% of flagnum 
+		-- add "most" to more than 50% of flagnum 
 
-	-- now check if changed and if result true 
+		-- now check if changed and if result true 	
 	if checkSum ~= theZone.flagChecksum then 
 		if xFlags.verbose or theZone.verbose then 
 			trigger.action.outText("+++xFlag: change detected for " .. theZone.name .. ": " .. theZone.flagChecksum .. "-->" ..checkSum, 30)
@@ -319,7 +347,7 @@ function xFlags.evaluateZone(theZone)
 		end
 		theZone.flagChecksum = checkSum
 	else 
-		if xFlags.verbose or theZone.verbose then 
+		if xFlags.hiVerbose and (xFlags.verbose or theZone.verbose) then 
 			trigger.action.outText("+++xFlag: no change, checksum is |" .. checkSum .. "| for <" .. theZone.name .. ">", 10)
 		end
 	end
@@ -337,7 +365,7 @@ function xFlags.evaluateZone(theZone)
 	-- now see if we bang the output according to method 
 	if evalResult then 
 		if xFlags.verbose or theZone.verbose then 
-			trigger.action.outText("+++xFlag: success bang! on <" .. theZone.xSuccess .. "> for <" .. theZone.name .. ">", 30)
+			trigger.action.outText("+++xFlag: success bang! on <" .. theZone.xSuccess .. "> for <" .. theZone.name .. "> with method <" .. theZone.xMethod .. ">", 30)
 		end
 		cfxZones.pollFlag(theZone.xSuccess, theZone.xMethod, theZone)
 		theZone.xHasFired = true 
@@ -351,8 +379,25 @@ function xFlags.update()
 	timer.scheduleFunction(xFlags.update, {}, timer.getTime() + 1/xFlags.ups)
 	
 	for idx, theZone in pairs (xFlags.xFlagZones) do 
+		-- see if we should suspend 
+		if cfxZones.testZoneFlag(theZone, theZone.xtriggerOnFlag, "change", "xlastTriggerOnValue") then 
+			if xFlags.verbose or theZone.verbose then 
+				trigger.action.outText("+++xFlg: enabling " .. theZone.name, 30)
+			end 
+			theZone.xSuspended = false 
+		end
+		
+		if cfxZones.testZoneFlag(theZone, theZone.xtriggerOffFlag, "change", "xlastTriggerOffValue") then 
+			if xFlags.verbose or theZone.verbose then 
+				trigger.action.outText("+++xFlg: DISabling " .. theZone.name, 30)
+			end 
+			theZone.xSuspended = true 
+		end
+		
 		-- see if they should fire 
-		xFlags.evaluateZone(theZone)
+		if not theZone.xSuspended then 
+			xFlags.evaluateZone(theZone)
+		end
 		
 		-- see if they should reset 
 		if theZone.xReset then 

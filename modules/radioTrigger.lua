@@ -13,6 +13,7 @@ radioTrigger.radioTriggers = {}
 	1.0.0 - initial version
 	
 --]]--
+
 function radioTrigger.addRadioTrigger(theZone)
 	table.insert(radioTrigger.radioTriggers, theZone)
 end

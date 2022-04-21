@@ -273,7 +273,7 @@ function cfxSSBClient:onEvent(event)
 		-- player entered unit? 
 		-- check if this is cloned impostor
 		if not theUnit.getPlayerName then 
-			trigger.action.outText("+++SSBC: non-player client " .. uName .. " detected, ignoring.", 30)
+			trigger.action.outText("+++SSBC: non-player 'client' " .. uName .. " detected, ignoring.", 30)
 			return
 		end
 		local playerName = theUnit:getPlayerName()

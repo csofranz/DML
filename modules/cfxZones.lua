@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.7.4"
+cfxZones.version = "2.7.5"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -69,6 +69,7 @@ cfxZones.version = "2.7.4"
  - 2.7.3  - testZoneFlag returns mathodResult, lastVal
           - evalFlagMethodImmediate()
  - 2.7.4  - doPollFlag supports immediate number setting 
+ - 2.7.5  - more QoL checks when mixing up ? and ! for attributes
  
 --]]--
 cfxZones.verbose = false
@@ -1655,10 +1656,15 @@ end
 function cfxZones.hasProperty(theZone, theProperty) 
 	local foundIt = cfxZones.getZoneProperty(theZone, theProperty)
 	if not foundIt then 
-		if string.sub(theProperty, -1) == "?" then 
+		-- check for possible forgotten or exchanged IO flags 
+		if string.sub(theProperty, -1) == "?" then
 			local lessOp = theProperty:sub(1,-2)
 			if cfxZones.getZoneProperty(theZone, lessOp) ~= nil then 
 				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be missing a Query ('?') symbol", 30)
+			end
+			local lessPlus = lessOp .. "!"
+			if cfxZones.getZoneProperty(theZone, lessPlus) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be using '!' instead of '?' for input", 30)
 			end
 			return false 
 		end
@@ -1667,6 +1673,10 @@ function cfxZones.hasProperty(theZone, theProperty)
 			local lessOp = theProperty:sub(1,-2)
 			if cfxZones.getZoneProperty(theZone, lessOp) ~= nil then 
 				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be missing a Bang! ('!') symbol", 30)
+			end
+			local lessPlus = lessOp .. "?"
+			if cfxZones.getZoneProperty(theZone, lessPlus) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be using '!' instead of '?' for input", 30)
 			end
 			return false 
 		end

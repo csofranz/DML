@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.0"
+unitZone.version = "1.2.1"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -12,6 +12,7 @@ unitZone.requiredLibs = {
 	1.1.0 - DML flag integration 
 		  - method/uzMethod 
 	1.2.0 - uzOn?, uzOff?, triggerMethod
+	1.2.1 - uzDirect
 		  
 --]]--
 
@@ -95,6 +96,11 @@ function unitZone.createUnitZone(theZone)
 			trigger.action.outText("+++uZne: filtering " .. theZone.filterFor .. " in " .. theZone.name, 30)
 		end 
 	end	
+	
+	-- uzDirect
+	if cfxZones.hasProperty(theZone, "uzDirect") then
+		theZone.uzDirect = cfxZones.getStringFromZoneProperty(theZone, "uzDirect", "*<none>")
+	end 
 	
 	-- on/off flags
 	theZone.uzPaused = false -- we are turned on 
@@ -259,6 +265,15 @@ function unitZone.update()
 				-- bang on change! 
 				unitZone.bangState(aZone, newState)
 				aZone.lastStatus = newState 
+			end
+			
+			-- output direct state
+			if aZone.uzDirect then 
+				if newState then 
+					cfxZones.setFlagValueMult(aZone.uzDirect, 1, aZone)
+				else 
+					cfxZones.setFlagValueMult(aZone.uzDirect, 0, aZone)
+				end
 			end
 		end 
 	end

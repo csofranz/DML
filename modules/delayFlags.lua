@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.2.1"
+delayFlag.version = "1.2.2"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -31,6 +31,9 @@ delayFlag.flags = {}
 	1.2.0 - Watchflags 
 	1.2.1 - method goes to dlyMethod
 	      - delay done is correctly inited 
+	1.2.2 - delayMethod defaults to inc 
+		  - zone-local verbosity
+		  - code clean-up 
 	
 --]]--
 
@@ -58,7 +61,7 @@ end
 function delayFlag.createTimerWithZone(theZone)
 	-- delay
 	theZone.delayMin, theZone.delayMax = cfxZones.getPositiveRangeFromZoneProperty(theZone, "timeDelay", 1) -- same as zone signature 
-	if delayFlag.verbose then 
+	if delayFlag.verbose or theZone.verbose then 
 		trigger.action.outText("+++dlyF: time delay is <" .. theZone.delayMin .. ", " .. theZone.delayMax .. "> seconds", 30)
 	end
 
@@ -88,10 +91,10 @@ function delayFlag.createTimerWithZone(theZone)
 	end
 	
 	
-	theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
+	theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	
 	if cfxZones.hasProperty(theZone, "delayMethod") then
-		theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "delayMethod", "flip")
+		theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "delayMethod", "inc")
 	end
 	
 	-- out flag 
@@ -107,9 +110,6 @@ function delayFlag.createTimerWithZone(theZone)
 		theZone.triggerStopDelay = cfxZones.getStringFromZoneProperty(theZone, "stopDelay?", "none")
 		theZone.lastTriggerStopValue = cfxZones.getFlagValue(theZone.triggerStopDelay, theZone)
 	end
-	
-	
-	
 	
 	-- init 
 	theZone.delayRunning = false 
@@ -139,7 +139,7 @@ function delayFlag.startDelay(theZone)
 		if delay > theZone.delayMax then delay = theZone.delayMax end 
 		if delay < 1 then delay = 1 end 
 		
-		if delayFlag.verbose then 
+		if delayFlag.verbose or theZone.verbose then 
 			trigger.action.outText("+++dlyF: delay " .. theZone.name .. " range " .. delayMin .. "-" .. delayMax .. ": selected " .. delay, 30)
 		end
 	end
@@ -157,25 +157,14 @@ function delayFlag.update()
 		-- see if we need to stop 
 		if cfxZones.testZoneFlag(aZone, aZone.triggerStopDelay, aZone.delayTriggerMethod, "lastTriggerStopValue") then
 			aZone.delayRunning = false -- simply stop.
-				if delayFlag.verbose then 
+				if delayFlag.verbose or aZone.verbose then 
 					trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
 				end 
 		end
-		-- old code 
-		--[[--
-		if aZone.triggerStopDelay then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerStopDelay, aZone)
-			if currTriggerVal ~= lastTriggerStopValue then 
-				aZone.delayRunning = false -- simply stop.
-				if delayFlag.verbose then 
-					trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
-				end 
-			end 
-		end		
-		--]]--
+
 		
 		if cfxZones.testZoneFlag(aZone, aZone.triggerDelayFlag, aZone.delayTriggerMethod, "lastDelayTriggerValue") then
-			if delayFlag.verbose then 
+			if delayFlag.verbose or aZone.verbose then 
 				if aZone.delayRunning then 
 					trigger.action.outText("+++dlyF: re-starting timer " .. aZone.name, 30)	
 				else 
@@ -184,25 +173,7 @@ function delayFlag.update()
 			end 
 			delayFlag.startDelay(aZone) -- we restart even if running 
 		end
-		-- old code 
-		--[[--
-		-- make sure to re-start before reading time limit
-		if aZone.triggerDelayFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerDelayFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerDelayFlag)
-			if currTriggerVal ~= aZone.lastDelayTriggerValue
-			then 
-				if delayFlag.verbose then 
-					if aZone.delayRunning then 
-						trigger.action.outText("+++dlyF: re-starting timer " .. aZone.name, 30)	
-					else 
-						trigger.action.outText("+++dlyF: init timer for " .. aZone.name, 30)
-					end
-				end 
-				delayFlag.startDelay(aZone) -- we restart even if running 
-				aZone.lastDelayTriggerValue = currTriggerVal
-			end
-		end
-		--]]--
+
 		
 		if aZone.delayRunning then 
 			-- check expiry 
@@ -240,18 +211,7 @@ function delayFlag.readConfigZone()
 	end 
 end
 
---[[--
-function delayFlag.onStart()
-	for idx, theZone in pairs(delayFlag.flags) do 
-		if theZone.onStart then 
-			if delayFlag.verbose then 
-				trigger.action.outText("+++dlyF: onStart for <"..theZone.name .. ">", 30)
-			end
-			delayFlag.startDelay(theZone) 
-		end 
-	end
-end
---]]--
+
 
 function delayFlag.start()
 	-- lib check

@@ -1,5 +1,5 @@
 changer = {}
-changer.version = "0.0.0"
+changer.version = "1.0.0"
 changer.verbose = false 
 changer.ups = 1 
 changer.requiredLibs = {
@@ -15,11 +15,7 @@ changer.changers = {}
 	- not 
 	- bool
 	- value
-	- rnd
-	- count (? multiple signals, better done with xFlags)
-	- min, max minmax 2,3, cap, 
-	
-	
+		
 --]]--
 
 function changer.addChanger(theZone)
@@ -48,14 +44,17 @@ function changer.createChangerWithZone(theZone)
 	
 	-- triggerChangerMethod
 	theZone.triggerChangerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "triggerChangerMethod") then 
-		theZone.triggerChangerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerChangerMethod", "change")
+	if cfxZones.hasProperty(theZone, "triggerChangeMethod") then 
+		theZone.triggerChangerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerChangeMethod", "change")
 	end 
 	
 	theZone.inEval = cfxZones.getBoolFromZoneProperty(theZone, "inEval", true) -- yes/no to pre-process, default is yes 
 	
 
 	theZone.changeTo = cfxZones.getStringFromZoneProperty(theZone, "to", "val") -- val, not, bool
+	if cfxZones.hasProperty(theZone, "changeTo") then 
+		theZone.changerTo = cfxZones.getStringFromZoneProperty(theZone, "changeTo", "val")
+	end
 	theZone.changeTo = string.lower(theZone.changeTo)
 	theZone.changeTo = dcsCommon.trim(theZone.changeTo)
 	
@@ -63,6 +62,28 @@ function changer.createChangerWithZone(theZone)
 	if cfxZones.hasProperty(theZone, "changeOut!") then 
 		theZone.changeOut = cfxZones.getStringFromZoneProperty(theZone, "changeOut!", "*none")
 	end
+	
+	-- pause / on / off commands
+	theZone.changerPaused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false) -- we default to unpaused
+	if cfxZones.hasProperty(theZone, "changePaused") then 
+		theZone.changerPaused = cfxZones.getBoolFromZoneProperty(theZone, "changePaused", false)
+	end
+	
+	if theZone.changerPaused and (changer.verbose or theZone.verbose) then 
+		trigger.action.outText("+++chgr: <" .. theZone.name .. "> starts paused", 30)
+	end
+	
+	theZone.changerOn = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>")
+	if cfxZones.hasProperty(theZone, "changeOn?") then 
+		theZone.changerOn = cfxZones.getStringFromZoneProperty(theZone, "changeOn?", "*<none>")
+	end
+	theZone.lastChangerOnValue = cfxZones.getFlagValue(theZone.changerOn, theZone)
+	
+	theZone.changerOff = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>")
+	if cfxZones.hasProperty(theZone, "changeOff?") then 
+		theZone.changerOff = cfxZones.getStringFromZoneProperty(theZone, "changeOff?", "*<none>")
+	end
+	theZone.lastChangerOffValue = cfxZones.getFlagValue(theZone.changerOff, theZone)
 	
 	if changer.verbose or theZone.verbose then 
 		trigger.action.outText("+++chgr: new changer zone <".. theZone.name ..">", 30)
@@ -90,11 +111,14 @@ function changer.process(theZone)
 	-- process and write outflag
 	if op == "bool" then 
 		if currVal == 0 then res = 0 else res = 1 end		
-	elseif 
-		op == "not" then 
+	elseif op == "not" then 
 		if currVal == 0 then res = 1 else res = 0 end
+	elseif op == "val" or op == "direct" then 
+		-- do nothing
+	else 
+		trigger.action.outText("+++chgr: unsupported changeTo operation <" ..  .. "> in zone <" ..  .. ">, using 'val'", 30)
 	end
-	-- all others drop through 
+	-- illegal ops drop through after warning, functioning as 'val'
 	
 	-- write out 
 	cfxZones.setFlagValueMult(theZone.changeOut, res, theZone)
@@ -116,7 +140,27 @@ function changer.update()
 	timer.scheduleFunction(changer.update, {}, timer.getTime() + 1/changer.ups)
 		
 	for idx, aZone in pairs(changer.changers) do
-		changer.process(aZone)
+		
+		-- process the pause/unpause flags 
+		-- see if we should suspend 
+		if cfxZones.testZoneFlag(theZone, theZone.changerOn, "change", "lastChangerOnValue") then 
+			if changer.verbose or theZone.verbose then 
+				trigger.action.outText("+++chgr: enabling " .. theZone.name, 30)
+			end 
+			theZone.changerPaused = false 
+		end
+		
+		if cfxZones.testZoneFlag(theZone, theZone.changerOff, "change", "lastChangerOffValue") then 
+			if changer.verbose or theZone.verbose then 
+				trigger.action.outText("+++chgr: DISabling " .. theZone.name, 30)
+			end 
+			theZone.changerPaused = true 
+		end
+		
+		-- do processing if not paused
+		if not aZone.changerPaused then 
+			changer.process(aZone)
+		end 
 	end
 end
 
@@ -174,3 +218,10 @@ if not changer.start() then
 	trigger.action.outText("cfx changer aborted: missing libraries", 30)
 	changer = nil 
 end
+
+--[[--
+ Possible expansions
+ 	- rnd
+	- min, max minmax 2,3, cap to left right values, 
+
+--]]--

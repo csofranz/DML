@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "1.4.0"
+civAir.version = "1.5.0"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -16,7 +16,12 @@ civAir.version = "1.4.0"
 	      all configs it finds 
 		  module check 
 		  removed obsolete civAirConfig module
-		  
+	1.5.0 process zones as in all other modules
+	      verbose is part of config zone 
+		  reading type array from config corrected
+		  massive simplifications: always between zoned airfieds
+		  exclude list and include list 
+	
 	
 --]]--
 
@@ -34,52 +39,28 @@ civAir.aircraftTypes = {"Yak-40", "Yak-40",  "C-130", "C-17A", "IL-76MD", "An-30
 -- concurrently under way 
 civAir.maxTraffic = 10 -- number of flights at the same time
 civAir.maxIdle = 8 * 60 -- seconds of ide time before it is removed after landing 
-civAir.trafficAirbases = {
-		randomized = 0, -- between any on map 
-		localHubs = 1, -- between any two airfields inside the same random hub listed in trafficCenters
-		betweenHubs = 2 -- between any in random hub 1 to any in random hub 2
-	}
 
-civAir.trafficRange = 100 -- 120000 -- defines hub size, in meters. Make it 100 to make it only that airfield
--- ABPickmethod determines how airfields are picked 
--- for air traffic 
-civAir.ABPickMethod = civAir.trafficAirbases.betweenHubs
+
 civAir.trafficCenters = {
-	--"batu", 
-	--"kobul",
-	--"senaki",
-	--"kutai",
-	} -- trafficCenters is used with hubs. Each entry defines a hub 
-	  -- where we collect airdromes etc based on range 
-	  -- simply add a string to identify the hub center 
-	  -- e.g. "senak" to define "Senaki Kolkhi"
-	  -- to have planes only fly between airfields in 100 km range 
-	  -- around senaki kolkhi, enter only senaki as traffic center, set
-	  -- trafficRange to 100000 and ABPickMethod to localHubs
-	  -- to have traffic only between any airfields listed 
-	  -- in trafficCenters, set trafficRange to a small value 
-	  -- like 100 meters and set ABPickMethod to betweenHubs
-	  -- to have flights that always cross the map with multiple 
-	  -- airfields, choose two or three hubs that are 300 km apart,
-	  -- then set trafficRange to 150000 and ABPickMethod to betweenHubs
-	  -- you can also place zones on the map and add a 
-	  -- civAir attribute. If the attribute value is anything
-	  -- but "exclude", the closest airfield to the zone 
-	  -- is added to trafficCenters
-	  -- if you leave this list empty, and do not add airfields
-	  -- by zones, the list is automatically populated by all
-	  -- airfields in the map 
+	} 
+-- place zones on the map and add a "civAir" attribute. 
+-- If the attribute's value is anything
+-- but "exclude", the closest airfield to the zone 
+-- is added to trafficCenters
+
+-- if you leave this list empty, and do not add airfields
+-- by zones, the list is automatically populated with all
+-- airfields in the map 
 		  
 civAir.excludeAirfields = {
-	--"senaki",
 	}
-	-- list all airfields that must NOT be included in 
-	-- civilian activities. Will be used for neither landing 
-	-- nor departure. overrides any airfield that was included 
-	-- in trafficCenters. Here, Senaki is off limits for 
-	-- civilian air traffic
-	-- can be populated by zone on the map that have the 
-	-- 'civAir' attribute with value "exclude"
+-- list all airfields that must NOT be included in 
+-- civilian activities. Will be used for neither landing 
+-- nor departure. overrides any airfield that was included 
+-- in trafficCenters. Here, Senaki is off limits for 
+-- civilian air traffic
+-- can be populated by zone on the map that have the 
+-- 'civAir' attribute with value "exclude"
 
 civAir.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -91,7 +72,7 @@ civAir.idlePlanes = {}
 
 function civAir.readConfigZone()
 	-- note: must match exactly!!!!
-	local theZone = cfxZones.getZoneByName("CivAirConfig") 
+	local theZone = cfxZones.getZoneByName("civAirConfig") 
 	if not theZone then 
 		trigger.action.outText("***civA: NO config zone!", 30) 
 		return 
@@ -101,7 +82,10 @@ function civAir.readConfigZone()
 	
 	-- ok, for each property, load it if it exists
 	if cfxZones.hasProperty(theZone, "aircraftTypes")  then 
-		civAir.aircraftTypes = cfxZones.getStringFromZoneProperty(theZone, "aircraftTypes", "Yak-40")
+		local theTypes = cfxZones.getStringFromZoneProperty(theZone, "aircraftTypes", "Yak-40")
+		local typeArray = dcsCommon.splitString(theTypes, ",")
+		typeArray = dcsCommon.trimArray(typeArray)
+		civAir.aircraftTypes = typeArray 
 	end
 	
 	if cfxZones.hasProperty(theZone, "ups")  then 
@@ -117,18 +101,27 @@ function civAir.readConfigZone()
 		civAir.maxIdle = cfxZones.getNumberFromZoneProperty(theZone, "maxIdle", 8 * 60)
 	end
 	
-	if cfxZones.hasProperty(theZone, "trafficRange")  then 
-		civAir.trafficRange = cfxZones.getNumberFromZoneProperty(theZone, "trafficRange", 120000) -- 120 km 
-	end
-	
-	if cfxZones.hasProperty(theZone, "ABPickMethod")  then 
-		civAir.ABPickMethod = cfxZones.getNumberFromZoneProperty(theZone, "ABPickMethod", 0) -- randomized any
-	end
-
 	if cfxZones.hasProperty(theZone, "initialAirSpawns")  then 
 		civAir.initialAirSpawns = cfxZones.getBoolFromZoneProperty(theZone, "initialAirSpawns", true) 
+	end
+	
+	civAir.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 
 end
 
+function civAir.processZone(theZone)
+	local value = cfxZones.getStringFromZoneProperty(theZone, "civAir", "")
+	local af = dcsCommon.getClosestAirbaseTo(theZone.point, 0) -- 0 = only airfields, not farp or ships 
+	if af then 
+		local afName = af:getName()
+		if value:lower() == "exclude" then 
+			table.insert(civAir.excludeAirfields, afName)
+		else 
+			table.insert(civAir.trafficCenters, afName) -- note that adding the same twice makes it more likely to be picked 
+		end
+	else 
+		trigger.action.outText("+++civA: unable to resolve airfield for <" .. theZone.name .. ">", 30)
+	end
+end
 
 
 function civAir.addPlane(thePlaneUnit) -- warning: is actually a group 
@@ -158,122 +151,49 @@ function civAir.getPlane(aName) -- warning: returns GROUP!
 	return civAir.activePlanes[aName]
 end
 
--- get an air base, may exclude an airbase from choice 
--- method is dependent on 
-function civAir.getAnAirbase(excludeThisOne) 
-	-- different methods to select a base 
-	-- purely random from current list 
-	local theAB;
-	if civAir.ABPickMethod == civAir.trafficAirbases.randomized then
-		repeat 
-			local allAB = dcsCommon.getAirbasesWhoseNameContains("*", 0) -- all airfields, no Ships nor FABS
-			theAB = dcsCommon.pickRandom(allAB)
-		until theAB ~= excludeThisOne
-		return theAB
-	end
-	
-	if civAir.ABPickMethod == civAir.trafficAirbases.localHubs then
-		-- first, pick a hub name
-	end
-	
-	trigger.action.outText("civA: warning - unknown method <" .. civAir.ABPickMethod .. ">", 30) 
-	return nil 
-end
 
-function civAir.excludeAirbases(inList, excludeList)
-	if not inList then return {} end
-	if not excludeList then return inList end 
-	if #excludeList < 1 then return inList end 
-	
-	local theDict = {}
-	-- build dict 
-	for idx, aBase in pairs(inList) do 
-		theDict[aBase:getName()] = aBase
-	end
-	
-	-- now iterate through all excludes and remove them from dics
-	for idx, aName in pairs (excludeList) do 
-		local allOfflimitAB = dcsCommon.getAirbasesWhoseNameContains(aName, 0)
-		for idx2, illegalBase in pairs (allOfflimitAB) do 
-			theDict[illegalBase:getName()] = nil 
+function civAir.filterAirfields(inAll, inFilter)
+	local outList = {}
+	for idx, anItem in pairs(inAll) do 
+		if dcsCommon.arrayContainsString(inFilter, anItem) then 
+			-- filtered, do nothing.
+		else
+			-- not filtered
+			table.insert(outList, anItem)
 		end
 	end
-	-- now linearise (make array) from dict 
-	local theArray = dcsCommon.enumerateTable(theDict)
-	return theArray
+	return outList
 end
 
 function civAir.getTwoAirbases()
-	local fAB 
-	local sAB
-	-- get any two airbases on the map 
-	if civAir.ABPickMethod == civAir.trafficAirbases.randomized then
-		local allAB = dcsCommon.getAirbasesWhoseNameContains("*", 0) -- all airfields, no Ships nor FABS, all coalitions 
-		-- remove illegal source/dest airfields 
-		allAB = civAir.excludeAirbases(allAB, civAir.excludeAirfields)
+	local fAB -- first airbase to depart
+	local sAB -- second airbase to fly to 
+	
+	-- remove all currently excluded air bases from available 
+	local filteredAB = civAir.filterAirfields(civAir.trafficCenters, civAir.excludeAirfields)
+	-- if none left, error
+	if #filteredAB < 1 then 
+		trigger.action.outText("+++civA: too few airfields")
+		return nil, nil 
+	end
+	
+	-- if one left use it twice, boring flight.
+	if #filteredAB < 2 then 
+		local fabName = filteredAB[1]
+		fAB = dcsCommon.getAirbasesWhoseNameContains(fabName, 0)
+		return fAB, fAB -- same twice
+	end
+	
+	-- pick any two that are not the same 
+	fAB = dcsCommon.pickRandom(filteredAB)
+	repeat 
+		sAB = dcsCommon.pickRandom(filteredAB) 
+	until fAB ~= sAB
+	fAB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0)
+	sAB = dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0)
 
-		fAB = dcsCommon.pickRandom(allAB)
-		repeat 
-			sAB = dcsCommon.pickRandom(allAB) 
-		until fAB ~= sAB or (#allAB < 2)
-		return fAB, sAB
-	end
+	return fAB, sAB
 	
-	-- pick a hub, and then selct any two different airbases in the hub 
-	if civAir.ABPickMethod == civAir.trafficAirbases.localHubs then
-		local hubName = dcsCommon.pickRandom(civAir.trafficCenters)
-		-- get the airfield that is identified by this 
-		local theHub = dcsCommon.getFirstAirbaseWhoseNameContains(hubName, 0) -- only airfields, all coalitions
-		-- get all airbases that surround in range 
-		local allAB = dcsCommon.getAirbasesInRangeOfAirbase(
-				theHub, -- centered on this base 
-				true, -- include hub itself
-				civAir.trafficRange, -- hub size in meters 
-				0 -- only airfields
-				)		
-		allAB = civAir.excludeAirbases(allAB, civAir.excludeAirfields)
-		fAB = dcsCommon.pickRandom(allAB)
-		repeat 
-			sAB = dcsCommon.pickRandom(allAB) 
-		until fAB ~= sAB or (#allAB < 2)
-		return fAB, sAB
-	end
-	
-	-- pick two hubs: one for source, one for destination airfields, 
-    -- then pick an airfield from each hub 	
-	if civAir.ABPickMethod == civAir.trafficAirbases.betweenHubs then
-		--trigger.action.outText("between", 30)
-		local sourceHubName = dcsCommon.pickRandom(civAir.trafficCenters)
-		--trigger.action.outText("picked " .. sourceHubName, 30)
-		local sourceHub = dcsCommon.getFirstAirbaseWhoseNameContains(sourceHubName, 0)
-		--trigger.action.outText("sourceHub " .. sourceHub:getName(), 30)
-
-		local destHub 
-		repeat destHubName = dcsCommon.pickRandom(civAir.trafficCenters) 
-		until destHubName ~= sourceHubName or #civAir.trafficCenters < 2
-		destHub = dcsCommon.getFirstAirbaseWhoseNameContains(destHubName, 0)
-				--trigger.action.outText("destHub " .. destHub:getName(), 30)
-		local allAB = dcsCommon.getAirbasesInRangeOfAirbase(
-				sourceHub, -- centered on this base 
-				true, -- include hub itself
-				civAir.trafficRange, -- hub size in meters 
-				0 -- only airfields
-				)
-		allAB = civAir.excludeAirbases(allAB, civAir.excludeAirfields)
-		fAB = dcsCommon.pickRandom(allAB)
-		allAB = dcsCommon.getAirbasesInRangeOfAirbase(
-				destHub, -- centered on this base 
-				true, -- include hub itself
-				civAir.trafficRange, -- hub size in meters 
-				0 -- only airfields
-				)
-		allAB = civAir.excludeAirbases(allAB, civAir.excludeAirfields)
-		sAB = dcsCommon.pickRandom(allAB)
-		return fAB, sAB
-	end
-	
-	 
-	trigger.action.outText("civA: warning - unknown method <" .. civAir.ABPickMethod .. "> in getTwoAirbases()", 30) 
 end
 
 function civAir.parkingIsFree(fromWP) 
@@ -370,6 +290,10 @@ function civAir.createNewFlight(inAirStart)
 	
 	civAir.flightCount = civAir.flightCount + 1
 	local fAB, sAB = civAir.getTwoAirbases()  -- from AB
+	if not fAB or not sAB then 
+		trigger.action.outText("+++civA: cannot create flight, no source or destination", 30)
+		return 
+	end
 
 	local name = fAB:getName() .. "-" .. sAB:getName().. "/" .. civAir.flightCount
 	local TypeString = dcsCommon.pickRandom(civAir.aircraftTypes)
@@ -500,17 +424,7 @@ function civAir.collectHubs()
 	local pZones = cfxZones.zonesWithProperty("civAir")
 	
 	for k, aZone in pairs(pZones) do
-		local value = cfxZones.getStringFromZoneProperty(aZone, "civAir", "")
-		local af = dcsCommon.getClosestAirbaseTo(aZone.point, 0) -- 0 = only airfields, not farp or ships 
-		if af then 
-			local afName = af:getName()
-			if value:lower() == "exclude" then 
-				table.insert(civAir.excludeAirfields, afName)
-			else 
-				table.insert(civAir.trafficCenters, afName)
-			end
-		end
-		
+		civAir.processZone(aZone)
 	end
 end
 
@@ -536,17 +450,19 @@ function civAir.start()
 	
 	-- make sure there is something in trafficCenters
 	if #civAir.trafficCenters < 1 then 
-		trigger.action.outText("+++civTraffic: auto-populating", 30)
+		trigger.action.outText("+++civA: auto-populating", 30)
 		-- simply add airfields on the map
 		local allBases = dcsCommon.getAirbasesWhoseNameContains("*", 0)
 		for idx, aBase in pairs(allBases) do 
 			local afName = aBase:getName()
-			--trigger.action.outText("+++civTraffic: adding " .. afName, 30)
+
 			table.insert(civAir.trafficCenters, afName)
 		end
 	end
 	
-	civAir.listTrafficCenters()
+	if civAir.verbose then 
+		civAir.listTrafficCenters()
+	end 
 	
 	-- air-start half population if allowed
 	if civAir.initialAirSpawns then 
@@ -557,7 +473,7 @@ function civAir.start()
 	civAir.update()
 		
 	-- say hi!
-	trigger.action.outText("cf/x civTraffic v" .. civAir.version .. " started.", 30)
+	trigger.action.outText("cf/x civAir v" .. civAir.version .. " started.", 30)
 	return true 
 end
 
@@ -568,5 +484,11 @@ end
  
  --[[--
   Additional ideas
-  source to target method 
+  
+  - border zones: ac can airstart in there and disappear in there
+  - callbacks for civ spawn / despawn
+  - add civkill callback / redCivKill blueCivKill flag bangers
+  - Helicopter support
+  - departure only, destination only 
+  - add slot checking to see if other planes block it even though DCS claims the slot is free
  --]]--

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.5.9"
+dcsCommon.version = "2.6.1"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -70,6 +70,7 @@ dcsCommon.version = "2.5.9"
  2.5.8 - string2GroupCat()
  2.5.9 - string2ObjectCat()
  2.6.0 - unified uuid, removed uuIdent
+ 2.6.1 - removed bug in rotateUnitData: cy --> cz param passing  
 	   
 --]]--
 
@@ -1483,7 +1484,7 @@ dcsCommon.version = "2.5.9"
 		return px, py		
 	end
 
-	function dcsCommon.rotateUnitData(theUnit, degrees, cx, cy)
+	function dcsCommon.rotateUnitData(theUnit, degrees, cx, cz)
 		if not cx then cx = 0 end
 		if not cz then cz = 0 end
 		local cy = cz 

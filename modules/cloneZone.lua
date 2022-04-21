@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.4.1"
+cloneZones.version = "1.4.2"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -38,6 +38,8 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 		  - trackWith: attribute
 	1.4.0 - Watchflags 
 	1.4.1 - trackWith: accepts list of trackers 
+	1.4.2 - onstart delays for 0.1 s to prevent static stacking
+		  - turn bug for statics (bug in dcsCommon, resolved)
 	
 --]]--
 
@@ -688,7 +690,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- now use raw data to spawn and see if it works outabox
 		--local theCat = cfxMX.catText2ID(cat) -- will be "static"
 		
-		-- move origin 
+		trigger.action.outText("static object proccing", 30)
 		rawData.x = rawData.x + zoneDelta.x 
 		rawData.y = rawData.y + zoneDelta.z -- !!!
 	
@@ -704,7 +706,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
 		
 		-- handle linkUnit if provided  
-		if rawData.linkUnit then 
+		if false and rawData.linkUnit then 
 			--trigger.action.outText("has link to " .. rawData.linkUnit, 30)
 			local lU = cloneZones.resolveStaticLinkUnit(rawData.linkUnit)
 			--trigger.action.outText("resolved to " .. lU, 30)
@@ -869,14 +871,6 @@ function cloneZones.hasLiveUnits(theZone)
 	return false
 end
 
--- old code, deprecated
---[[--
-function cloneZones.pollFlag(flagNum, method)
-	-- we currently ignore method 
-	local num = trigger.misc.getUserFlag(flagNum)
-	trigger.action.setUserFlag(flagNum, num+1)
-end
---]]--
 --
 -- UPDATE
 --
@@ -903,20 +897,6 @@ function cloneZones.update()
 			end 
 			cloneZones.spawnWithCloner(aZone)
 		end
-		-- old code 
-		--[[--
-		if aZone.spawnFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.spawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.spawnFlag)
-			if currTriggerVal ~= aZone.lastSpawnValue
-			then 
-				if cloneZones.verbose then 
-					trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. ">", 30)
-				end 
-				cloneZones.spawnWithCloner(aZone)
-				aZone.lastSpawnValue = currTriggerVal
-			end
-		end
-		--]]--
 		
 		-- empty handling 
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
@@ -999,8 +979,12 @@ function cloneZones.start()
 		cloneZones.addCloneZone(aZone) -- remember it so we can smoke it
 	end
 	
-	-- run through onStart 
-	cloneZones.onStart() 
+	-- run through onStart, but leave at least a few
+	-- cycles to go through object removal so statics
+	-- can spawn on ground. onStart is being deprecated, the
+	-- raiseFlag module covers this since the first time 
+	-- raiseFlag is run is t0 + 0.5s
+	timer.scheduleFunction(cloneZones.onStart, {}, timer.getTime() + 0.1)
 	
 	-- start update 
 	cloneZones.update()
@@ -1016,13 +1000,6 @@ if not cloneZones.start() then
 	cloneZones = nil 
 end
 
---[[-- callback testing 
-czcb = {}
-function czcb.callback(theZone, reason, args)
-	trigger.action.outText("clone CB: " .. theZone.name .. " with " .. reason, 30)
-end
-cloneZones.addCallback(czcb.callback)
---]]--
 
 --[[--
 	to resolve tasks 
@@ -1030,4 +1007,5 @@ cloneZones.addCallback(czcb.callback)
 	- AFAC 
 		- FAC Assign group 
 	- set freq for unit 
+	- embark / disembark
 --]]--
