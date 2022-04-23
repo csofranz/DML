@@ -1,6 +1,7 @@
 baseCaptured={}
-baseCaptured.version = "1.0.0"
+baseCaptured.version = "1.0.1"
 baseCaptured.verbose = false
+baseCaptured.autoAssignClosestBase = true
 baseCaptured.requiredLibs = {
     "dcsCommon", -- always
     "cfxZones", -- Zones, of course
@@ -10,19 +11,27 @@ baseCaptured.requiredLibs = {
 
     Properties
     - baseCaptured       Marks this as baseCaptured zone. The value is ignored. (MANDATORY)
-    - baseName           Name for the airdrome, helipad or ship. In case of helipad or ship it's the unit name.
-                         If no name is set then the associated captured flag is triggered for all bases.
+    - baseName           Name for the airdrome or helipad. In case of a helipad, it's the unit name.
+                         If no name is set then the behavior depends on the configuration autoAssignClosestBase.
+                         If autoAssignClosestBase is true, then the closest base is automatically assigned.
+                         If autoAssignClosestBase is false, then the associated captured flag is triggered for all bases.
     - coalition          The coalition that needs to capture the base. Accepts 0/all, 1/red, 2/blue.
       captureCoalition   Defaults to 0 (all)
-    - filterFor          Which base categories to look for. Accepts 0/airdrome,1/helipad,2/ship and 3/all.
+    - filterFor          Which base categories to look for. Accepts 0/airdrome,1/helipad and 3/all.
                          Defaults to 3 (all)
     - method             DML Flag method for output. Use only one synonym per zone.
       capturedMethod     Defaults to "flip".
     - f!                 The flag to bang! after the base matching above filter criteria has been captured.
       captured!          Use only one synonym per zone.
 
+    Configuration
+    - verbose                 Show debugging information. Default is false.
+    - autoAssignClosestBase   Automatically assign the closest base to a zone if no explicit baseName has been provided.
+                              Default is true. 
+
     Version History
     1.0.0 - Initial version
+    1.0.1 - Automatic Closest Base Assignment
 --]]--
 
 baseCaptured.zones = {}
@@ -47,14 +56,29 @@ function baseCaptured.getAirbaseCategoryFromZoneProperty(theZone, theProperty, d
     num = default
     if p == "airdrome" then num = Airbase.Category.AIRDROME end
     if p == "helipad" then num = Airbase.Category.HELIPAD end
-    if p == "ship" then num = Airbase.Category.SHIP end
     if p == "all" then num = 3 end
 
     return num
 end
 
+function baseCaptured.assignClosestBase(theZone)
+	local base = dcsCommon.getClosestAirbaseTo(theZone.point)
+	if base then 
+        theZone.baseName = base:getName()
+        if baseCaptured.verbose or theZone.verbose then
+            trigger.action.outText("***basedCaptured: assigned <" .. theZone.name .. "> to base <" .. theZone.baseName .. ">", 30)
+        end
+	else 
+		trigger.action.outText("***basedCaptured: unable to resolve base for <" .. theZone.name .. ">", 30)
+	end
+end
+
 function baseCaptured.createZone(theZone)
+    -- assigned base
     theZone.baseName = cfxZones.getStringFromZoneProperty(theZone, "baseName", "<none>")
+    if baseCaptured.autoAssignClosestBase and theZone.baseName == "<none>" then
+        baseCaptured.assignClosestBase(theZone)
+    end
 
     -- coalition (1=red,2=blue,0=neutral/all)
     theZone.captureCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
@@ -135,6 +159,7 @@ function baseCaptured.readConfigZone()
     end
 
     baseCaptured.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+    baseCaptured.autoAssignClosestBase = cfxZones.getBoolFromZoneProperty(theZone, "autoAssignClosestBase", true)
 
     if baseCaptured.verbose then
         trigger.action.outText("***baseCaptured: read configuration from zone", 30)
