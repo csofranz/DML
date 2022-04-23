@@ -1,24 +1,19 @@
 baseCaptured={}
 baseCaptured.version = "1.0.1"
 baseCaptured.verbose = false
-baseCaptured.autoAssignClosestBase = true
 baseCaptured.requiredLibs = {
     "dcsCommon", -- always
     "cfxZones", -- Zones, of course
 }
 --[[--
-    baseCaptured - Detects when a base has been captured
+    baseCaptured - Detects when the assigned base has been captured
 
     Properties
-    - baseCaptured       Marks this as baseCaptured zone. The value is ignored. (MANDATORY)
-    - baseName           Name for the airdrome or helipad. In case of a helipad, it's the unit name.
-                         If no name is set then the behavior depends on the configuration autoAssignClosestBase.
-                         If autoAssignClosestBase is true, then the closest base is automatically assigned.
-                         If autoAssignClosestBase is false, then the associated captured flag is triggered for all bases.
+    - baseCaptured       Marks this as baseCaptured zone. The value is ignored. 
+                         The closest base (airdrome or helipad) is automatically assigned to this zone.
+                         (MANDATORY)
     - coalition          The coalition that needs to capture the base. Accepts 0/all, 1/red, 2/blue.
       captureCoalition   Defaults to 0 (all)
-    - filterFor          Which base categories to look for. Accepts 0/airdrome,1/helipad and 3/all.
-                         Defaults to 3 (all)
     - method             DML Flag method for output. Use only one synonym per zone.
       capturedMethod     Defaults to "flip".
     - f!                 The flag to bang! after the base matching above filter criteria has been captured.
@@ -26,8 +21,6 @@ baseCaptured.requiredLibs = {
 
     Configuration
     - verbose                 Show debugging information. Default is false.
-    - autoAssignClosestBase   Automatically assign the closest base to a zone if no explicit baseName has been provided.
-                              Default is true. 
 
     Version History
     1.0.0 - Initial version
@@ -35,31 +28,6 @@ baseCaptured.requiredLibs = {
 --]]--
 
 baseCaptured.zones = {}
-
-function baseCaptured.getAirbaseCategoryFromZoneProperty(theZone, theProperty, default)
-    if not default then default = 3 end
-
-    local p = cfxZones.getZoneProperty(theZone, theProperty)
-    if not p then
-        return default
-    end
-
-    p = dcsCommon.trim(p:lower())
-
-    local num = tonumber(p)
-    if num then
-        if num < 0 then num = 0 end
-        if num > 3 then num = 3 end
-        return num
-    end
-
-    num = default
-    if p == "airdrome" then num = Airbase.Category.AIRDROME end
-    if p == "helipad" then num = Airbase.Category.HELIPAD end
-    if p == "all" then num = 3 end
-
-    return num
-end
 
 function baseCaptured.assignClosestBase(theZone)
 	local base = dcsCommon.getClosestAirbaseTo(theZone.point)
@@ -74,11 +42,8 @@ function baseCaptured.assignClosestBase(theZone)
 end
 
 function baseCaptured.createZone(theZone)
-    -- assigned base
-    theZone.baseName = cfxZones.getStringFromZoneProperty(theZone, "baseName", "<none>")
-    if baseCaptured.autoAssignClosestBase and theZone.baseName == "<none>" then
-        baseCaptured.assignClosestBase(theZone)
-    end
+    -- assign closest base
+    baseCaptured.assignClosestBase(theZone)
 
     -- coalition (1=red,2=blue,0=neutral/all)
     theZone.captureCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
@@ -88,15 +53,6 @@ function baseCaptured.createZone(theZone)
 
     if baseCaptured.verbose or theZone.verbose then 
         trigger.action.outText("***basedCaptured: set coalition " .. theZone.captureCoalition .. " for <" .. theZone.name .. ">", 30)
-    end
-
-    -- category filter (0=airdrome,1=helipad,2=ship,3=all)
-    if cfxZones.hasProperty(theZone, "filterFor") then
-        theZone.filterFor = baseCaptured.getAirbaseCategoryFromZoneProperty(theZone, "filterFor", 3)
-
-        if baseCaptured.verbose or theZone.verbose then 
-            trigger.action.outText("***basedCaptured: set category filter " .. theZone.filterFor .. " for <" .. theZone.name .. ">", 30)
-        end
     end
 
     -- get flag output method
@@ -138,14 +94,12 @@ function baseCaptured:onEvent(event)
     end
 
     local baseName = event.place:getName()
-    local baseCategory = event.place:getDesc().category
     local newCoalition = event.place:getCoalition()
 
     for idx, aZone in pairs(baseCaptured.zones) do
-        local hasName = aZone.baseName == "<none>" or aZone.baseName == baseName
+        local hasName = aZone.baseName == baseName
         local hasCoalition = aZone.captureCoalition == 0 or aZone.captureCoalition == newCoalition
-        local hasCategory = not aZone.filterFor or aZone.filterFor > 2 or aZone.filterFor == baseCategory
-        if hasName and hasCoalition and hasCategory then
+        if hasName and hasCoalition then
             baseCaptured.triggerZone(aZone)
         end
     end
@@ -159,7 +113,6 @@ function baseCaptured.readConfigZone()
     end
 
     baseCaptured.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-    baseCaptured.autoAssignClosestBase = cfxZones.getBoolFromZoneProperty(theZone, "autoAssignClosestBase", true)
 
     if baseCaptured.verbose then
         trigger.action.outText("***baseCaptured: read configuration from zone", 30)
