@@ -6,7 +6,7 @@
 --
 
 cfxZones = {}
-cfxZones.version = "2.7.5"
+cfxZones.version = "2.7.6"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -70,6 +70,7 @@ cfxZones.version = "2.7.5"
           - evalFlagMethodImmediate()
  - 2.7.4  - doPollFlag supports immediate number setting 
  - 2.7.5  - more QoL checks when mixing up ? and ! for attributes
+ - 2.7.6  - trim for getBoolFromZoneProperty and getStringFromZoneProperty
  
 --]]--
 cfxZones.verbose = false
@@ -1417,7 +1418,7 @@ end
 
 function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	-- returns two values: true/false method result, and curr value
-	-- returns true if method contraints are met for flag theFlagName
+	-- returns true if method constraints are met for flag theFlagName
 	-- as defined by theMethod 
 	if not theMethod then 
 		theMethod = "change"
@@ -1587,6 +1588,7 @@ function cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
 	local p = cfxZones.getZoneProperty(theZone, theProperty)
 	if not p then return default end
 	if type(p) == "string" then 
+		p = dcsCommon.trim(p)
 		if p == "" then p = default end 
 		return p
 	end
@@ -1714,6 +1716,7 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	-- make sure we compare so default always works when 
 	-- answer isn't exactly the opposite
 	p = p:lower() 
+	p = dcsCommon.trim(p) 
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 

@@ -1,5 +1,5 @@
 xFlags = {}
-xFlags.version = "1.2.1"
+xFlags.version = "1.3.0"
 xFlags.verbose = false 
 xFlags.hiVerbose = false 
 xFlags.ups = 1 -- overwritten in get config when configZone is present
@@ -26,6 +26,8 @@ xFlags.requiredLibs = {
 	1.2.2 - on/off/suspend commands 
 		  - hiVerbose option
 		  - corrected bug in reset checksum
+	1.3.0 - xCount! flag 
+		  - "never" operator  
 	
 --]]--
 xFlags.xFlagZones = {}
@@ -94,7 +96,9 @@ function xFlags.createXFlagsWithZone(theZone)
 		theZone.xChange = cfxZones.getStringFromZoneProperty(theZone, "xChange!", "*<none>")
 	end 
 	
-	theZone.xDirect = cfxZones.getStringFromZoneProperty(theZone, "xDirect!", "*<none>") 
+	theZone.xDirect = cfxZones.getStringFromZoneProperty(theZone, "xDirect", "*<none>") 
+	
+	theZone.xCount = cfxZones.getStringFromZoneProperty(theZone, "xCount", "*<none>") 
 	
 	theZone.inspect = cfxZones.getStringFromZoneProperty(theZone, "require", "or") -- same as any 
 	-- supported any/or, all/and, moreThan, atLeast, exactly 
@@ -297,6 +301,7 @@ function xFlags.evaluateZone(theZone)
 	local hits, checkSum = xFlags.evaluateFlags(theZone)
 	-- depending on inspect see what the outcome is 
 	-- supported any/or, all/and, moreThan, atLeast, exactly
+	-- if require = "never", we never trigger 
 	local op = theZone.inspect
 	local evalResult = false 
 	if (op == "or" or op == "any" or op == "some") then 
@@ -327,6 +332,9 @@ function xFlags.evaluateZone(theZone)
 			-- warning: 'half' means really 'at least half"
 			evalResult = true 
 		end 
+		
+	elseif op == "never" then 
+		evalResult = false -- not required, just to be explicit 
 	else 
 		trigger.action.outText("+++xFlg: WARNING: <" .. theZone.name .. "> has unknown requirement: <" .. op .. ">", 30)
 	end
@@ -353,7 +361,7 @@ function xFlags.evaluateZone(theZone)
 	end
 	
 	-- now directly set the value of evalResult (0 = false, 1 = true) 
-	-- to "xDirect!". Always sets output to current result of evaluation
+	-- to "xDirect". Always sets output to current result of evaluation
 	-- true (1)/false(0), no matter if changed or not  
 	
 	if evalResult then 
@@ -361,6 +369,9 @@ function xFlags.evaluateZone(theZone)
 	else 
 		cfxZones.setFlagValueMult(theZone.xDirect, 0, theZone)
 	end 
+	
+	-- directly set the xCount flag 
+	cfxZones.setFlagValueMult(theZone.xCount, hits, theZone)
 	
 	-- now see if we bang the output according to method 
 	if evalResult then 

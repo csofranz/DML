@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.1"
+dcsCommon.version = "2.6.2"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -71,6 +71,7 @@ dcsCommon.version = "2.6.1"
  2.5.9 - string2ObjectCat()
  2.6.0 - unified uuid, removed uuIdent
  2.6.1 - removed bug in rotateUnitData: cy --> cz param passing  
+ 2.6.2 - new combineTables()
 	   
 --]]--
 
@@ -199,6 +200,17 @@ dcsCommon.version = "2.6.1"
 		return array
 	end
 
+	-- combine table. creates new 
+	function dcsCommon.combineTables(inOne, inTwo)
+		local outTable = {}
+		for idx, element in pairs(inOne) do 
+			table.insert(outTable, element)
+		end
+		for idx, element in pairs(inTwo) do 
+			table.insert(outTable, element)
+		end
+		return outTable
+	end
 -- 
 -- A I R F I E L D S  A N D  F A R P S  
 --

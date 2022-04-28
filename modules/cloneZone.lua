@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.4.2"
+cloneZones.version = "1.4.4"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -40,6 +40,9 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 	1.4.1 - trackWith: accepts list of trackers 
 	1.4.2 - onstart delays for 0.1 s to prevent static stacking
 		  - turn bug for statics (bug in dcsCommon, resolved)
+	1.4.3 - embark/disembark now works with cloners 
+	1.4.4 - removed some debugging verbosity 
+	
 	
 --]]--
 
@@ -406,6 +409,8 @@ end
 -- 
 
 function cloneZones.resolveGroupID(gID, rawData, dataTable, reason)
+	if not reason then reason = "<default>" end 
+	
 	local resolvedID = gID
 	local myOName = rawData.CZorigName
 	local groupName = cfxMX.groupNamesByID[gID]
@@ -511,7 +516,55 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						
 					end
 					
-					-- resolve unit references in TASKS
+					-- resolve EMBARK/DISEMBARK groupd references 
+					if taskData.id and taskData.params and taskData.params.groupsForEmbarking
+					then 
+						-- build new groupsForEmbarking
+						local embarkers = taskData.params.groupsForEmbarking
+						local newEmbarkers = {}
+						for grpIdx, gID in pairs(embarkers) do 
+							local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
+							table.insert(newEmbarkers, resolvedID)
+							trigger.action.outText("+++clnZ: resolved embark group id <" .. gID .. "> to <" .. resolvedID .. ">", 30)
+						end
+						-- replace old with new table
+						taskData.params.groupsForEmbarking = newEmbarkers
+					end
+					
+					-- resolve DISTRIBUTION (embark) unit/group refs 
+					if taskData.id and taskData.params and taskData.params.distribution then 
+						local newDist = {} -- will replace old 
+						for aUnit, aList in pairs(taskData.params.distribution) do 
+							-- first, translate this unit's number 
+							local newUnit = cloneZones.resolveUnitID(aUnit, rawData, dataTable, "transportID")
+							local embarkers = aList 
+							local newEmbarkers = {}
+							for grpIdx, gID in pairs(embarkers) do 
+								-- translate old to new 
+								local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
+								table.insert(newEmbarkers, resolvedID)
+								trigger.action.outText("+++clnZ: resolved distribute unit/group id <" .. aUnit .. "/" .. gID .. "> to <".. newUnit .. "/" .. resolvedID .. ">", 30)
+							end
+							-- store this as new group for 
+							-- translated transportID
+							newDist[newUnit] = newEmbarkers
+						end
+						-- replace old distribution with new 
+						taskData.params.distribution = newDist 
+						trigger.action.outText("+++clnZ: rebuilt distribution", 30)
+					end
+					
+					-- resolve selectedTransport unit reference 
+					if taskData.id and taskData.params and taskData.params.selectedTransportt then
+						local tID = taskData.params.selectedTransport
+						local newTID = cloneZones.resolveUnitID(tID, rawData, dataTable, "transportID")
+						taskData.params.selectedTransport = newTID
+						rigger.action.outText("+++clnZ: resolved selected transport <" .. tID .. "> to <" .. newTID .. ">", 30)
+					end
+					
+					-- note: we may need to process x and y as well
+					
+					-- resolve UNIT references in TASKS
 					if taskData.id and taskData.params and taskData.params.unitId
 					then 
 						-- we don't look for keywords, we simply resolve 
@@ -690,7 +743,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- now use raw data to spawn and see if it works outabox
 		--local theCat = cfxMX.catText2ID(cat) -- will be "static"
 		
-		trigger.action.outText("static object proccing", 30)
+		-- trigger.action.outText("static object proccing", 30)
 		rawData.x = rawData.x + zoneDelta.x 
 		rawData.y = rawData.y + zoneDelta.z -- !!!
 	

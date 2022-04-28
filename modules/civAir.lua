@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "1.5.0"
+civAir.version = "1.5.1"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -21,6 +21,7 @@ civAir.version = "1.5.0"
 		  reading type array from config corrected
 		  massive simplifications: always between zoned airfieds
 		  exclude list and include list 
+	1.5.1 added depart only and arrive only options for airfields 
 	
 	
 --]]--
@@ -41,8 +42,7 @@ civAir.maxTraffic = 10 -- number of flights at the same time
 civAir.maxIdle = 8 * 60 -- seconds of ide time before it is removed after landing 
 
 
-civAir.trafficCenters = {
-	} 
+civAir.trafficCenters = {} 
 -- place zones on the map and add a "civAir" attribute. 
 -- If the attribute's value is anything
 -- but "exclude", the closest airfield to the zone 
@@ -52,8 +52,7 @@ civAir.trafficCenters = {
 -- by zones, the list is automatically populated with all
 -- airfields in the map 
 		  
-civAir.excludeAirfields = {
-	}
+civAir.excludeAirfields = {}
 -- list all airfields that must NOT be included in 
 -- civilian activities. Will be used for neither landing 
 -- nor departure. overrides any airfield that was included 
@@ -61,6 +60,9 @@ civAir.excludeAirfields = {
 -- civilian air traffic
 -- can be populated by zone on the map that have the 
 -- 'civAir' attribute with value "exclude"
+
+civAir.departOnly = {} -- use only to start from 
+civAir.landingOnly = {} -- use only to land at 
 
 civAir.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -113,8 +115,13 @@ function civAir.processZone(theZone)
 	local af = dcsCommon.getClosestAirbaseTo(theZone.point, 0) -- 0 = only airfields, not farp or ships 
 	if af then 
 		local afName = af:getName()
-		if value:lower() == "exclude" then 
+		value = value:lower()
+		if value == "exclude" then 
 			table.insert(civAir.excludeAirfields, afName)
+		elseif dcsCommon.stringStartsWith(value, "depart") or dcsCommon.stringStartsWith(value, "start") then 
+			table.insert(civAir.departOnly, afName)
+		elseif dcsCommon.stringStartsWith(value, "land") or dcsCommon.stringStartsWith(value, "arriv") then
+			table.insert(civAir.landingOnly, afName)
 		else 
 			table.insert(civAir.trafficCenters, afName) -- note that adding the same twice makes it more likely to be picked 
 		end
@@ -169,31 +176,40 @@ function civAir.getTwoAirbases()
 	local fAB -- first airbase to depart
 	local sAB -- second airbase to fly to 
 	
-	-- remove all currently excluded air bases from available 
-	local filteredAB = civAir.filterAirfields(civAir.trafficCenters, civAir.excludeAirfields)
+	local departAB = dcsCommon.combineTables(civAir.trafficCenters, civAir.departOnly)
+	-- remove all currently excluded air bases from departure 
+	local filteredAB = civAir.filterAirfields(departAB, civAir.excludeAirfields)
 	-- if none left, error
 	if #filteredAB < 1 then 
-		trigger.action.outText("+++civA: too few airfields")
+		trigger.action.outText("+++civA: too few departure airfields")
 		return nil, nil 
 	end
 	
+	-- now pick the departure airfield
+	fAB = dcsCommon.pickRandom(filteredAB)
+
+	-- now generate list of landing airfields 
+	local arriveAB = dcsCommon.combineTables(civAir.trafficCenters, civAir.landingOnly)
+	-- remove all currently excluded air bases from arrival 
+	filteredAB = civAir.filterAirfields(arriveAB, civAir.excludeAirfields)
+	
 	-- if one left use it twice, boring flight.
-	if #filteredAB < 2 then 
-		local fabName = filteredAB[1]
-		fAB = dcsCommon.getAirbasesWhoseNameContains(fabName, 0)
-		return fAB, fAB -- same twice
+	if #filteredAB < 1 then 
+		trigger.action.outText("+++civA: too few arrival airfields")
+		return nil, nil
 	end
 	
-	-- pick any two that are not the same 
-	fAB = dcsCommon.pickRandom(filteredAB)
+	-- pick any second that are not the same 
+	local tries = 0
 	repeat 
-		sAB = dcsCommon.pickRandom(filteredAB) 
-	until fAB ~= sAB
+		sAB = dcsCommon.pickRandom(filteredAB)
+		tries = tries + 1 -- only try 10 times
+	until fAB ~= sAB or tries > 10
+	
 	fAB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0)
 	sAB = dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0)
 
-	return fAB, sAB
-	
+	return fAB, sAB	
 end
 
 function civAir.parkingIsFree(fromWP) 
@@ -433,6 +449,20 @@ function civAir.listTrafficCenters()
 	for idx, aName in pairs(civAir.trafficCenters) do
 		trigger.action.outText(aName, 30)
 	end
+	
+	if #civAir.departOnly > 0 then 
+		trigger.action.outText("Departure-Only:", 30)
+		for idx, aName in pairs(civAir.departOnly) do
+			trigger.action.outText(aName, 30)
+		end
+	end
+	
+	if #civAir.landingOnly > 0 then 
+		trigger.action.outText("Arrival/Landing-Only:", 30)
+		for idx, aName in pairs(civAir.landingOnly) do
+			trigger.action.outText(aName, 30)
+		end
+	end
 end
  
 -- start 
@@ -449,7 +479,9 @@ function civAir.start()
 	civAir.collectHubs()
 	
 	-- make sure there is something in trafficCenters
-	if #civAir.trafficCenters < 1 then 
+	if (#civAir.trafficCenters + #civAir.departOnly < 1) or
+	   (#civAir.trafficCenters + #civAir.landingOnly < 1) 
+	then 
 		trigger.action.outText("+++civA: auto-populating", 30)
 		-- simply add airfields on the map
 		local allBases = dcsCommon.getAirbasesWhoseNameContains("*", 0)

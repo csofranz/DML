@@ -1,89 +1,100 @@
 baseCaptured={}
-baseCaptured.version = "1.0.1"
+baseCaptured.version = "1.0.0"
 baseCaptured.verbose = false
 baseCaptured.requiredLibs = {
     "dcsCommon", -- always
     "cfxZones", -- Zones, of course
 }
+
 --[[--
-    baseCaptured - Detects when the assigned base has been captured
-
-    Properties
-    - baseCaptured       Marks this as baseCaptured zone. The value is ignored. 
-                         The closest base (airdrome or helipad) is automatically assigned to this zone.
-                         (MANDATORY)
-    - coalition          The coalition that needs to capture the base. Accepts 0/all, 1/red, 2/blue.
-      captureCoalition   Defaults to 0 (all)
-    - method             DML Flag method for output. Use only one synonym per zone.
-      capturedMethod     Defaults to "flip".
-    - f!                 The flag to bang! after the base matching above filter criteria has been captured.
-      captured!          Use only one synonym per zone.
-
-    Configuration
-    - verbose                 Show debugging information. Default is false.
+    baseCaptured - Detects when the assigned base has been captured, idea and first implementation by cloose
 
     Version History
-    1.0.0 - Initial version
-    1.0.1 - Automatic Closest Base Assignment
+    1.0.0 - Initial version based on cloose's code
+	
 --]]--
 
 baseCaptured.zones = {}
 
-function baseCaptured.assignClosestBase(theZone)
-	local base = dcsCommon.getClosestAirbaseTo(theZone.point)
-	if base then 
-        theZone.baseName = base:getName()
-        if baseCaptured.verbose or theZone.verbose then
-            trigger.action.outText("***basedCaptured: assigned <" .. theZone.name .. "> to base <" .. theZone.baseName .. ">", 30)
-        end
-	else 
-		trigger.action.outText("***basedCaptured: unable to resolve base for <" .. theZone.name .. ">", 30)
-	end
-end
 
 function baseCaptured.createZone(theZone)
-    -- assign closest base
-    baseCaptured.assignClosestBase(theZone)
-
-    -- coalition (1=red,2=blue,0=neutral/all)
-    theZone.captureCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
-    if cfxZones.hasProperty(theZone, "captureCoalition") then
-        theZone.captureCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "captureCoalition", 0)
-    end
-
-    if baseCaptured.verbose or theZone.verbose then 
-        trigger.action.outText("***basedCaptured: set coalition " .. theZone.captureCoalition .. " for <" .. theZone.name .. ">", 30)
-    end
-
+    -- find closest base
+	theZone.theBase = dcsCommon.getClosestAirbaseTo(theZone.point)
+	theZone.baseName = theZone.theBase:getName()
+	theZone.currentOwner = theZone.theBase:getCoalition()
+	
+	-- baseCaptured is the method
+	theZone.capturedFlag = cfxZones.getStringFromZoneProperty(theZone, "baseCaptured!", "*none")
+	
+	
     -- get flag output method
-    theZone.capturedMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
+    theZone.capturedMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
     if cfxZones.hasProperty(theZone, "capturedMethod") then
-        theZone.capturedMethod = cfxZones.getStringFromZoneProperty(theZone, "capturedMethod", "flip")
+        theZone.capturedMethod = cfxZones.getStringFromZoneProperty(theZone, "capturedMethod", "inc")
     end
 
-    -- get captured flag
-    if cfxZones.hasProperty(theZone, "f!") then
-        theZone.capturedFlag = cfxZones.getStringFromZoneProperty(theZone, "f!", "*none")
+    -- other outputs 
+    if cfxZones.hasProperty(theZone, "blueCaptured!") then
+        theZone.blueCap = cfxZones.getStringFromZoneProperty(theZone, "blueCaptured!", "*none")
     end
-    if cfxZones.hasProperty(theZone, "captured!") then
-        theZone.capturedFlag = cfxZones.getStringFromZoneProperty(theZone, "captured!", "*none")
+	
+    if cfxZones.hasProperty(theZone, "blue!") then
+        theZone.blueCap = cfxZones.getStringFromZoneProperty(theZone, "blue!", "*none")
+    end
+	
+	if cfxZones.hasProperty(theZone, "redCaptured!") then
+        theZone.redCap = cfxZones.getStringFromZoneProperty(theZone, "blueCaptured!", "*none")
+    end
+	
+    if cfxZones.hasProperty(theZone, "red!") then
+        theZone.redCap = cfxZones.getStringFromZoneProperty(theZone, "red!", "*none")
+    end
+	
+	if cfxZones.hasProperty(theZone, "baseOwner") then
+        theZone.baseOwner = cfxZones.getStringFromZoneProperty(theZone, "baseOwner", "*none")
+		cfxZones.setFlagValueMult(theZone.baseOwner, theZone.currentOwner, theZone)
+		if baseCaptured.verbose or theZone.verbose then 
+			trigger.action.outText("+++bCap: setting owner for <" .. theZone.name .. "> to " .. theZone.currentOwner, 30)
+		end 
+    end
+	
+	if baseCaptured.verbose or theZone.verbose then
+		trigger.action.outText("+++bCap: tracking base <" .. theZone.baseName .. "> with <" .. theZone.name .. ">", 30)
     end
 end
 
-function baseCaptured.addZone(theZone)
-    if not theZone.capturedFlag or theZone.capturedFlag == "*none" then
-        trigger.action.outText("***baseCaptured NOTE: " .. theZone.name .. " is missing a valid <f!> or <captured!> property", 30)
-        return
-    end
-
+function baseCaptured.addBaseCaptureZone(theZone)
     table.insert(baseCaptured.zones, theZone)
 end
 
 function baseCaptured.triggerZone(theZone)
+	local newOwner = theZone.theBase:getCoalition()
     cfxZones.pollFlag(theZone.capturedFlag, theZone.capturedMethod, theZone)
-    if baseCaptured.verbose then 
-        trigger.action.outText("***baseCaptured: banging captured! with <" .. theZone.capturedMethod .. "> on <" .. theZone.capturedFlag .. "> for " .. theZone.baseName, 30)
+	if newOwner == 1 then -- red 
+		if theZone.redCap then 
+			cfxZones.pollFlag(theZone.redCap, theZone.capturedMethod, theZone)
+		end
+	elseif newOwner == 2 then 
+		if theZone.blueCap then 
+			cfxZones.pollFlag(theZone.blueCap, theZone.capturedMethod, theZone)
+		end
+	else 
+		-- possibly a new side? Neutral doesn't cap
+	end
+	
+    if baseCaptured.verbose or theZone.verbose then
+		trigger.action.outText("+++bCap: <" .. theZone.baseName .. "> changed hands from <" .. theZone.currentOwner .. "> to <" .. newOwner .. ">", 30)
+        trigger.action.outText("+++bCap: banging captured! with <" .. theZone.capturedMethod .. "> on <" .. theZone.capturedFlag .. "> for " .. theZone.baseName, 30)
     end 
+	
+	-- change the ownership
+	theZone.currentOwner = newOwner
+	if theZone.baseOwner then 
+		cfxZones.setFlagValueMult(theZone.baseOwner, newOwner, theZone)
+		if baseCaptured.verbose or theZone.verbose then 
+			trigger.action.outText("+++bCap: owner is " .. newOwner, 30)
+		end 
+	end
 end
 
 -- world event callback
@@ -92,14 +103,16 @@ function baseCaptured:onEvent(event)
     if event.id ~= world.event.S_EVENT_BASE_CAPTURED then
         return
     end
+	if not event.place then 
+		trigger.action.outText("+++bCap: capture event without place, aborting.", 30)
+		return 
+	end
 
     local baseName = event.place:getName()
     local newCoalition = event.place:getCoalition()
 
-    for idx, aZone in pairs(baseCaptured.zones) do
-        local hasName = aZone.baseName == baseName
-        local hasCoalition = aZone.captureCoalition == 0 or aZone.captureCoalition == newCoalition
-        if hasName and hasCoalition then
+    for idx, aZone in pairs(baseCaptured.zones) do 
+        if aZone.baseName == baseName then
             baseCaptured.triggerZone(aZone)
         end
     end
@@ -115,7 +128,7 @@ function baseCaptured.readConfigZone()
     baseCaptured.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 
     if baseCaptured.verbose then
-        trigger.action.outText("***baseCaptured: read configuration from zone", 30)
+        trigger.action.outText("+++bCap: read configuration from zone", 30)
     end
 end
 
@@ -133,10 +146,10 @@ function baseCaptured.start()
     baseCaptured.readConfigZone()
 
     -- process all baseCaptured zones
-    local zones = cfxZones.getZonesWithAttributeNamed("baseCaptured")
+    local zones = cfxZones.getZonesWithAttributeNamed("baseCaptured!")
     for k, aZone in pairs(zones) do
         baseCaptured.createZone(aZone) -- process zone attributes
-        baseCaptured.addZone(aZone) -- add to list
+        baseCaptured.addBaseCaptureZone(aZone) -- add to list
     end
 
     -- listen for events
