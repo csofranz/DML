@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.2.0"
+rndFlags.version = "1.3.0"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -23,6 +23,9 @@ rndFlags.requiredLibs = {
 				some code clean-up
 				rndMethod synonym 
 	1.2.0 - Watchflag integration
+	1.3.0 - DML simplification: RND!
+	        zone-local verbosity 
+
 --]]
 rndFlags.rndGen = {}
 
@@ -87,18 +90,28 @@ end
 -- create rnd gen from zone 
 --
 function rndFlags.createRNDWithZone(theZone)
-	local flags = cfxZones.getStringFromZoneProperty(theZone, "flags!", "")
-	if flags == "" then 
-		-- let's try alternate spelling without "!"
-		flags = cfxZones.getStringFromZoneProperty(theZone, "flags", "") 
+	local flags = ""
+	if cfxZones.hasProperty(theZone, "RND!") then 
+		flags = cfxZones.getStringFromZoneProperty(theZone, "RND!", "")
+	elseif cfxZones.hasProperty(theZone, "flags!") then
+		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: deprecated 'flags!' usage, use 'RND!' instead.", 30)
+		flags = cfxZones.getStringFromZoneProperty(theZone, "flags!", "")
+	elseif cfxZones.hasProperty(theZone, "flags") then
+		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: deprecated 'flags' (no bang) usage, use 'RND!' instead.", 30)
+		flags = cfxZones.getStringFromZoneProperty(theZone, "flags", "")
+	else 
+		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: no flags defined!", 30)
 	end 
+	
 	-- now build the flag array from strings
 	local theFlags = rndFlags.flagArrayFromString(flags)
 	theZone.myFlags = theFlags
-
+	if rndFlags.verbose or theZone.verbose then 
+		trigger.action.outText("+++RND: output set for <" .. theZone.name .. "> is <" .. flags .. ">",30)
+	end
 
 	theZone.pollSizeMin, theZone.pollSize = cfxZones.getPositiveRangeFromZoneProperty(theZone, "pollSize", 1)
-	if rndFlags.verbose then 
+	if rndFlags.verbose or theZone.verbose then 
 		trigger.action.outText("+++RND: pollSize is <" .. theZone.pollSizeMin .. ", " .. theZone.pollSize .. ">", 30)
 	end
 			 
@@ -179,8 +192,8 @@ function rndFlags.fire(theZone)
 
 	
 	if #availableFlags < 1 then 
-		if rndFlags.verbose then 
-			trigger.action.outText("+++RND: RND " .. theZone.name .. " ran out of flags. aborting fire", 30)
+		if rndFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++RND: RND " .. theZone.name .. " ran out of flags. Will fire 'done' instead ", 30)
 		end
 		
 		if theZone.doneFlag then
@@ -190,7 +203,7 @@ function rndFlags.fire(theZone)
 		return 
 	end
 	
-	if rndFlags.verbose then 
+	if rndFlags.verbose or theZone.verbose then 
 		trigger.action.outText("+++RND: firing RND " .. theZone.name .. " with pollsize " .. pollSize .. " on " .. #availableFlags .. " set size", 30)
 	end
 	
@@ -212,7 +225,7 @@ function rndFlags.fire(theZone)
 		local theFlag = table.remove(availableFlags,theFlagIndex)
 		
 		--rndFlags.pollFlag(theFlag, theZone.rndMethod)
-		if rndFlags.verbose then 
+		if rndFlags.verbose or theZone.verbose then 
 			trigger.action.outText("+++RND: polling " .. theFlag .. " with " .. theZone.rndMethod, 30)
 		end
 		
@@ -234,25 +247,12 @@ function rndFlags.update()
 	
 	for idx, aZone in pairs(rndFlags.rndGen) do
 		if cfxZones.testZoneFlag(aZone, aZone.triggerFlag, aZone.rndTriggerMethod, "lastTriggerValue") then
-			if rndFlags.verbose then 
+			if rndFlags.verbose or aZone.verbose then 
 				trigger.action.outText("+++RND: triggering " .. aZone.name, 30)
 			end 
 			rndFlags.fire(aZone)
 		end
---[[-- old code pre watchflag		
-		if aZone.triggerFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerFlag)
-			if currTriggerVal ~= aZone.lastTriggerValue
-			then 
-				if rndFlags.verbose then 
-					trigger.action.outText("+++RND: triggering " .. aZone.name, 30)
-				end 
-				rndFlags.fire(aZone)
-				aZone.lastTriggerValue = currTriggerVal
-			end
 
-		end
---]]--
 	end
 end
 
@@ -306,8 +306,19 @@ function rndFlags.start()
 	rndFlags.readConfigZone()
 	
 	-- process RND Zones 
-	local attrZones = cfxZones.getZonesWithAttributeNamed("RND")
+	local attrZones = cfxZones.getZonesWithAttributeNamed("RND!")
+	a = dcsCommon.getSizeOfTable(attrZones)
+	trigger.action.outText("RND! zones: " .. a, 30)
 	
+	-- now create an rnd gen for each one and add them
+	-- to our watchlist 
+	for k, aZone in pairs(attrZones) do 
+		rndFlags.createRNDWithZone(aZone) -- process attribute and add to zone
+		rndFlags.addRNDZone(aZone) -- remember it so we can smoke it
+	end
+
+	-- obsolete here
+	attrZones = cfxZones.getZonesWithAttributeNamed("RND")
 	-- now create an rnd gen for each one and add them
 	-- to our watchlist 
 	for k, aZone in pairs(attrZones) do 

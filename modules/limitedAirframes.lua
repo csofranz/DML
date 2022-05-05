@@ -1,19 +1,24 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.3.0"
+limitedAirframes.version = "1.4.0"
+limitedAirframes.verbose = false 
 limitedAirframes.enabled = true -- can be turned off
-limitedAirframes.userCanToggle = true -- F-10 menu?
+limitedAirframes.userCanToggle = true -- F10 menu?
+limitedAirframes.onlyOwnSide = true -- F10 query only shows own side count, for later expansion 
 limitedAirframes.maxRed = -1 -- -1 == infinite
-limitedAirframes.maxBlue = 6 -- -1 = infinite
+limitedAirframes.maxBlue = -1 -- = infinite
 limitedAirframes.redWinsFlag = "999"
 limitedAirframes.blueWinsFlag = "998" 
- 
+limitedAirframes.method = "inc"
+limitedAirframes.warningSound = "Quest Snare 3.wav"
+limitedAirframes.loseSound = "Death PIANO.wav"
+limitedAirframes.winSound = "Triumphant Victory.wav"
+
 limitedAirframes.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
 				 -- need common to invoke the check, but anyway
 	"cfxZones", -- Zones, of course for safe landings
-	"cfxPlayer", -- callbacks 
---	"cfxGroundTroops", -- generic data module for weight 
+	"cfxPlayer", 
 }
 
 --[[-- VERSION HISTORY
@@ -40,6 +45,10 @@ limitedAirframes.requiredLibs = {
 		 - hand change in pilotsafe zones that can be landed in 
  - 1.2.0 - limitedAirframesConfig zone 
  - 1.3.0 - added network dead override logic via unitFlownByPlayer
+ - 1.4.0 - DML integration, verbosity, clean-up, QoL improvements
+		   redSafe, blueSafe with attribute, backward compatible
+		   currRed 
+		   
  
 --]]--
 
@@ -52,6 +61,7 @@ limitedAirframes.requiredLibs = {
 -- *** EXTENDS ZONES ***
 -- safe zones must have a property "pilotSafe"
 --   - pilotSafe - this is a zone to safely change airframes in
+--               - can also carry 'red' or 'blue' to enable 
 --   - redSafe (optional, defaults to true)
 --   - blueSafe (optional, defaults to true)
 --     set to "false" or "no" to disallow that side to change 
@@ -80,7 +90,7 @@ limitedAirframes.lastEvents = {}
 -- update the side's airframe credit 
 
 limitedAirframes.currRed = 0
-limitedAirframes.currRed = 0
+limitedAirframes.currBlue = 0
 
 -- we record all unit names that contain a player 
 -- so that we can check against these when we receive
@@ -106,11 +116,19 @@ function limitedAirframes.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("limitedAirframesConfig") 
 	if not theZone then 
-		trigger.action.outText("***LimA: NO config zone!", 30) 
-		return 
+		if limitedAirframes.verbose then	
+			trigger.action.outText("+++limA: NO config zone!", 30)
+		end
+		theZone = cfxZones.createSimpleZone("limitedAirframesConfig") 
 	end 
+	-- remember me 
+	limitedAirframes.config = theZone 
 	
-	trigger.action.outText("LimA: found config zone!", 30) 
+	limitedAirframes.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	
+	if limitedAirframes.verbose then 
+		trigger.action.outText("+++limA: found config zone!", 30) 
+	end
 	
 	-- ok, for each property, load it if it exists
 	if cfxZones.hasProperty(theZone, "enabled")  then 
@@ -130,14 +148,34 @@ function limitedAirframes.readConfigZone()
 		limitedAirframes.maxBlue = cfxZones.getNumberFromZoneProperty(theZone, "maxBlue", -1)
 	end
 	
+	limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "#red", "*none")
+	limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "#blue", "*none")
 	
-	if cfxZones.hasProperty(theZone, "redWinsFlag")  then 
-		limitedAirframes.redWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "redWinsFlag", "999")
+ 
+	limitedAirframes.redWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "redWins!", "*none")
+
+	if cfxZones.hasProperty(theZone, "redWinsFlag!")  then 
+		limitedAirframes.redWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "redWinsFlag!", "*none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "blueWinsFlag")  then 
-		limitedAirframes.blueWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "blueWinsFlag", "998")
+	limitedAirframes.blueWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "blueWins!", "*none")
+	if cfxZones.hasProperty(theZone, "blueWinsFlag!")  then 
+		limitedAirframes.blueWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "blueWinsFlag!", "*none")
 	end
+	
+	limitedAirframes.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	
+	if cfxZones.hasProperty(theZone, "warningSound")  then 
+		limitedAirframes.warningSound = cfxZones.getStringFromZoneProperty(theZone, "warningSound", "none")
+	end
+
+	if cfxZones.hasProperty(theZone, "winSound")  then 
+		limitedAirframes.winSound = cfxZones.getStringFromZoneProperty(theZone, "winSound", "none")
+	end
+	
+	if cfxZones.hasProperty(theZone, "loseSound")  then 
+		limitedAirframes.loseSound = cfxZones.getStringFromZoneProperty(theZone, "loseSound", "none")
+	end	
 end
 
 --
@@ -206,17 +244,17 @@ end
 
 function limitedAirframes.updatePlayer(pName, status)
 	if not pName then 
-		trigger.action.outText("+++lim: WARNING - NIL pName in updatePlayer for status " .. status, 30)
+		trigger.action.outText("+++limA: WARNING - NIL pName in updatePlayer for status " .. status, 30)
 		return
 	end 
 	local desc = ""
 	if not limitedAirframes.players[pName] then 
-		desc = "+++lim: NEW player " .. pName .. ": " .. status
+		desc = "+++limA: NEW player " .. pName .. ": " .. status
 	else 
 		if limitedAirframes.players[pName] ~= status then 
-			desc = "+++lim: CHANGE player " .. pName .. " " .. limitedAirframes.players[pName] .. " -> " .. status
+			desc = "+++limA: CHANGE player " .. pName .. " " .. limitedAirframes.players[pName] .. " -> " .. status
 		else 
-			desc = "+++: player " .. pName .. " no change (" .. status .. ")"
+			desc = "+++limA: player " .. pName .. " no change (" .. status .. ")"
 		end
 	end
 	
@@ -267,16 +305,13 @@ function limitedAirframes.preProcessor(event)
 
 	if event.id == 6 then -- Eject, plane already divorced from player
 		if limitedAirframes.isKnownUnitName(uName) then 
-			--trigger.action.outText("limAir: detected EJECT for player unit " .. uName .. " player " .. limitedAirframes.getKnownUnitPilotByUnitName(uName), 30)
 			return true
 		end
 		return false -- no longer of interest 
 	end
 	
 	if event.id == 5 then -- crash, plane no longer attached to player
-		
 		if limitedAirframes.isKnownUnitName(uName) then
-			--trigger.action.outText("limAir: detected CRASH for player unit " .. uName .. " player " .. limitedAirframes.getKnownUnitPilotByUnitName(uName), 30)
 			return true
 		end
 		return false -- no longer of interest 
@@ -329,19 +364,10 @@ function limitedAirframes.somethingHappened(event)
 	local ID = event.id
 	local myType = theUnit:getTypeName()
 	
-	-- "20" event (player enter): always processed 
---[[--	if ID == 20 or ID == 15 then -- player entered unit
-		limitedAirframes.addPlayerUnit(theUnit) -- will also update player and player status to 'alive'
-		-- now procc a 'cheater' since we entered a new airframe/pilot
-		limitedAirframes.checkPlayerFrameAvailability(event)
-		return 
-	end
---]]--
 	
 	if ID == 20 then -- 20 ENTER UNIT
 		local pName = limitedAirframes.getKnownUnitPilotByUnit(theUnit)
 		if not pName then pName = "***UNKNOWN***" end 
-		--trigger.action.outText("limAir: Received ENTER UNIT (20) for " .. pName .. " in " .. unitName , 30)
 		return 
 	end
 	
@@ -354,7 +380,9 @@ function limitedAirframes.somethingHappened(event)
 		limitedAirframes.unitFlownByPlayer[unitName] = playerName
 		-- TODO: make sure this is the ONLY plane the player
 		-- is registered under, and mark mismatches
-		trigger.action.outText("limAir: 15 -- player " .. playerName .. " now in " .. unitName, 30)
+		if limitedAirframes.verbose then 
+			trigger.action.outText("limAir: 15 -- player " .. playerName .. " now in " .. unitName, 30)
+		end 
 		return 
 	end
 	
@@ -391,7 +419,9 @@ function limitedAirframes.somethingHappened(event)
 			limitedAirframes.pilotDied(theUnit)
 			return 
 		else 
-			trigger.action.outText("limAir: Crash of airframe detected - but player status wasn't alive (" .. pStatus .. ")", 30)
+			if limitedAirframes.verbose then 
+				trigger.action.outText("limAir: Crash of airframe detected - but player status wasn't alive (" .. pStatus .. ")", 30)
+			end
 			return 
 		end 
 	end 
@@ -402,8 +432,9 @@ function limitedAirframes.somethingHappened(event)
 		-- remove pilot name from unit name 
 		limitedAirframes.unitFlownByPlayer[unitName] = nil
 		--trigger.action.outText("limAir: 21 -- unit " .. unitName .. " unoccupied", 30)
-		
-		trigger.action.outText("limAir: 21 (player left) for unit " .. unitName , 30)
+		if limitedAirframes.verbose then 
+			trigger.action.outText("limAir: 21 (player left) for unit " .. unitName , 30)
+		end 
 		-- player left unit. Happens twice
 		-- check if player alive, else we have a ditch.
 		limitedAirframes.handlePlayerLeftUnit(event)
@@ -415,7 +446,9 @@ function limitedAirframes.somethingHappened(event)
 		--trigger.action.outText("limAir: 9 (PILOT DEAD) for unit " .. unitName , 30)
 		local thePilot = limitedAirframes.unitFlownByPlayer[unitName]
 		if not thePilot then 
-			trigger.action.outText("+++limAir: 9 O'RIDE -- unit " .. unitName .. " was legally vacated before!", 30)
+			if limitedAirframes.verbose then 
+				trigger.action.outText("+++limAir: 9 O'RIDE -- unit " .. unitName .. " was legally vacated before!", 30)
+			end
 			return 
 		end
 		limitedAirframes.pilotDied(theUnit)
@@ -425,8 +458,6 @@ function limitedAirframes.somethingHappened(event)
 	if ID == 30 then -- unit lost
 		return 
 	end
-	
-
 	
 	trigger.action.outText("limAir: WARNING unhandled: " .. ID .. " for player unit " .. theUnit:getName() .. " of type " .. myType, 30)
 end
@@ -474,9 +505,11 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 		if theSafeZone.owner then
 			-- owned zone. olny allow in neutral or owned by same side 
 			isSafe = isSafe and (mySide == theSafeZone.owner or theSafeZone.owner == 0)
-			trigger.action.outText("+++: Lim - " .. theSafeZone.name .. " ownership: myside = " .. mySide .. " zone owner is " .. theSafeZone.owner, 30)
+			if limitedAirframes.verbose then 
+				trigger.action.outText("+++limA: " .. theSafeZone.name .. " ownership: myside = " .. mySide .. " zone owner is " .. theSafeZone.owner, 30)
+			end 
 		else 
-			-- trigger.action.outText("+++: Zone " .. theSafeZone.name .. " has no ownership, skipping check", 30)
+
 		end
 		
 		-- check we are at rest below 10m height. agl may give 
@@ -492,7 +525,9 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 		if isInAir then isSafe = false end 
 		
 		if isSafe then 
-			trigger.action.outTextForCoalition(mySide, "limAir: Pilot " .. theUnit:getPlayerName() .. " left unit " .. theUnit:getName() .. " legally in zone " .. theSafeZone.name, 30)
+--			if limitedAirframes.verbose then 
+				trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " left unit " .. theUnit:getName() .. " legally in zone " .. theSafeZone.name, 30)
+--			end
 			-- remove from known player planes
 			-- no more limitedAirframes.removePlayerUnit(theUnit)
 			return;
@@ -500,7 +535,10 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 	end
 	
 	-- ditched outside safe harbour
-	trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " DITCHED unit " .. theUnit:getName() .. " -- PILOT LOSS (MIA)", 30)
+--	if limitedAirframes.verbose then 
+		trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " DITCHED unit " .. theUnit:getName() .. " -- PILOT is considered MIA", 30)
+--	end 
+	
 	limitedAirframes.pilotLost(theUnit)
 	if csarManager and csarManager.airframeDitched then 
 		csarManager.airframeDitched(theUnit)
@@ -560,19 +598,22 @@ function limitedAirframes.pilotLost(theUnit)
 		if 	limitedAirframes.maxRed < 0 then return false end -- disabled/infinite
 		
 		limitedAirframes.currRed = limitedAirframes.currRed - 1
+		-- pass it along
+		cfxZones.setFlagValueMult(limitedAirframes.numRed, limitedAirframes.currRed, limitedAirframes.config)
 		
 		if limitedAirframes.currRed == 0 then
 			trigger.action.outTextForCoalition(theSide, "\nYou have lost almost all of your pilots.\n\nWARNING: Losing any more pilots WILL FAIL THE MISSION\n", 30)
-			trigger.action.outSoundForCoalition(theSide, "Quest Snare 3.wav")
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
 			return false  
 		end
 		
 		if limitedAirframes.currRed < 0 then 
 			-- red have lost all airframes 
 			trigger.action.outText("\nREDFORCE has lost all of their pilots.\n\nBLUEFORCE WINS!\n", 30)
-			trigger.action.outSoundForCoalition(theSide, "Death PIANO.wav")
-			trigger.action.outSoundForCoalition(theOtherSide, "Triumphant Victory.wav")
-			trigger.action.setUserFlag(limitedAirframes.blueWinsFlag, 1 )
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound) --"Death PIANO.wav")
+			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)--"Triumphant Victory.wav")
+--			trigger.action.setUserFlag(limitedAirframes.blueWinsFlag, 1 )
+			cfxZones.pollFlag(limitedAirframes.blueWinsFlag, limitedAirframes.method, limitedAirframes.config)
 			return true 
 		end
 		
@@ -581,20 +622,24 @@ function limitedAirframes.pilotLost(theUnit)
 		theOtherSide = 1
 		if 	limitedAirframes.maxBlue < 0 then return false end -- disabled/infinite
 		limitedAirframes.currBlue = limitedAirframes.currBlue - 1
+		-- pass it along
+		cfxZones.setFlagValueMult(limitedAirframes.numBlue, limitedAirframes.currBlue, limitedAirframes.config)
+		
 		if limitedAirframes.currBlue == 0 then
 			trigger.action.outTextForCoalition(theSide, "\nYou have lost almost all of your pilots.\n\nWARNING: Losing any more pilots WILL FAIL THE MISSION\n", 30)
-			trigger.action.outSoundForCoalition(theSide, "Quest Snare 3.wav")
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
 			return false 
 		end
 		if limitedAirframes.currBlue < 0 then 
 			-- red have lost all airframes 
 			trigger.action.outText("\nBLUEFORCE has lost all of their pilots.\n\nREDFORCE WINS!\n", 30)
-			trigger.action.setUserFlag(limitedAirframes.redWinsFlag, 1 )
-			trigger.action.outSoundForCoalition(theSide, "Death PIANO.wav")
-			trigger.action.outSoundForCoalition(theOtherSide, "Triumphant Victory.wav")
+--			trigger.action.setUserFlag(limitedAirframes.redWinsFlag, 1 )
+			cfxZones.pollFlag(limitedAirframes.redWinsFlag, limitedAirframes.method, limitedAirframes.config) 
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound)--"Death PIANO.wav")
+			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)--"Triumphant Victory.wav")
 			return true 
 		end
-		trigger.action.outSoundForCoalition(theSide, "Quest Snare 3.wav")
+		trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
 		trigger.action.outTextForCoalition(theSide, "You have lost a pilot! Remaining: " .. limitedAirframes.currBlue, 30)
 	end
 	return false 
@@ -643,12 +688,31 @@ function limitedAirframes.addSafeZone(aZone)
 	
 	-- add zone to my list
 	limitedAirframes.safeZones[aZone] = aZone 
-	aZone.redSafe = true
-	aZone.redSafe = cfxZones.getBoolFromZoneProperty(aZone, "redSafe", true)
-	aZone.blueSafe = true 
-	aZone.blueSafe = cfxZones.getBoolFromZoneProperty(aZone, "blueSafe", true)
 
-	trigger.action.outText("limAir: added safeZone " .. aZone.name, 30)
+	-- deprecated old code. new code contains 'red, blue' in value for pilotsafe 
+	local safeSides = cfxZones.getStringFromZoneProperty(aZone, "pilotsafe", "")
+	safeSides = safeSides:lower()
+	if dcsCommon.containsString(safeSides, "red") or dcsCommon.containsString(safeSides, "blue") then 
+		aZone.redSafe = dcsCommon.containsString(safeSides, "red")
+		aZone.blueSafe = dcsCommon.containsString(safeSides, "blue")
+	else 
+		--aZone.redSafe = true
+		aZone.redSafe = cfxZones.getBoolFromZoneProperty(aZone, "redSafe", true)
+		--aZone.blueSafe = true 
+		aZone.blueSafe = cfxZones.getBoolFromZoneProperty(aZone, "blueSafe", true)
+	end 
+	
+	if limitedAirframes.verbose or aZone.verbose then 
+		if aZone.redSafe then 
+			trigger.action.outText("+++limA: <" .. aZone.name .. "> is safe for RED pilots", 30)
+		end 
+		if aZone.blueSafe then 
+			trigger.action.outText("+++limA: <" .. aZone.name .. "> is safe for BLUE pilots", 30)
+		end
+
+		trigger.action.outText("+++limA: added safeZone " .. aZone.name, 30)
+
+	end	
 end
 
 
@@ -704,7 +768,7 @@ function limitedAirframes.doAirframeScore(args)
 	
 	local msg = "\nRED has " .. redRemaining .. " pilots left,\nBLUE has " .. blueRemaining .. " pilots left\n"
 	trigger.action.outText(msg, 30, true)
-	trigger.action.outSound("Quest Snare 3.wav")
+	trigger.action.outSound(limitedAirframes.warningSound)--"Quest Snare 3.wav")
 end
 
 function limitedAirframes.redirectToggleAirFrames(args)
@@ -717,23 +781,26 @@ function limitedAirframes.doToggleAirFrames(args)
 	local desc = "\n\nPilot Count rule NOW IN EFFECT\n\n"
 	
 	if limitedAirframes.enabled then 
-		trigger.action.outSound("Quest Snare 3.wav")
+		trigger.action.outSound(limitedAirframes.warningSound)--"Quest Snare 3.wav")
 	else
 		desc = "\n\nYou cowardly disabled Pilot Count\n\n"
-		trigger.action.outSound("Death PIANO.wav")
+		trigger.action.outSound(limitedAirframes.loseSound)--"Death PIANO.wav")
 	end
 	trigger.action.outText(desc, 30)
 	limitedAirframes.setCommsMenu()
 end
 
 --
--- CSAR CALLBACK
+-- CSAR CALLBACK (called by CSAR Manager)
 --
 
 function limitedAirframes.pilotsRescued(theCoalition, success, numRescued, notes)
 	local availablePilots = 0
 	if theCoalition == 1 then -- red 
 		limitedAirframes.currRed = limitedAirframes.currRed + numRescued
+		-- pass it along
+		cfxZones.setFlagValueMult(limitedAirframes.numRed, limitedAirframes.currRed, limitedAirframes.config)
+		
 		if limitedAirframes.currRed > limitedAirframes.maxRed then 
 			limitedAirframes.currRed = limitedAirframes.maxRed 
 		end
@@ -745,6 +812,10 @@ function limitedAirframes.pilotsRescued(theCoalition, success, numRescued, notes
 	
 	if theCoalition == 2 then -- blue 
 		limitedAirframes.currBlue = limitedAirframes.currBlue + numRescued
+		-- pass it along
+		cfxZones.setFlagValueMult(limitedAirframes.numBlue, limitedAirframes.currBlue, limitedAirframes.config)
+		
+		
 		if limitedAirframes.currBlue > limitedAirframes.maxBlue then 
 			limitedAirframes.currBlue = limitedAirframes.maxBlue 
 		end
@@ -754,7 +825,7 @@ function limitedAirframes.pilotsRescued(theCoalition, success, numRescued, notes
 		end 
 	end
 	trigger.action.outTextForCoalition(theCoalition, "\nPilots returned to flight line, you now have " .. availablePilots..".\n", 30)
-	trigger.action.outSoundForCoalition(theCoalition, "Quest Snare 3.wav")
+	trigger.action.outSoundForCoalition(theCoalition, limitedAirframes.warningSound)--"Quest Snare 3.wav")
 end
 
 --
@@ -770,6 +841,10 @@ function limitedAirframes.start()
 	-- override config settings if defined as zone
 	limitedAirframes.readConfigZone()
 	
+	-- set output flags 
+	cfxZones.setFlagValueMult(limitedAirframes.numBlue, limitedAirframes.currBlue, limitedAirframes.config)
+	cfxZones.setFlagValueMult(limitedAirframes.numRed, limitedAirframes.currRed, limitedAirframes.config)
+	
 	-- collect all zones that are airframe safe 
 	local afsZones = cfxZones.zonesWithProperty("pilotSafe")
 	
@@ -777,6 +852,27 @@ function limitedAirframes.start()
 	-- from properties
 	for k, aZone in pairs(afsZones) do
 		limitedAirframes.addSafeZone(aZone)
+	end
+	
+	-- check that sides with limited airframes also have at least one 
+	-- pilotsafe zone 
+	if limitedAirframes.maxRed > 0 then 
+		local safeAndSound = false 
+		for idx, theZone in pairs(limitedAirframes.safeZones) do 
+			if theZone.redSafe then safeAndSound = true end 
+		end
+		if not safeAndSound then 
+			trigger.action.outText("+++limA: WARNING - RED has no safe zone to change air frames", 30)
+		end
+	end
+	if limitedAirframes.maxBlue > 0 then 
+		local safeAndSound = false 
+		for idx, theZone in pairs(limitedAirframes.safeZones) do 
+			if theZone.blueSafe then safeAndSound = true end 
+		end
+		if not safeAndSound then 
+			trigger.action.outText("+++limA: WARNING - BLUE has no safe zone to change air frames", 30)
+		end
 	end
 	
 	-- connect player callback 
@@ -805,13 +901,13 @@ function limitedAirframes.start()
 	-- connect to csarManager if present 
 	if csarManager and csarManager.installCallback then 
 		csarManager.installCallback(limitedAirframes.pilotsRescued)
-		trigger.action.outText("+++lim: connected to csar manager", 30)
+		trigger.action.outText("+++limA: connected to csar manager", 30)
 	else 
-		trigger.action.outText("+++lim: NO CSAR integration", 30)
+		trigger.action.outText("+++limA: NO CSAR integration", 30)
 	end
 	
 	-- say hi
-	trigger.action.outText("limitedAirframes v" .. limitedAirframes.version .. " started: R:".. limitedAirframes.maxRed .. "/B:" .. limitedAirframes.maxBlue, 30)
+	trigger.action.outText("cf/x Limited Airframes v" .. limitedAirframes.version .. " started: R:".. limitedAirframes.maxRed .. "/B:" .. limitedAirframes.maxBlue, 30)
 	return true 
 end
 
@@ -825,4 +921,5 @@ end
 --[[--
    safe ditch: check airspeed and altitude. ditch only counts if less than 10m and 2 kts 
    report number of airframes left via second instance in switch off menu
+   so it can report only one side 
 --]]--

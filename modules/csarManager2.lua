@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.1.0"
+csarManager.version = "2.1.1"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -35,6 +35,7 @@ csarManager.ups = 1
 		 - csarBlueDelivered
 		 - finally fixed smoke performance bug 
 		 - csarManager.vectoring optional 
+ - 2.1.1 - zone-local verbosity
  
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -178,7 +179,7 @@ function csarManager.createDownedPilot(theMission)
 										  theBoyGroup)
 	
 	if theBoyGroup then 
---		trigger.action.outText("+++csar: created csar!", 30)
+
 	else 
 		trigger.action.outText("+++csar: FAILED to create csar!", 30)
 	end
@@ -343,7 +344,6 @@ function csarManager.somethingHappened(event)
 	local ID = event.id
 	
 	local myType = theUnit:getTypeName()
---	trigger.action.outText("+++csar: event " .. ID .. " for player unit " .. theUnit:getName() .. " of type " .. myType, 30)
 	
 	if ID == 4 then  -- landed
 		csarManager.heloLanded(theUnit)
@@ -375,9 +375,7 @@ function csarManager.successMission(who, where, theMission)
 	-- callback has format callback(coalition, success true/false, numberSaved, descriptionText)
 	
 	csarManager.invokeCallbacks(theMission.side, true, 1, "success")
---	for idx, callback in pairs(csarManager.csarCompleteCB) do 
---		callback(theMission.side, true, 1, "test")
---	end
+
 	trigger.action.outSoundForCoalition(theMission.side, "Quest Snare 3.wav")
 	
 	if csarManager.csarRedDelivered and theMission.side == 1 then 
@@ -420,13 +418,10 @@ function csarManager.heloLanded(theUnit)
 			local currentBaseSide = base.side
 			
 			if base.zone.owner then 
-				-- this zone is shared with capturable 
+				-- this zone is shared with capturable (owned)
 				-- zone extensions like owned zone, FARP etc.
 				-- use current owner
 				currentBaseSide = base.zone.owner 
---				trigger.action.outText("+++csar: overriding base.side with zone owner = " .. currentBaseSide .. " for csarB " .. base.name .. ", requiring " .. mySide .. " or 0 to land", 30)
-			else 
---				trigger.action.outText("+++csar: base " .. base.name .. " has no owner - proceeding with side = " .. base.side .. " looking for " .. mySide, 30)
 			end
 			
 			if currentBaseSide == mySide or 
@@ -551,21 +546,7 @@ function csarManager.heloCrashed(theUnit)
 	local theGroup = theUnit:getGroup()
 	conf.id = theGroup:getID()
 	conf.currentState = -1 -- (we don't know)
-	--[[--
-	if #conf.troopsOnBoard > 0 then 
-		-- this is where we can create a new CSAR mission
-		trigger.action.outSoundForCoalition(conf.id, theUnit:getName() .. " crashed while evacuating " .. #conf.troopsOnBoard .. " pilots. Survivors possible.", 30)
-		trigger.action.outSoundForCoalition(conf.id, "Quest Snare 3.wav")
-		for i=1, #conf.troopsOnBoard do 
-			local msn = conf.troopsOnBoard[i] -- picked up unit(s)
-			local theRescuedPilot = msn.name 
-			-- create x new missions in 50m radius
-			-- except for pilot, that will be called 
-			-- from limitedAirframes
-			csarManager.createCSARforUnit(theUnit, theRescuedPilot, 50, true)
-		end
-	end
-	--]]--
+	
 	conf.troopsOnBoard = {}
 	local myName = conf.name
 	cargoSuper.removeAllMassForCargo(myName, "Evacuees") -- will allocate new empty table 
@@ -876,7 +857,10 @@ function csarManager.addCSARBase(aZone)
 	csarBase.side = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0) 
 	
 	table.insert(csarManager.csarBases, csarBase)
---	trigger.action.outText("+++csar: found base " .. csarBase.name .. " for side " .. csarBase.side, 30)	
+	
+	if csarManager.verbose or aZone.verbose then 
+		trigger.action.outText("+++csar: zone <" .. csarBase.name .. "> safe for side " .. csarBase.side, 30)
+	end
 end
 
 function csarManager.getCSARBaseforZone(aZone)
@@ -894,7 +878,6 @@ end
 -- ===========
 -- 
 -- 
-
 
 --
 -- updateCSARMissions: make sure evacuees are still alive 
@@ -1191,28 +1174,6 @@ function csarManager.processCSARZones()
 	for k, aZone in pairs(csarBases) do
 	
 		csarManager.readCSARZone(aZone)
-	--[[--
-		-- gather data, and then create a mission from this
-		local theSide = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0)
-		aZone.csarSide = theSide 
-		local name = cfxZones.getZoneProperty(aZone, "name")
-		aZone.
-		local freq = cfxZones.getNumberFromZoneProperty(aZone, "freq", 0)
-		if freq == 0 then freq = nil end 
-		local numCrew = 1 
-		local mapMarker = nil 
-		local timeLimit = cfxZones.getNumberFromZoneProperty(aZone, "timeLimit", 0)
-		if timeLimit == 0 then timeLimit = nil else timeLimit = timeLimit * 60 end 
-		
-		local theMission = csarManager.createCSARMissionData(aZone.point, 
-			theSide, 
-			freq, 
-			name, 
-			numCrew, 
-			timeLimit, 
-			mapMarker)
-		csarManager.addMission(theMission)
-		--]]--
 		
 	end
 end

@@ -4,9 +4,8 @@
 --
 -- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 --
-
 cfxZones = {}
-cfxZones.version = "2.7.6"
+cfxZones.version = "2.7.7"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -65,12 +64,14 @@ cfxZones.version = "2.7.6"
 		  - hasProperty now offers active information when looking for '*?' and '*!'
  - 2.7.0  - doPollFlag - fully support multiple flags per bang!
  - 2.7.1  - setFlagValueMult()
- - 2.7.2  - '161 repair'
+ - 2.7.2  - '261 repair'
  - 2.7.3  - testZoneFlag returns mathodResult, lastVal
           - evalFlagMethodImmediate()
  - 2.7.4  - doPollFlag supports immediate number setting 
  - 2.7.5  - more QoL checks when mixing up ? and ! for attributes
  - 2.7.6  - trim for getBoolFromZoneProperty and getStringFromZoneProperty
+ - 2.7.7  - randomInRange()
+          - show number of zones 
  
 --]]--
 cfxZones.verbose = false
@@ -558,6 +559,7 @@ end
 
 function cfxZones.getZonesWithAttributeNamed(attributeName, testZones)
 	if not testZones then testZones = cfxZones.zones end 
+
 	local attributZones = {}
 	for aName,aZone in pairs(testZones) do
 		local attr = cfxZones.getZoneProperty(aZone, attributeName)
@@ -1416,6 +1418,7 @@ function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
 	return false 
 end
 
+
 function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	-- returns two values: true/false method result, and curr value
 	-- returns true if method constraints are met for flag theFlagName
@@ -1603,6 +1606,15 @@ function cfxZones.getMinMaxFromZoneProperty(theZone, theProperty)
 	
 end
 
+function cfxZones.randomInRange(minVal, maxVal)
+	if maxVal < minVal then 
+		local t = minVal
+		minVal = maxVal 
+		maxVal = t
+	end
+	return cfxZones.randomDelayFromPositiveRange(minVal, maxVal)
+end
+
 function cfxZones.randomDelayFromPositiveRange(minVal, maxVal) 
 	if not maxVal then return minVal end 
 	if not minVal then return maxVal end 
@@ -1696,7 +1708,6 @@ function cfxZones.hasProperty(theZone, theProperty)
 	return true 
 --	return foundIt ~= nil 
 end
-
 
 function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	if not defaultVal then defaultVal = false end 
@@ -1920,7 +1931,8 @@ function cfxZones.init()
 	cfxZones.startMovingZones()
 	cfxZones.updateMovingZones() -- will auto-repeat
 	
-	trigger.action.outText("cf/x Zones v".. cfxZones.version .. ": loaded", 10)
+	trigger.action.outText("cf/x Zones v".. cfxZones.version .. ": loaded, zones:" .. dcsCommon.getSizeOfTable(cfxZones.zones), 30)
+
 end
 
 -- get everything rolling
