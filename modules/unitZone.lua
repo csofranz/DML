@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.1"
+unitZone.version = "1.2.2"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -13,6 +13,7 @@ unitZone.requiredLibs = {
 		  - method/uzMethod 
 	1.2.0 - uzOn?, uzOff?, triggerMethod
 	1.2.1 - uzDirect
+	1.2.2 - uzDirectInv 
 		  
 --]]--
 
@@ -100,6 +101,9 @@ function unitZone.createUnitZone(theZone)
 	-- uzDirect
 	if cfxZones.hasProperty(theZone, "uzDirect") then
 		theZone.uzDirect = cfxZones.getStringFromZoneProperty(theZone, "uzDirect", "*<none>")
+	end 
+	if cfxZones.hasProperty(theZone, "uzDirectInv") then
+		theZone.uzDirectInv = cfxZones.getStringFromZoneProperty(theZone, "uzDirectInv", "*<none>")
 	end 
 	
 	-- on/off flags
@@ -267,12 +271,19 @@ function unitZone.update()
 				aZone.lastStatus = newState 
 			end
 			
-			-- output direct state
+			-- output direct state suite
 			if aZone.uzDirect then 
 				if newState then 
 					cfxZones.setFlagValueMult(aZone.uzDirect, 1, aZone)
 				else 
 					cfxZones.setFlagValueMult(aZone.uzDirect, 0, aZone)
+				end
+			end
+			if aZone.uzDirectInv then 
+				if newState then 
+					cfxZones.setFlagValueMult(aZone.uzDirectInv, 0, aZone)
+				else 
+					cfxZones.setFlagValueMult(aZone.uzDirectInv, 1, aZone)
 				end
 			end
 		end 

@@ -15,6 +15,8 @@ changer.changers = {}
 	- not 
 	- bool
 	- value
+	- min, max as separate params
+	
 		
 --]]--
 
@@ -37,9 +39,9 @@ end
 -- read zone 
 -- 
 function changer.createChangerWithZone(theZone)
-	theZone.triggerChangerFlag = cfxZones.getStringFromZoneProperty(theZone, "change?", "*<none>")
---	if theZone.triggerChangerFlag then 
-	theZone.lastTriggerChangeValue = cfxZones.getFlagValue(theZone.triggerChangerFlag, theZone)
+	theZone.changerInputFlag = cfxZones.getStringFromZoneProperty(theZone, "change?", "*<none>")
+--	if theZone.changerInputFlag then 
+	theZone.lastTriggerChangeValue = cfxZones.getFlagValue(theZone.changerInputFlag, theZone)
 --	end
 	
 	-- triggerChangerMethod
@@ -48,7 +50,7 @@ function changer.createChangerWithZone(theZone)
 		theZone.triggerChangerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerChangeMethod", "change")
 	end 
 	
-	theZone.inEval = cfxZones.getBoolFromZoneProperty(theZone, "inEval", true) -- yes/no to pre-process, default is yes 
+	theZone.inEval = cfxZones.getBoolFromZoneProperty(theZone, "inEval", false) -- yes/no to pre-process, default is no, we read value 
 	
 
 	theZone.changeTo = cfxZones.getStringFromZoneProperty(theZone, "to", "val") -- val, not, bool
@@ -89,6 +91,19 @@ function changer.createChangerWithZone(theZone)
 		trigger.action.outText("+++chgr: new changer zone <".. theZone.name ..">", 30)
 	end
 	
+	if cfxZones.hasProperty(theZone, "min") then 
+		theZone.changeMin = cfxZones.getNumberFromZoneProperty(theZone, "min", 0)
+	end
+	if cfxZones.hasProperty(theZone, "max") then 
+		theZone.changeMax = cfxZones.getNumberFromZoneProperty(theZone, "max", 1)
+	end
+	
+	if cfxZones.hasProperty(theZone, "On/Off?") then 
+		theZone.changerOnOff = cfxZones.getStringFromZoneProperty(theZone, "On/Off?", "*<none>", 1)
+	end
+	if cfxZones.hasProperty(theZone, "changeOn/Off?") then 
+		theZone.changerOnOff = cfxZones.getStringFromZoneProperty(theZone, "changeOn/Off?", "*<none>", 1)
+	end
 end
 
 --
@@ -96,7 +111,7 @@ end
 --
 function changer.process(theZone)
 	-- read the line 
-	local inVal = cfxZones.getFlagValue(theZone.triggerChangerFlag, theZone)
+	local inVal = cfxZones.getFlagValue(theZone.changerInputFlag, theZone)
 	currVal = inVal
 	if theZone.inEval then 
 		currVal = cfxZones.evalFlagMethodImmediate(currVal, theZone.triggerChangerMethod, theZone)
@@ -111,14 +126,41 @@ function changer.process(theZone)
 	-- process and write outflag
 	if op == "bool" then 
 		if currVal == 0 then res = 0 else res = 1 end		
-	elseif op == "not" then 
-		if currVal == 0 then res = 1 else res = 0 end
+	
 	elseif op == "val" or op == "direct" then 
 		-- do nothing
+		
+	elseif op == "not" then 
+		if currVal == 0 then res = 1 else res = 0 end
+		
+	elseif op == "sign" or op == "sgn" then
+		if currVal < 0 then res = -1 else res = 1 end 
+		
+	elseif op == "inv" or op == "invert" or op == "neg" or op == "negative" then 
+		res = -res
+		
+	elseif op == "abs" then 
+		res = math.abs(res)
+		
 	else 
-		trigger.action.outText("+++chgr: unsupported changeTo operation <" ..  .. "> in zone <" ..  .. ">, using 'val'", 30)
+		trigger.action.outText("+++chgr: unsupported changeTo operation <" .. op .. "> in zone <" .. theZone.name  .. ">, using 'val' instead", 30)
 	end
 	-- illegal ops drop through after warning, functioning as 'val'
+	
+	-- min / max handling 
+	if theZone.changeMin then 
+		if theZone.verbose then 
+			trigger.action.outText("+++chgr: applying min " .. theZone.changeMin .. " to curr val: " .. res, 30)
+		end 
+		if res < theZone.changeMin then res = theZone.changeMin end 
+	end
+	
+	if theZone.changeMax then 
+		if theZone.verbose then 
+			trigger.action.outText("+++chgr: applying max " .. theZone.changeMax .. " to curr val: " .. res, 30)
+		end 
+		if res > theZone.changeMax then res = theZone.changeMax end 
+	end
 	
 	-- write out 
 	cfxZones.setFlagValueMult(theZone.changeOut, res, theZone)
@@ -143,23 +185,29 @@ function changer.update()
 		
 		-- process the pause/unpause flags 
 		-- see if we should suspend 
-		if cfxZones.testZoneFlag(theZone, theZone.changerOn, "change", "lastChangerOnValue") then 
-			if changer.verbose or theZone.verbose then 
-				trigger.action.outText("+++chgr: enabling " .. theZone.name, 30)
+		if cfxZones.testZoneFlag(aZone, aZone.changerOn, "change", "lastChangerOnValue") then 
+			if changer.verbose or aZone.verbose then 
+				trigger.action.outText("+++chgr: enabling " .. aZone.name, 30)
 			end 
-			theZone.changerPaused = false 
+			aZone.changerPaused = false 
 		end
 		
-		if cfxZones.testZoneFlag(theZone, theZone.changerOff, "change", "lastChangerOffValue") then 
-			if changer.verbose or theZone.verbose then 
-				trigger.action.outText("+++chgr: DISabling " .. theZone.name, 30)
+		if cfxZones.testZoneFlag(aZone, aZone.changerOff, "change", "lastChangerOffValue") then 
+			if changer.verbose or aZone.verbose then 
+				trigger.action.outText("+++chgr: DISabling " .. aZone.name, 30)
 			end 
-			theZone.changerPaused = true 
+			aZone.changerPaused = true 
 		end
 		
 		-- do processing if not paused
-		if not aZone.changerPaused then 
-			changer.process(aZone)
+		if not aZone.changerPaused then
+			if aZone.changerOnOff then 
+				if cfxZones.getFlagValue(aZone.changerOnOff, aZone) > 0 then
+					changer.process(aZone)
+				end
+			else 
+				changer.process(aZone)
+			end
 		end 
 	end
 end
@@ -222,6 +270,5 @@ end
 --[[--
  Possible expansions
  	- rnd
-	- min, max minmax 2,3, cap to left right values, 
 
 --]]--

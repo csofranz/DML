@@ -5,7 +5,7 @@
 -- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 --
 cfxZones = {}
-cfxZones.version = "2.7.7"
+cfxZones.version = "2.7.8"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -72,6 +72,13 @@ cfxZones.version = "2.7.7"
  - 2.7.6  - trim for getBoolFromZoneProperty and getStringFromZoneProperty
  - 2.7.7  - randomInRange()
           - show number of zones 
+ - 2.7.8  - inc method now triggers if curr value > last value 
+          - dec method noew triggers when curr value < last value 
+		  - testFlagByMethodForZone supports lohi, hilo transitions 
+		  - doPollFlag supports 'pulse'
+		  - pulseFlag
+		  - unpulse 
+		  
  
 --]]--
 cfxZones.verbose = false
@@ -1079,6 +1086,41 @@ end
 --
 -- Flag Pulling 
 --
+function cfxZones.pulseFlag(theFlag, method, theZone)
+	local args = {}
+	args.theFlag = theFlag
+	args.method = method
+	args.theZone = theZone 
+	local delay = 3
+	if dcsCommon.containsString(method, ",") then 
+		local parts = dcsCommon.splitString(method, ",")
+		delay = parts[2]
+		if delay then delay = tonumber(delay) end  
+	end
+	if not delay then delay = 3 end 
+	if theZone.verbose then 
+		trigger.action.outText("+++zne: RAISING pulse t="..delay.." for flag <" .. theFlag .. "> in zone <" .. theZone.name ..">", 30)
+	end 
+	local newVal = 1
+	cfxZones.setFlagValue(theFlag, newVal, theZone)
+	
+	-- schedule second half of pulse 
+	timer.scheduleFunction(cfxZones.unPulseFlag, args, timer.getTime() + delay)
+end
+
+function cfxZones.unPulseFlag(args)
+	local theZone = args.theZone
+	local method = args.method 
+	local theFlag = args.theFlag 
+	local newVal = 0
+	-- we may later use method to determine pulse direction / newVal
+	-- for now, we always go low 
+	if theZone.verbose then 
+		trigger.action.outText("+++zne: DOWNPULSE pulse for flag <" .. theFlag .. "> in zone <" .. theZone.name ..">", 30)
+	end
+	cfxZones.setFlagValue(theFlag, newVal, theZone)
+end
+
 function cfxZones.doPollFlag(theFlag, method, theZone)
 	if cfxZones.verbose then 
 		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
@@ -1122,6 +1164,9 @@ function cfxZones.doPollFlag(theFlag, method, theZone)
 			--trigger.action.setUserFlag(theFlag, 1)
 			cfxZones.setFlagValue(theFlag, 1, theZone)
 		end
+		
+	elseif dcsCommon.stringStartsWith(method, "pulse") then 
+		cfxZones.pulseFlag(theFlag, method, theZone)
 		
 	else 
 		if method ~= "on" and method ~= "f=1" then 
@@ -1353,12 +1398,22 @@ function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
 	end
 	
 	if lMethod == "inc" or lMethod == "+1" then 
-		return currVal == lastVal+1
+--		return currVal == lastVal+1 -- better: test for greater than 
+		return currVal > lastVal
 	end
 	
 	if lMethod == "dec" or lMethod == "-1" then 
-		return currVal == lastVal-1
+		--return currVal == lastVal-1
+		return currVal < lastVal 
 	end 
+	
+	if lMethod == "lohi" or lMethod == "pulse" then 
+		return (lastVal <= 0 and currVal > 0)
+	end
+	
+	if lMethod == "hilo" then 
+		return (lastVal > 0 and currVal <= 0)
+	end
 	
 	-- number constraints
 	-- or flag constraints 

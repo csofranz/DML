@@ -1,5 +1,5 @@
 	cloneZones = {}
-	cloneZones.version = "1.4.5"
+	cloneZones.version = "1.4.6"
 	cloneZones.verbose = false  
 	cloneZones.requiredLibs = {
 		"dcsCommon", -- always
@@ -44,6 +44,7 @@
 		1.4.4 - removed some debugging verbosity 
 		1.4.5 - randomizeLoc, rndLoc keyword
 		      - cargo manager integration - pass cargo objects when present
+		1.4.6 - removed some verbosity for spawned aircraft with airfields on their routes
 		
 		
 	--]]--
@@ -340,28 +341,28 @@
 				-- adjust for closest location 
 				local firstPoint = thePoints[1]
 				if firstPoint.airdromeId then 
-					trigger.action.outText("first: airdrome adjust for " .. theData.name .. " now is " .. firstPoint.airdromeId, 30)
+--					trigger.action.outText("first: airdrome adjust for " .. theData.name .. " now is " .. firstPoint.airdromeId, 30)
 					local loc = {}
 					loc.x = firstPoint.x
 					loc.y = 0
 					loc.z = firstPoint.y 
 					local bestAirbase = dcsCommon.getClosestAirbaseTo(loc)
 					firstPoint.airdromeId = bestAirbase:getID()
-					trigger.action.outText("first: adjusted to " .. firstPoint.airdromeId, 30)
+--					trigger.action.outText("first: adjusted to " .. firstPoint.airdromeId, 30)
 				end
 				
 				-- adjust last point (landing)
 				if #thePoints > 1 then 
 					local lastPoint = thePoints[#thePoints]
 					if firstPoint.airdromeId then 
-						trigger.action.outText("last: airdrome adjust for " .. theData.name .. " now is " .. lastPoint.airdromeId, 30)
+--						trigger.action.outText("last: airdrome adjust for " .. theData.name .. " now is " .. lastPoint.airdromeId, 30)
 						local loc = {}
 						loc.x = lastPoint.x
 						loc.y = 0
 						loc.z = lastPoint.y 
 						local bestAirbase = dcsCommon.getClosestAirbaseTo(loc)
 						lastPoint.airdromeId = bestAirbase:getID()
-						trigger.action.outText("last: adjusted to " .. lastPoint.airdromeId, 30)
+--						trigger.action.outText("last: adjusted to " .. lastPoint.airdromeId, 30)
 					end
 				
 				end
