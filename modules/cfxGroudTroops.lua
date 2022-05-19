@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "1.7.5"
+cfxGroundTroops.version = "1.7.6"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -60,6 +60,7 @@ cfxGroundTroops.deployedTroops = {}
 --   1.7.3 - callbacks for lase:tracking and lase:stop 
 --   1.7.4 - verbose flag, warnings suppressed 
 --   1.7.5 - some troop.group hardening with isExist()
+--   1.7.6 - fixed switchToOffroad 
 
 
 -- an entry into the deployed troop has the following attributes
@@ -259,7 +260,7 @@ function cfxGroundTroops.switchToOffroad(troops)
 	-- on their route for longer than allowed
 	-- we now force a direct approach 
 	local group = troops.group
-	if not group.isExist() then 
+	if not group:isExist() then 
 		return
 	end 
 	
