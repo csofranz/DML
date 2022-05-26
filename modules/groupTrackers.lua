@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.1.1"
+groupTracker.version = "1.1.2"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -15,6 +15,8 @@ groupTracker.trackers = {}
 	      - array support for trackers 
 	      - array support for trackers 
 	1.1.1 - corrected clone zone reference bug
+	1.1.2 - corrected naming (removed bang from flags), deprecated old
+		  - more zone-local verbosity
 	
 --]]--
 
@@ -97,20 +99,32 @@ function groupTracker.createTrackerWithZone(theZone)
 	-- init group tracking set 
 	theZone.trackedGroups = {}
 
-	if cfxZones.hasProperty(theZone, "numGroups!") then 
-		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups!", "<none>") 
+
+	if cfxZones.hasProperty(theZone, "numGroups") then 
+		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups", "*<none>") 
+		-- we may need to zero this flag 
+	elseif  cfxZones.hasProperty(theZone, "numGroups!") then -- DEPRECATED!
+		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups!", "*<none>") 
 		-- we may need to zero this flag 
 	end 
-	
-	if cfxZones.hasProperty(theZone, "addGroup!") then 
-		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup!", "<none>") 
+		
+	if cfxZones.hasProperty(theZone, "addGroup") then 
+		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup", "*<none>") 
+		-- we may need to zero this flag 
+	elseif cfxZones.hasProperty(theZone, "addGroup!") then -- DEPRECATED
+		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup!", "*<none>") 
+		-- we may need to zero this flag 
+	end
+		
+	if cfxZones.hasProperty(theZone, "removeGroup") then 
+		theZone.tRemoveGroup = cfxZones.getStringFromZoneProperty(theZone, "removeGroup", "*<none>") 
+		-- we may need to zero this flag 
+	elseif cfxZones.hasProperty(theZone, "removeGroup!") then -- DEPRECATED!
+		theZone.tRemoveGroup = cfxZones.getStringFromZoneProperty(theZone, "removeGroup!", "*<none>") 
 		-- we may need to zero this flag 
 	end
 	
-	if cfxZones.hasProperty(theZone, "removeGroup!") then 
-		theZone.tRemoveGroup = cfxZones.getStringFromZoneProperty(theZone, "removeGroup!", "<none>") 
-		-- we may need to zero this flag 
-	end
+	
 	
 	if cfxZones.hasProperty(theZone, "groupFilter") then 
 		local filterString = cfxZones.getStringFromZoneProperty(theZone, "groupFilter", "2") -- ground 
@@ -119,6 +133,10 @@ function groupTracker.createTrackerWithZone(theZone)
 			trigger.action.outText("+++gTrck: filtering " .. theZone.groupFilter .. " in " .. theZone.name, 30)
 		end 
 	end	
+	
+	if theZone.verbose or groupTracker.verbose then 
+		trigger.action.outText("gTrck: processed <" .. theZone.name .. ">", 30)
+	end 
 end
 
 --
@@ -145,10 +163,13 @@ function groupTracker.checkGroups(theZone)
 		if isDead then 
 			-- bang deceased
 			if groupTracker.verbose or theZone.verbose then 
-				trigger.action.outText("+++gTrk: dead group detected in " .. theZone.name .. ", discarding.", 30)
+				trigger.action.outText("+++gTrk: dead group detected in " .. theZone.name .. ", removing.", 30)
 			end
 			if theZone.tRemoveGroup then 
 				cfxZones.pollFlag(theZone.tRemoveGroup, "inc", theZone)
+				if theZone.verbose then 
+					trigger.action.outText("+++gTrk: <" .. theZone.name .. "> incrementing remove flag <" .. theZone.tRemoveGroup .. ">", 30)
+				end
 			end
 		else
 			-- transfer alive group
@@ -207,24 +228,6 @@ function groupTracker.trackGroupsInZone(theZone)
 		end 
 	end 
 	
-	-- old code, non-array capable
-	--[[--
-	if trackerName == "*" then trackerName = theZone.name end 
-	
-	local theTracker = groupTracker.getTrackerByName(trackerName)
-	if not theTracker then 
-		trigger.action.outText("+++gTrk: trackGroupsInZone - no zone named <" .. trackerName .. ">", 30 )
-		return
-	end
-	
-	local theGroups = cfxZones.allGroupsInZone(theZone, nil)
-	for idx, aGroup in pairs(theGroups) do 
-		if groupTracker.verbose then 
-			trigger.action.outText("+++gTrk: <" .. theZone.name .. "> passed off group <" .. aGroup:getName() .. "> to <" .. trackerName .. ">", 30)		
-		end
-		groupTracker.addGroupToTracker(aGroup, theTracker)
-	end
-	--]]--
 end
 
 

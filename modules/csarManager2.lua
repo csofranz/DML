@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.1.1"
+csarManager.version = "2.1.3"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -36,6 +36,12 @@ csarManager.ups = 1
 		 - finally fixed smoke performance bug 
 		 - csarManager.vectoring optional 
  - 2.1.1 - zone-local verbosity
+ - 2.1.2 - 'downed' machinations (paranthese)S
+         - verbosity 
+ - 2.1.3 - theMassObject now local 
+		 - winch pickup now also adds weight so they can be returned 
+		 - made some improvements to performance by making vars local 
+		 
  
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -202,13 +208,16 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 	if not point then return nil end 
 	local newMission = {}
 	newMission.side = theSide
-	if dcsCommon.stringStartsWith(name, "(downed) ") then 
+	if dcsCommon.stringStartsWith(name, "downed ") then 
 		-- remove "downed" - it will be added again later
-		name = dcsCommon.removePrefix(name, "(downed) ")
+		name = dcsCommon.removePrefix(name, "downed ")
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: 'downed' procced for <" .. name .. ">", 30)
+		end
 	end
 	if not inRadius then inRadius = csarManager.rescueRadius end 
 	
-	newMission.name = "(downed) " .. name .. "-" .. csarManager.missionID -- make it uuid-capable
+	newMission.name = "downed " .. name .. "-" .. csarManager.missionID -- make it uuid-capable
 	newMission.zone = cfxZones.createSimpleZone(newMission.name, point, inRadius) --csarManager.rescueRadius)
 	newMission.marker = mapMarker -- so it can be removed later
 	newMission.isHot = false -- creating adversaries will make it hot, or when units are near. maybe implement a search later?
@@ -388,7 +397,9 @@ function csarManager.successMission(who, where, theMission)
 	
 	if csarManager.csarDelivered then 
 		cfxZones.pollFlag(csarManager.csarDelivered, "inc", csarManager.configZone)
-		trigger.action.outText("+++csar: banging csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: banging csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+		end 
 	end
 end
 
@@ -410,8 +421,19 @@ function csarManager.heloLanded(theUnit)
 	-- points or airframes 
 	local allEvacuees = cargoSuper.getManifestFor(myName, "Evacuees") -- returns unlinked array 
 											
+	if csarManager.verbose then 
+		trigger.action.outText("+++csar: helo <" .. myName .. "> landed with <" .. #allEvacuees .. "> evacuees on board.",30)
+	end 
+											
 	if #allEvacuees > 0 then -- wasif #conf.troopsOnBoard > 0 then
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: checking bases:", 30)
+		end
+		
 		for idx, base in pairs(csarManager.csarBases) do
+			if csarManager.verbose then 
+				trigger.action.outText("+++csar: base <" .. base.zone.name .. ">", 30)
+			end
 			-- check if the attached zone has changed hands
 			-- this can happen if zone has its own owner 
 			-- attribute and is conquered by another side 
@@ -428,6 +450,10 @@ function csarManager.heloLanded(theUnit)
 			   currentBaseSide == 0 
 			then  -- can always land in neutral
 				if cfxZones.pointInZone(thePoint, base.zone) then 
+					if csarManager.verbose or base.zone.verbose then 
+						trigger.action.outText("+++csar: <" .. myName .. "> touch down in CSAR drop-off zone <" .. base.zone.name .. ">", 30)
+					end 
+					
 					for idx, msn in pairs(conf.troopsOnBoard) do 
 						-- each troopsOnboard is actually the 
 						-- csar mission that I picked up 
@@ -454,9 +480,21 @@ function csarManager.heloLanded(theUnit)
 					conf.troopsOnBoard = {} -- empty out troops on board 
 					-- we do *not* return so we can pick up troops on 
 					-- a CSARBASE if they were dropped there
-					
+				
+				else
+					if csarManager.verbose or base.zone.verbose then 
+						trigger.action.outText("+++csar: touchdown of <" .. myName .. "> occured outside of csar zone <" .. base.zone.name .. ">", 30)
+					end
 				end
+				
+			else -- not on my side 
+				if csarManager.verbose or base.zone.verbose then 
+					trigger.action.outText("+++csar: base <" .. base.zone.name .. "> is on side <" .. currentBaseSide .. ">, which is not on my side <" .. mySide .. ">.", 30)
+				end 
 			end -- my side?
+		end -- for all bases 
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: complete bases check", 30)
 		end
 	end -- check only if I'm carrying evacuees
 
@@ -469,7 +507,7 @@ function csarManager.heloLanded(theUnit)
 			-- see if we are inside the mission's rescue range 
 			local d = dcsCommon.distFlat(thePoint, mission.zone.point)
 			if d < csarManager.rescueRadius then 
-				-- pick up this mission an remove it from the 
+				-- pick up this mission and remove it from the 
 				table.insert(pickups, mission)
 			end
 		end
@@ -488,7 +526,7 @@ function csarManager.heloLanded(theUnit)
 		theMission.group:destroy() -- will shut up radio as well
 		theMission.group = nil
 		-- now adapt for cargoSuper 
-		theMassObject = cargoSuper.createMassObject(
+		local theMassObject = cargoSuper.createMassObject(
 				csarManager.pilotWeight, 
 				theMission.name, 
 				theMission)
@@ -788,6 +826,8 @@ function csarManager.unloadOne(args)
 		-- create a new missions in 50m radius
 		csarManager.createCSARforUnit(theUnit, theRescuedPilot, 50, true)
 		conf.troopsOnBoard[i] = nil -- remove this mission
+		--TODO: remove weight for this pilot!
+		
 		trigger.action.outTextForCoalition(theSide, myName .. " has aborted evacuating " .. msn.name .. ". New CSAR available.", 30)
 		trigger.action.outSoundForCoalition(theSide, "Quest Snare 3.wav")
 		
@@ -944,8 +984,8 @@ function csarManager.update() -- every second
 							trigger.action.outSoundForGroup(uID, "Quest Snare 3.wav")
 							table.insert(csarMission.messagedUnits, uName) -- remember that we messaged them so we don't do again
 						end
-						-- also pop smoke if not popped already, or more than 3 minutes ago
-						if csarManager.useSmoke and  timer.getTime() - csarMission.lastSmokeTime > 179 then 
+						-- also pop smoke if not popped already, or more than 5 minutes ago
+						if csarManager.useSmoke and  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
 							local smokePoint = dcsCommon.randomPointOnPerimeter(
 								50, csarMission.zone.point.x, csarMission.zone.point.z) --cfxZones.createHeightCorrectedPoint(csarMission.zone.point)
 							-- trigger.action.smoke(smokePoint, 4 )
@@ -958,7 +998,7 @@ function csarManager.update() -- every second
 						-- WARNING: WE ALWAYS ONLY CHECK A SINGLE UNIT - the first alive
 						local evacuee = csarMission.group:getUnit(1)
 						if evacuee then 
-							ep = evacuee:getPoint()
+							local ep = evacuee:getPoint()
 							d = dcsCommon.distFlat(uPoint, ep)
 							d = math.floor(d * 10) / 10
 							if d < csarManager.hoverRadius * 2 then
@@ -976,7 +1016,7 @@ function csarManager.update() -- every second
 											csarMission.hoveringUnits[uName] = timer.getTime() 
 										end
 										hoverTime = timer.getTime() - hoverTime -- calculate number of seconds 
-										remainder = math.floor(csarManager.hoverDuration - hoverTime)
+										local remainder = math.floor(csarManager.hoverDuration - hoverTime)
 										if remainder < 1 then remainder = 1 end 
 										hoverMsg = "Steady... " .. d * 3 .. "ft to your " .. oclock .. " o'clock, winching... (" .. remainder .. ")" 
 										if hoverTime > csarManager.hoverDuration then 
@@ -987,6 +1027,24 @@ function csarManager.update() -- every second
 											table.insert(conf.troopsOnBoard, csarMission)
 											csarMission.group:destroy() -- will shut up radio as well
 											csarMission.group = nil
+											
+											-- now handle weight using cargoSuper 
+											local theMassObject = cargoSuper.createMassObject(
+												csarManager.pilotWeight, 
+												csarMission.name, 
+												csarMission)
+											cargoSuper.addMassObjectTo(
+												uName, 
+												"Evacuees", 
+												theMassObject)
+											local totalMass = cargoSuper.calculateTotalMassFor(uName)
+											trigger.action.setUnitInternalCargo(uName, totalMass)
+											
+											if csarManager.verbose then 
+												local allEvacuees = cargoSuper.getManifestFor(myName, "Evacuees") -- returns unlinked array 
+												trigger.action.outText("+++csar: <" .. uName .. "> now has <" .. #allEvacuees .. "> groups of evacuees on board, totalling " .. totalMass .. "kg", 30)
+											end
+											
 											trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
 											trigger.action.outSoundForGroup(uID, "Quest Snare 3.wav")
 
@@ -1310,5 +1368,9 @@ end
 	- compatibility: side/owner - make sure it is compatible 
 	  with FARP, and landing on a FARP with opposition ownership 
 	  will not disembark
+	  
+	- suppress multi smoke 
+	
+	- when unloading one by menu, update weight!!!
 	
 --]]--

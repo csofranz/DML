@@ -1,5 +1,5 @@
 	cloneZones = {}
-	cloneZones.version = "1.4.6"
+	cloneZones.version = "1.4.7"
 	cloneZones.verbose = false  
 	cloneZones.requiredLibs = {
 		"dcsCommon", -- always
@@ -45,6 +45,7 @@
 		1.4.5 - randomizeLoc, rndLoc keyword
 		      - cargo manager integration - pass cargo objects when present
 		1.4.6 - removed some verbosity for spawned aircraft with airfields on their routes
+		1.4.7 - DML watchflag and DML Flag polish, method-->cloneMethod
 		
 		
 	--]]--
@@ -236,7 +237,6 @@
 			theZone.lastDeSpawnValue = cfxZones.getFlagValue(theZone.deSpawnFlag, theZone)
 		end
 		
-		-- to be deprecated
 		theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
 		
 		theZone.moveRoute = cfxZones.getBoolFromZoneProperty(theZone, "moveRoute", false)
@@ -252,7 +252,10 @@
 			theZone.emptyBangFlag = cfxZones.getStringFromZoneProperty(theZone, "empty!", "<None>") -- note string on number default
 		end
 		
-		theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+		theZone.cloneMethod = cfxZones.getStringFromZoneProperty(theZone, "cloneMethod", "inc")
+		if cfxZones.hasProperty(theZone, "method") then 
+			theZone.cloneMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc") -- note string on number default
+		end
 		
 		if cfxZones.hasProperty(theZone, "masterOwner") then 
 			theZone.masterOwner = cfxZones.getStringFromZoneProperty(theZone, "masterOwner", "<none>")
@@ -1010,7 +1013,7 @@
 				end 
 				
 				if aZone.emptyBangFlag then 
-					cfxZones.pollFlag(aZone.emptyBangFlag, aZone.method, aZone)
+					cfxZones.pollFlag(aZone.emptyBangFlag, aZone.cloneMethod, aZone)
 					if cloneZones.verbose then 
 						trigger.action.outText("+++clnZ: bang! on " .. aZone.emptyBangFlag, 30)
 					end

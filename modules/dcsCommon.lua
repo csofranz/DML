@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.2"
+dcsCommon.version = "2.6.3"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -72,6 +72,7 @@ dcsCommon.version = "2.6.2"
  2.6.0 - unified uuid, removed uuIdent
  2.6.1 - removed bug in rotateUnitData: cy --> cz param passing  
  2.6.2 - new combineTables()
+ 2.6.3 - new tacan2freq()
 	   
 --]]--
 
@@ -1972,6 +1973,25 @@ dcsCommon.version = "2.6.2"
 		trigger.action.smoke(newPoint, smokeColor)
 	end
 
+-- based on buzzer1977's idea, channel is number, eg in 74X, channel is 74, mode is "X"
+	function tacan2freq(channel, mode)	
+		if not mode then mode = "X" end 
+		if not channel then channel = 1 end 
+		if type(mode) ~= "string" then mode = "X" end 
+		mode = mode:upper()
+		local offset = 1000000 * channel
+		if channel < 64 then 
+			if mode == "Y" then
+				return 1087000000 + offset
+			end
+			return 961000000 + offset -- mode x
+		end
+	
+		if mode == "Y" then
+			return 961000000 + offset
+		end
+		return 1087000000 + offset -- mode x
+	end
 --
 --
 -- V E C T O R   M A T H 

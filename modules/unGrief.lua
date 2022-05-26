@@ -1,6 +1,7 @@
 unGrief = {}
-unGrief.version = "1.1.0"
+unGrief.version = "1.2.0"
 unGrief.verbose = false 
+unGrief.ups = 1
 unGrief.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -16,10 +17,47 @@ unGrief.disabledFlagValue = unGrief.enabledFlagValue + 100 -- DO NOT CHANGE
 	1.1.0 - wrathful option 
 		  - pve option 
 		  - ignoreAI option 
-	
+	1.2.0 - allow PVP zones 
+	      - strict rules
+		  - warnings on enter/exit
+		  - warnings optional
+
 --]]--
 
 unGrief.griefers = {} -- offenders are stored here 
+
+-- PVP stuff here
+unGrief.pvpZones = {}
+unGrief.playerPilotZone = {} -- for messaging when leaving/entering pvp zones 
+
+
+function unGrief.addPvpZone(theZone)
+	table.insert(unGrief.pvpZones, theZone)
+end
+
+function unGrief.getPvpZoneByName(aName) 
+	for idx, aZone in pairs(unGrief.pvpZones) do 
+		if aName == aZone.name then return aZone end 
+	end
+	if unGrief.verbose then 
+		trigger.action.outText("+++unGrief: no pvpZone with name <" .. aName ..">", 30)
+	end 
+	
+	return nil 
+end
+
+--
+-- read pvp zone 
+-- 
+function unGrief.createPvpWithZone(theZone)
+	-- read pvp data - there's currently really nothing to do 
+	if theZone.verbose or unGrief.verbose then 
+		trigger.action.outText("+++uGrf: <" .. theZone.name .. "> is designated as PVP legal", 30)
+	end
+	
+	theZone.strictPVP = cfxZones.getBoolFromZoneProperty(theZone, "strict", false)
+	
+end
 
 -- vengeance: if player killed before, they are no longer welcome 
 function unGrief.exactVengance(theEvent) 
@@ -90,6 +128,31 @@ function unGrief:onEvent(theEvent)
 	local pvpTransgression = false 
 	if unGrief.pve and stiff.getPlayerName and stiff:getPlayerName() then
 		pvpTransgression = true 
+		if pvpTransgression then 
+			-- check if this happened in a pvp zone. 
+			local crimeScene = stiff:getPoint()
+			for idx, theZone in pairs (unGrief.pvpZones) do 
+				-- if the VIC is in a pvp zone, that was legal
+				if cfxZones.isPointInsideZone(crimeScene, theZone) then 
+					-- see if strict rules apply
+					if theZone.strictPVP then 
+						-- also check killer 
+						crimeScene = killer:getPoint()
+						if cfxZones.isPointInsideZone(crimeScene, theZone) then 
+							pvpTransgression = false 
+						end
+					else 
+						-- relaxed pvp 
+						pvpTransgression = false 
+					end
+					
+					if (not pvpTransgression) and 
+						(unGrief.verbose or theZone.verbose) then 
+						trigger.action.outText("+++uGrf: legal PVP kill of <" .. stiff:getName() .. "> in <" .. theZone.name .. ">", 30)
+					end
+				end
+			end
+		end
 	end
 	
 	if unGrief.ignoreAI then 
@@ -115,7 +178,7 @@ function unGrief:onEvent(theEvent)
 		if not pvpTransgression then 
 			trigger.action.outText(playerName .. " has killed one of their own. YOU ARE ON NOTICE!", 30)
 		else 
-			trigger.action.outText(playerName .. " has killed a fellow Player. YOU ARE ON NOTICE!", 30)
+			trigger.action.outText(playerName .. " has illegally killed a fellow Player. YOU ARE ON NOTICE!", 30)
 		end
 		return 
 	end
@@ -145,6 +208,45 @@ function unGrief:onEvent(theEvent)
 	-- (or kick via SSB or do some other stuff. be creative to boot this idiot)
 end
 
+function unGrief.update()
+	timer.scheduleFunction(unGrief.update, {}, timer.getTime() + 1/unGrief.ups)
+	-- iterate all players 
+	for side = 1, 2 do 
+		local playersOnThisSide = coalition.getPlayers(side)
+		for idx, p in pairs (playersOnThisSide) do 
+			local pName = p:getPlayerName()
+			if pName then 
+				local pLoc = p:getPoint()
+				local lastZone =  unGrief.playerPilotZone[pName]
+				local currZone = nil 
+				local isStrict = false 
+				for idy, theZone in pairs(unGrief.pvpZones) do 
+					if cfxZones.isPointInsideZone(pLoc, theZone) then 
+						currZone = theZone
+						isStrict = theZone.strictPVP
+					end
+				end
+				if currZone ~= lastZone then 
+					local pG = p:getGroup()
+					local gID = pG:getID()
+					if currZone then 
+						local strictness = ""
+						if isStrict then 
+							strictness = " STRICT PvP rules apply!"
+						end
+						
+						trigger.action.outTextForGroup(gID, "WARNING: you are entering a PVP zone!" .. strictness, 30)
+					else 
+						-- left a pvp zone
+						trigger.action.outTextForGroup(gID, "NOTE: you are leaving a PVP area!", 30)
+					end
+					unGrief.playerPilotZone[pName] = currZone
+				end 	
+			end
+		end
+	end
+end
+
 function unGrief.readConfigZone()
 	local theZone = cfxZones.getZoneByName("unGriefConfig") 
 	if not theZone then 
@@ -170,6 +272,8 @@ function unGrief.readConfigZone()
 	
 	unGrief.ignoreAI = cfxZones.getBoolFromZoneProperty(theZone, "ignoreAI", false)
 	
+	unGrief.PVPwarnings = cfxZones.getBoolFromZoneProperty(theZone, "warnings", true)
+	
 	if unGrief.verbose then 
 		trigger.action.outText("+++uGrf: read config", 30)
 	end 
@@ -188,6 +292,22 @@ function unGrief.start()
 	-- read config 
 	unGrief.readConfigZone()
 	
+	-- read pvp zones if pve is enabled 
+	if unGrief.pve then 
+		if unGrief.verbose then 
+			trigger.action.outText("PVE mode - scanning for PVP zones", 30)
+		end
+		local attrZones = cfxZones.getZonesWithAttributeNamed("pvp")
+		for k, aZone in pairs(attrZones) do 
+			unGrief.createPvpWithZone(aZone) -- process attributes
+			unGrief.addPvpZone(aZone) -- add to list
+		end
+		
+		if unGrief.PVPwarnings then 
+			unGrief.update() -- start update tracking for player warnings
+		end 
+	end
+	
 	-- connect event proccer 
 	world.addEventHandler(unGrief)
 	
@@ -201,6 +321,3 @@ if not unGrief.start() then
 	unGrief = nil 
 end
 
--- to be developed: 
--- ungrief on and off flags 
--- pvp and pve zones in addition to global attributes 
