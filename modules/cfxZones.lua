@@ -1627,6 +1627,7 @@ end
 function cfxZones.getZoneProperty(cZone, theKey)
 	if not cZone then 
 		trigger.action.outText("+++zone: no zone in getZoneProperty", 30)
+--		breek.here.noew = 1
 		return nil
 	end 
 	if not theKey then 

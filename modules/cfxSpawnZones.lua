@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.5.3"
+cfxSpawnZones.version = "1.6.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -53,6 +53,7 @@ cfxSpawnZones.verbose = false
 --         - verbose 
 --   1.5.2 - activate?, pause? flag 
 --   1.5.3 - spawn?, spawnUnits? flags 
+--   1.6.0 - trackwith interface for group tracker
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -135,6 +136,13 @@ function cfxSpawnZones.createSpawner(inZone)
 	local theSpawner = {}
 	theSpawner.zone = inZone
 	theSpawner.name = inZone.name 
+	
+	-- interface to groupTracker 
+	-- WARNING: attaches to ZONE, not spawner object
+	if cfxZones.hasProperty(inZone, "trackWith:") then 
+		inZone.trackWith = cfxZones.getStringFromZoneProperty(inZone, "trackWith:", "<None>")
+	end
+		
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
@@ -306,11 +314,12 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 		aSpawner = cfxSpawnZones.getSpawnerForZoneNamed(aName)
 	end
 	if not aSpawner then return end 
+	local theZone = aSpawner.zone -- retrieve the zone that defined me 
 	
 	-- will NOT check if conditions are met. This forces a spawn
 	local unitTypes = {} -- build type names
 	--local p = aSpawner.zone.point  
-	local p = cfxZones.getPoint(aSpawner.zone) -- aSpawner.zone.point
+	local p = cfxZones.getPoint(theZone) -- aSpawner.zone.point
 		
 	-- split the conf.troopsOnBoardTypes into an array of types
 	unitTypes = dcsCommon.splitString(aSpawner.types, ",")
@@ -366,6 +375,12 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 		
 	end
 	
+	-- track this if we are have a trackwith attribute 
+	-- note that we retrieve trackwith from ZONE, not spawner 
+	if theZone.trackWith then 
+		cfxSpawnZones.handoffTracking(theGroup, theZone) 
+	end
+			
 	-- callback to all who want to know 
 	cfxSpawnZones.invokeCallbacksFor("spawned", theGroup, aSpawner)
 	
@@ -382,6 +397,39 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	end
 end
 
+function cfxSpawnZones.handoffTracking(theGroup, theZone)
+-- note that this method works on theZone, not Spawner object
+	if not groupTracker then 
+		trigger.action.outText("+++spawner: <" .. theZone.name .. "> trackWith requires groupTracker module", 30) 
+		return 
+	end
+	local trackerName = theZone.trackWith
+	--if trackerName == "*" then trackerName = theZone.name end 
+	-- now assemble a list of all trackers
+	if cfxSpawnZones.verbose or theZone.verbose then 
+		trigger.action.outText("+++spawner: spawn pass-off: " .. trackerName, 30)
+	end 
+	
+	local trackerNames = {}
+	if dcsCommon.containsString(trackerName, ',') then
+		trackerNames = dcsCommon.splitString(trackerName, ',')
+	else 
+		table.insert(trackerNames, trackerName)
+	end
+	for idx, aTrk in pairs(trackerNames) do 
+		local theName = dcsCommon.trim(aTrk)
+		if theName == "*" then theName = theZone.name end 
+		local theTracker = groupTracker.getTrackerByName(theName)
+		if not theTracker then 
+			trigger.action.outText("+++spawner: <" .. theZone.name .. ">: cannot find tracker named <".. theName .. ">", 30) 
+		else 
+			groupTracker.addGroupToTracker(theGroup, theTracker)
+			 if cfxSpawnZones.verbose or theZone.verbose then 
+				trigger.action.outText("+++spawner: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
+			 end
+		end 
+	end 
+end
 
 --
 -- U P D A T E 

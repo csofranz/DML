@@ -1112,5 +1112,4 @@
 		- AFAC 
 			- FAC Assign group 
 		- set freq for unit 
-		- embark / disembark
 	--]]--
