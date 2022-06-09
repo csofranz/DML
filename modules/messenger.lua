@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.3.0"
+messenger.version = "1.3.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -21,6 +21,8 @@ messenger.messengers = {}
 	1.2.0 - msgTriggerMethod (original Watchflag integration) 
 	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value
 	1.3.0 - messenger? saves messageOut? attribute 
+	1.3.1 - message now can interpret value as time with <h> <m> <s> <:h> <:m> <:s>
+	
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -156,7 +158,9 @@ function messenger.getMessage(theZone)
 	msg = string.gsub(msg, "*name", zName)
 	msg = string.gsub(msg, "*value", zVal)
 	msg = string.gsub(msg, "<v>", zVal) 
-	
+	local z = tonumber(zVal)
+	if not z then z = 0 end  
+	msg = dcsCommon.processHMS(msg, z)
 	return msg 
 end
 

@@ -1,5 +1,5 @@
 wiper = {}
-wiper.version = "1.0.0"
+wiper.version = "1.1.0"
 wiper.verbose = false 
 wiper.ups = 1 
 wiper.requiredLibs = {
@@ -10,6 +10,8 @@ wiper.wipers = {}
 --[[--
 	Version History
 	1.0.0 - Initial Version 
+	1.1.0 - added zone bounds check before wiping 
+	
 
 --]]--
 
@@ -124,7 +126,13 @@ function wiper.seeZoneInventory(theZone)
 		world.searchObjects(aCat, args, wiper.objectHandler, collector)
 		wiper.inventory = wiper.inventory .. "Cat = " .. aCat .. ":"
 		for idy, anObject in pairs(collector) do 
-			wiper.inventory = wiper.inventory .. anObject:getName() .. " "
+					-- now also filter by position in zone 
+			local uP = anObject:getPoint()
+			if (not cfxZones.isPointInsideZone(uP, theZone)) then 
+				wiper.inventory = wiper.inventory .. "{" .. anObject:getName() .. "} "
+			else 
+				wiper.inventory = wiper.inventory .. anObject:getName() .. " "
+			end
 		end
 		wiper.inventory = wiper.inventory .. "\n"
 	end
@@ -185,6 +193,15 @@ function wiper.isTriggered(theZone)
 				if not doWipe then 
 					trigger.action.outText("+++wpr: <"..oName.."> not removed, name restriction <" .. theZone.oWipeNamed .. "> not met.",30)
 				end
+			end
+		end
+
+		-- now also filter by position in zone 
+		local uP = anObject:getPoint()
+		if doWipe and (not cfxZones.isPointInsideZone(uP, theZone)) then 
+			doWipe = false 
+			if wiper.verbose or theZone.verbose then
+				trigger.action.outText("+++wpr: <" .. anObject:getName() .."> not removed, outside zone <" .. theZone.name .. "> bounds.",30)
 			end
 		end
 

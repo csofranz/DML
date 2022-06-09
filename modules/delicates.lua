@@ -1,5 +1,5 @@
 delicates = {}
-delicates.version = "0.0.0"
+delicates.version = "1.0.0"
 delicates.verbose = false 
 delicates.ups = 1 
 delicates.requiredLibs = {
@@ -7,9 +7,11 @@ delicates.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 }
 delicates.theDelicates = {}
+delicates.inventory = {}
 
 --[[--
 	Version History 
+	1.0.0 - initial version 
 	
 --]]--
 function delicates.adddDelicates(theZone)
@@ -35,13 +37,11 @@ function delicates.objectHandler(theObject, theCollector)
 	return true 
 end
 
-function delicates.seeZoneInventory(theZone) 
-	-- run a diag which objects are in the zone, and which cat they are
-	-- set up args
-	local allCats = {1, 2, 3, 4, 5, 6}
+function delicates.makeZoneInventory(theZone) 
+
+	local allCats = {1, 3, 6}
 	-- Object.Category UNIT=1, WEAPON=2, STATIC=3, BASE=4, SCENERY=5, Cargo=6
-	delicates.inventory = ""
-	theZone.inventory = {}
+
 	for idx, aCat in pairs(allCats) do 
 		local p = cfxZones.getPoint(theZone)
 		local lp = {x = p.x, y = p.z}
@@ -60,17 +60,31 @@ function delicates.seeZoneInventory(theZone)
 		-- now call search
 		world.searchObjects(aCat, args, delicates.objectHandler, collector)
 		-- process results
-		if #collector>0 then 
-			trigger.action.outText("+++deli: zone " .. theZone.name, 30) 
+		if #collector > 0 then 
+			if theZone.verbose or delicates.verbose then 
+				trigger.action.outText("+++deli: zone " .. theZone.name, 30)
+			end 
+			
 			for idy, anObject in pairs(collector) do
 				local oName = anObject:getName()
 				if type(oName) == 'number' then oName = tostring(oName) end
-				trigger.action.outText("+++deli: cat=".. aCat .. ":<" .. anObject:getName() .. ">", 30)
+				local oLife = anObject:getLife()
+				if theZone.verbose or delicates.verbose then
+					trigger.action.outText("+++deli: cat=".. aCat .. ":<" .. oName .. "> Life=" .. oLife, 30)
+				end 
 				local uP = anObject:getPoint()
 				if cfxZones.isPointInsideZone(uP, theZone) then 
-					table.insert(theZone.inventory, oName)
+
+					local desc = {}
+					desc.cat = aCat
+					desc.oLife = oLife 
+					desc.theZone = theZone 
+					desc.oName = oName 
+					delicates.inventory[oName] = desc
 				else 
-					trigger.action.outText("+++deli: (dropped)", 30)
+					if theZone.verbose or delicates.verbose then
+						trigger.action.outText("+++deli: (dropped)", 30)
+					end 
 				end 
 			end
 		end 
@@ -78,11 +92,30 @@ function delicates.seeZoneInventory(theZone)
 end
 
 function delicates.createDelicatesWithZone(theZone)
+	theZone.power = cfxZones.getNumberFromZoneProperty(theZone, "power", 10)
+	
+	if cfxZones.hasProperty(theZone, "delicatesHit!") then
+		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "delicatesHit!", "*<none>")
+	end 
+	if cfxZones.hasProperty(theZone, "f!") then
+		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "f!", "*<none>")
+	end
+	if cfxZones.hasProperty(theZone, "out!") then
+		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
+	end
+	
+	-- DML Method 
+	theZone.delicateHitMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	if cfxZones.hasProperty(theZone, "delicateMethod") then 
+		theZone.delicateHitMethod = cfxZones.getStringFromZoneProperty(theZone, "delicatesMethod", "inc")
+	end
+	
+	
+	theZone.delicateRemove = cfxZones.getBoolFromZoneProperty(theZone, "remove", true)
+	
 	-- read objects for this zone
 	-- may want to filter by objects, can be passed in delicates
-	delicates.seeZoneInventory(theZone) 
-
-
+	delicates.makeZoneInventory(theZone) 
 	
 	if delicates.verbose or theZone.verbose then 
 		trigger.action.outText("+++deli: new delicates zone <".. theZone.name ..">", 30)
@@ -91,16 +124,127 @@ function delicates.createDelicatesWithZone(theZone)
 end
 
 --
+-- blow me!
+--
+function delicates.scheduledBlow(args)
+	local desc = args.desc 
+	if not desc then return end 
+	local oName = desc.oName 
+	
+	local theObject = nil 
+	-- UNIT=1, WEAPON=2, STATIC=3, BASE=4, SCENERY=5, Cargo=6
+	if desc.cat == 1 then 
+		theObject = Unit.getByName(oName)
+		if not theObject then 
+			theObject = StaticObject.getByName(oName)
+		end
+	elseif desc.cat == 3 or desc.cat == 6 then 
+		theObject = StaticObject.getByName(oName) 
+	else
+		-- can't handle at the moment
+	end 
+	
+	local theZone = desc.theZone 
+	local p = theObject:getPoint()
+	local power = desc.theZone.power
+	if desc.theZone.delicateRemove then 
+		theObject:destroy()
+	end
+	
+	trigger.action.explosion(p, power)
+	
+	-- bang out!
+	if theZone.delicateHit then 
+		cfxZones.pollFlag(theZone.delicateHit, theZone.delicateHitMethod, theZone)
+		if delicates.verbose or theZone.verbose then 
+			trigger.action.outText("+++deli: banging delicateHit! with <" .. theZone.delicateHitMethod .. "> on <" .. theZone.delicateHit .. "> for " .. theZone.name, 30)
+		end
+	end 
+end
+
+function delicates.blowUpObject(desc, delay)
+	if not delay then delay = 0.5 end 
+	if not desc then return end 
+	local args = {}
+	args.desc = desc 
+	timer.scheduleFunction(delicates.scheduledBlow, args, timer.getTime() + delay)
+	
+end
+
+
+--
 -- event handler 
 --
 function delicates:onEvent(theEvent)
-	trigger.action.outText("yup", 30)
+--	trigger.action.outText("yup", 30)
 	if not theEvent then return end 
+	local theObj = theEvent.target
+	if not theObj then return end
 	if theEvent.id ~= 2 and theEvent.id ~= 23 then return end -- only hit and shooting start events 
-	if not theEvent.target then return end 
+ 
+	local oName = theObj:getName()
+	local desc = delicates.inventory[oName]
+	if desc then 
+--		trigger.action.outText("+++deli: REGISTERED HIT -- removing!", 30)
+		delicates.blowUpObject(desc)
+		-- remove it from further searches
+		delicates.inventory[oName] = nil 
+	end
 	
-	trigger.action.outText("+++deli: we hit " .. theEvent.target:getName(), 30)
+--	trigger.action.outText("+++deli: we hit " .. oName, 30)
 	
+end
+
+--
+-- Update 
+---
+
+function delicates.update()
+	-- call me in a second to poll triggers
+	timer.scheduleFunction(delicates.update, {}, timer.getTime() + 1/delicates.ups)
+			
+	-- see if any deli was damaged and filter for next iter 
+	local newInventory = {}
+	for oName, oDesc in pairs(delicates.inventory) do 
+		-- access the object 
+		local theObj = nil 
+		-- UNIT=1, WEAPON=2, STATIC=3, BASE=4, SCENERY=5, Cargo=6
+		if oDesc.cat == 1 then 
+			theObj = Unit.getByName(oName)
+			if not theObj then 
+				-- DCS now changes objects to static 
+				-- so see if we can get this under statics 
+				theObj = StaticObject.getByName(oName) 
+				if theObj then 
+--					trigger.action.outText("+++deli: Aha! caught smokin'!", 30)
+				end
+			end 
+		elseif oDesc.cat == 3 or oDesc.cat == 6 then 
+			theObj = StaticObject.getByName(oName) 
+		else
+			-- can't handle at the moment
+		end 
+		
+		if theObj then 
+			local cLife = theObj:getLife()
+			if cLife >= oDesc.oLife then 
+				-- transfer to next iter 
+				newInventory[oName] = oDesc
+			else 
+				-- blow stuff up 
+				if oDesc.theZone.verbose or delicates.verbose then
+					trigger.action.outText(oName .. " was hit, will blow up, new health is at " .. oDesc.oLife .. ".", 30)
+				end 
+				delicates.blowUpObject(oDesc)
+			end
+		else 
+			-- nothing to do, don't transfer
+			if oDesc.theZone.verbose or delicates.verbose then
+				trigger.action.outText("+++deli: <" .. oName .. "> disappeared.", 30)
+			end
+		end
+	end
+	delicates.inventory = newInventory
 end
 
 --
@@ -144,7 +288,7 @@ function delicates.start()
 	end
 	
 	-- start update 
-	--delicates.update()
+	delicates.update()
 	
 	-- listen for events
     world.addEventHandler(delicates)
@@ -158,3 +302,6 @@ if not delicates.start() then
 	trigger.action.outText("cfx delicates aborted: missing libraries", 30)
 	delicates = nil 
 end
+
+-- To Do:
+-- integrate with cloners and spawners 

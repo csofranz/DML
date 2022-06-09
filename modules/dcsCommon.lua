@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.3"
+dcsCommon.version = "2.6.4"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -73,6 +73,7 @@ dcsCommon.version = "2.6.3"
  2.6.1 - removed bug in rotateUnitData: cy --> cz param passing  
  2.6.2 - new combineTables()
  2.6.3 - new tacan2freq()
+ 2.6.4 - new processHMS()
 	   
 --]]--
 
@@ -1992,11 +1993,44 @@ dcsCommon.version = "2.6.3"
 		end
 		return 1087000000 + offset -- mode x
 	end
+	
+	function dcsCommon.processHMS(msg, delta)
+		local rS = math.floor(delta)
+		local remainS = tostring(rS)
+		local rM = math.floor(delta/60)
+		local remainM = tostring(rM)
+		local rH = math.floor(delta/3600)
+		local remainH = tostring(rH)
+		local hmsH = remainH 
+		if rH < 10 then hmsH = "0" .. hmsH end 
+		
+		local hmsCount = delta - (rH * 3600) -- mins left 
+		local mins = math.floor (hmsCount / 60)
+		local hmsM = tostring(mins)
+		if mins < 10 then hmsM = "0" .. hmsM end 
+		
+		hmsCount = hmsCount - (mins * 60) 
+		local secs = math.floor(hmsCount)
+		local hmsS = tostring(secs)
+		if secs < 10 then hmsS = "0" .. hmsS end 
+		
+		msg = string.gsub(msg, "<s>", remainS)
+		msg = string.gsub(msg, "<m>", remainM)
+		msg = string.gsub(msg, "<h>", remainH)
+		
+		msg = string.gsub(msg, "<:s>", hmsS)
+		msg = string.gsub(msg, "<:m>", hmsM)
+		msg = string.gsub(msg, "<:h>", hmsH)
+		
+		return msg 
+	end
+	
 --
 --
 -- V E C T O R   M A T H 
 --
 --
+
 function dcsCommon.vAdd(a, b) 
 	local r = {}
 	if not a then a = {x = 0, y = 0, z = 0} end

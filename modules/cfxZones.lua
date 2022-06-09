@@ -5,7 +5,7 @@
 -- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 --
 cfxZones = {}
-cfxZones.version = "2.7.8"
+cfxZones.version = "2.7.9"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -78,6 +78,8 @@ cfxZones.version = "2.7.8"
 		  - doPollFlag supports 'pulse'
 		  - pulseFlag
 		  - unpulse 
+- 2.7.9   - getFlagValue QoL for <none>
+          - setFlagValue QoL for <none>
 		  
  
 --]]--
@@ -1244,6 +1246,11 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 		return 
 	end
 	
+	-- some QoL: detect "<none>"
+	if dcsCommon.containsString(theFlag, "<none>") then 
+		trigger.action.outText("+++Zone: warning - setFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30)
+	end
+	
 	-- now do wildcard processing. we have alphanumeric
 	if dcsCommon.stringStartsWith(theFlag, "*") then  
 		theFlag = zoneName .. theFlag
@@ -1269,6 +1276,11 @@ function cfxZones.getFlagValue(theFlag, theZone)
 	local nFlag = tonumber(theFlag) 
 	if nFlag then 
 		return tonumber(trigger.misc.getUserFlag(theFlag))
+	end
+	
+	-- some QoL: detect "<none>"
+	if dcsCommon.containsString(theFlag, "<none>") then 
+		trigger.action.outText("+++Zone: warning - getFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30)
 	end
 	
 	-- now do wildcard processing. we have alphanumeric
