@@ -1516,7 +1516,7 @@ function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	-- get last value from latch
 	local lastVal = theZone[latchName]
 	if not lastVal then 
-		trigger.action.outText("+++Zne: latch <" .. latchName .. "> not valid for zone " .. theZone.name, 30)
+		trigger.action.outText("+++Zne: latch <" .. latchName .. "> not valid for zone " .. theZone.name, 30) -- intentional break here 
 		return nil, nil
 	end
 	

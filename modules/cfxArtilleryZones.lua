@@ -1,5 +1,5 @@
 cfxArtilleryZones = {}
-cfxArtilleryZones.version = "2.2.0" 
+cfxArtilleryZones.version = "2.2.1" 
 cfxArtilleryZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -29,6 +29,7 @@ cfxArtilleryZones.verbose = false
  2.1.0 - DML Flag Support 
 	   - code cleanup
  2.2.0 - DML Watchflag integration 
+ 2.2.1 - minor code clean-up
  
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -136,11 +137,7 @@ function cfxArtilleryZones.processArtilleryZone(aZone)
 	if cfxZones.hasProperty(aZone, "f?") then 
 		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "none")
 	end
-	--[[--
-	if cfxZones.hasProperty(aZone, "triggerFlag") then 
-		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "triggerFlag", "none")
-	end
-	--]]--
+
 	if cfxZones.hasProperty(aZone, "artillery?") then 
 		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty(aZone, "artillery?", "none")
 	end

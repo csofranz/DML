@@ -1,11 +1,16 @@
 cfxReconMode = {}
-cfxReconMode.version = "1.5.0"
+cfxReconMode.version = "2.0.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
 cfxReconMode.prioList = {} -- group names that are high prio and generate special event
 cfxReconMode.blackList = {} -- group names that are NEVER detected. Comma separated strings, e.g. {"Always Hidden", "Invisible Group"}
+cfxReconMode.dynamics = {} -- if a group name is dynamic
+cfxReconMode.zoneInfo = {} -- additional zone info 
 
+cfxReconMode.scoutZones = {} -- zones that define aircraft. used for late eval of players 
+cfxReconMode.allowedScouts = {} -- when not using autoscouts 
+cfxReconMode.blindScouts = {} -- to exclude aircraft from being scouts 
 cfxReconMode.removeWhenDestroyed = true 
 cfxReconMode.activeMarks = {} -- all marks and their groups, indexed by groupName 
 
@@ -48,6 +53,26 @@ VERSION HISTORY
  1.5.0 - removeWhenDestroyed()
 	   - autoRemove()
 	   - readConfigZone creates default config zone so we get correct defaulting 
+ 2.0.0 - DML integration prio+-->prio! detect+ --> detect! 
+         and method
+	   - changed access to prio and blacklist to hash
+	   - dynamic option for prio and black 
+	   - trigger zones for designating prio and blacklist 
+	   - reworked stringInList to also include dynamics 
+	   - Report in SALT format: size, action, loc, time.
+	   - Marks add size, action info
+	   - LatLon or MGRS
+	   - MGRS option in config 
+	   - filter onEvent for helo and aircraft 
+	   - allowedScouts and blind 
+	   - stronger scout filtering at startup 
+	   - better filtering on startup when autorecon and playeronly
+	   - player lazy late checking, zone saving 
+	   - correct checks when not autorecon 
+	   - ability to add special flags to recon prio group 
+	   - event guard in onEvent
+	   - <t> wildcard 
+	   - <lat>, <lon>, <mgrs> wildcards 
  
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -79,7 +104,9 @@ cfxReconMode.playerOnlyRecon = false -- only players can do recon
 cfxReconMode.reportNumbers = true -- also add unit count in report 
 cfxReconMode.prioFlag = nil 
 cfxReconMode.detectFlag = nil 
+cfxReconMode.method = "inc"
 cfxReconMode.applyMarks = true 
+cfxReconMode.mgrs = false 
 
 cfxReconMode.ups = 1 -- updates per second.
 cfxReconMode.scouts = {} -- units that are performing scouting.
@@ -111,37 +138,79 @@ function cfxReconMode.invokeCallbacks(reason, theSide, theScout, theGroup, theNa
 end
 
 -- add a priority/blackList group name to prio list 
-function cfxReconMode.addToPrioList(aGroup)
+function cfxReconMode.addToPrioList(aGroup, dynamic)
+	if not dynamic then dynamic = false end 
 	if not aGroup then return end 
 	if type(aGroup) == "table" and aGroup.getName then 
 		aGroup = aGroup:getName()
 	end
 	if type(aGroup) == "string" then 
-		table.insert(cfxReconMode.prioList, aGroup)
+--		table.insert(cfxReconMode.prioList, aGroup)
+		cfxReconMode.prioList[aGroup] = aGroup
+		cfxReconMode.dynamics[aGroup] = dynamic 
 	end
 end
 
-function cfxReconMode.addToBlackList(aGroup)
+function cfxReconMode.addToBlackList(aGroup, dynamic)
+	if not dynamic then dynamic = false end 
 	if not aGroup then return end 
 	if type(aGroup) == "table" and aGroup.getName then 
 		aGroup = aGroup:getName()
 	end
 	if type(aGroup) == "string" then 
-		table.insert(cfxReconMode.blackList, aGroup)
+		--table.insert(cfxReconMode.blackList, aGroup)
+		cfxReconMode.blackList[aGroup] = aGroup
+		cfxReconMode.dynamics[aGroup] = dynamic
 	end
 end
 
+function cfxReconMode.addToAllowedScoutList(aGroup, dynamic)
+	if not dynamic then dynamic = false end 
+	if not aGroup then return end 
+	if type(aGroup) == "table" and aGroup.getName then 
+		aGroup = aGroup:getName()
+	end
+	if type(aGroup) == "string" then 
+		cfxReconMode.allowedScouts[aGroup] = aGroup
+		cfxReconMode.dynamics[aGroup] = dynamic
+	end
+end
+
+function cfxReconMode.addToBlindScoutList(aGroup, dynamic)
+	if not dynamic then dynamic = false end 
+	if not aGroup then return end 
+	if type(aGroup) == "table" and aGroup.getName then 
+		aGroup = aGroup:getName()
+	end
+	if type(aGroup) == "string" then 
+		cfxReconMode.blindScouts[aGroup] = aGroup
+		cfxReconMode.dynamics[aGroup] = dynamic
+	end
+end
 
 function cfxReconMode.isStringInList(theString, theList)
-	if not theString then return false end 
-	if not theList then return false end 
-	if type(theString) == "string" then 
-		for idx,anItem in pairs(theList) do 
-			if anItem == theString then return true end
+	-- returns two values: inList, and original group name (if exist)
+	if not theString then return false, nil end 
+	if type(theString) ~= "string" then return false, nil end
+	if not theList then return false, nil end 
+	
+	-- first, try a direct look-up. if this produces a hit
+	-- we directly return true 
+	if theList[theString] then return true, theString end 
+	
+	-- now try the more involved retrieval with string starts with 
+	for idx, aName in pairs(theList) do 
+		if dcsCommon.stringStartsWith(theString, aName) then 
+			-- they start the same. are dynamics allowed?
+			if cfxReconMode.dynamics[aName] then 
+				return true, aName 
+			end
 		end
 	end
-	return false
+	
+	return false, nil
 end
+
 
 -- addScout directly adds a scout unit. Use from external 
 -- to manually add a unit (e.g. via GUI when autoscout isExist
@@ -205,7 +274,7 @@ end
 
 function cfxReconMode.removeScout(theUnit)
 	if not theUnit then 
-		trigger.action.outText("+++cfxRecon: WARNING - nil Unit on remove", 30)
+		trigger.action.outText("+++rcn: WARNING - nil Unit on remove", 30)
 		return 
 	end
 	
@@ -265,7 +334,8 @@ function cfxReconMode.placeMarkForUnit(location, theSide, theGroup)
 	local theID = cfxReconMode.uuid()
 	local theDesc = "Contact: "..theGroup:getName()
 	if cfxReconMode.reportNumbers then 
-		theDesc = theDesc .. " (" .. theGroup:getSize() .. " units)"
+--		theDesc = theDesc .. " (" .. theGroup:getSize() .. " units)"
+		theDesc = theDesc .. " - " .. cfxReconMode.getSit(theGroup) .. ", " .. cfxReconMode.getAction(theGroup) .. "."
 	end
 	trigger.action.markToCoalition(
 					theID, 
@@ -296,6 +366,121 @@ function cfxReconMode.removeMarkForArgs(args)
 	cfxReconMode.detectedGroups[theName] = nil -- some housekeeping. 
 end 
 
+function cfxReconMode.getSit(theGroup)
+	local msg = ""
+		-- analyse the group we just discovered. We know it's a ground troop, so simply differentiate between vehicles and infantry 
+		local theUnits = theGroup:getUnits()
+		local numInf = 0 
+		local numVehicles = 0 
+		for idx, aUnit in pairs(theUnits) do 
+			if dcsCommon.unitIsInfantry(aUnit) then 
+				numInf = numInf + 1
+			else 
+				numVehicles = numVehicles + 1
+			end 
+		end
+		if numInf > 0 and numVehicles > 0 then 
+			-- mixed infantry and vehicles 
+			msg = numInf .. " infantry and " .. numVehicles .. " vehicles" 
+		elseif numInf > 0 then
+			-- only infantry
+			msg = numInf .. " infantry"
+		else 
+			-- only vehicles
+			msg = numVehicles .. " vehicles"
+		end 
+	return msg
+end
+
+function cfxReconMode.getAction(theGroup) 
+	local msg = ""
+	-- simply get the first unit and get velocity vector. 
+	-- if it's smaller than 1 m/s (= 3.6 kmh), it's "Guarding", if it's faster, it's 
+	-- moving with direction
+	local theUnit = theGroup:getUnit(1)
+	local vvel = theUnit:getVelocity()
+	local vel = dcsCommon.vMag(vvel)
+	if vel < 1 then 
+		msg = "apparently guarding"
+	else
+		local speed = ""
+		if vel < 3 then speed = "slowly"
+		elseif vel < 6 then speed = "deliberately"
+		else speed = "briskly" end 
+		local heading = dcsCommon.getUnitHeading(theUnit) -- in rad 
+		msg = speed .. " moving " .. dcsCommon.bearing2compass(heading)
+	end
+	return msg
+end
+
+function cfxReconMode.getLocation(theGroup)
+	local msg = ""
+	local theUnit = theGroup:getUnit(1)
+	local currPoint = theUnit:getPoint()
+	if cfxReconMode.mgrs then 
+		local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
+		msg = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+	else 
+		local lat, lon, alt = coord.LOtoLL(currPoint)
+		lat, lon = dcsCommon.latLon2Text(lat, lon)
+		msg = "Lat " .. lat .. " Lon " .. lon
+	end
+	return msg
+end
+
+function cfxReconMode.getTimeData()
+	local msg = ""
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	msg = dcsCommon.processHMS("<:h>:<:m>:<:s>", absSecs)
+	return "at " .. msg
+end
+
+function cfxReconMode.generateSALT(theScout, theGroup)
+	local msg = theScout:getName() .. " reports new ground contact " .. theGroup:getName() .. ":\n"
+	-- SALT: S = Situation or number of units A = action they are doing L = Location T = Time 
+	msg = msg .. cfxReconMode.getSit(theGroup) .. ", "-- S 
+	msg = msg .. cfxReconMode.getAction(theGroup) .. ", " -- A 
+	msg = msg .. cfxReconMode.getLocation(theGroup) .. ", " -- L 
+	msg = msg .. cfxReconMode.getTimeData() -- T
+	
+	return msg
+end
+
+function cfxReconMode.processZoneMessage(inMsg, theZone) 
+	if not inMsg then return "<nil inMsg>" end
+	local formerType = type(inMsg)
+	if formerType ~= "string" then inMsg = tostring(inMsg) end  
+	if not inMsg then inMsg = "<inMsg is incompatible type " .. formerType .. ">" end 
+	local outMsg = ""
+	-- replace line feeds 
+	outMsg = inMsg:gsub("<n>", "\n")
+	if theZone then 
+		outMsg = outMsg:gsub("<z>", theZone.name)
+	end
+	-- replace <t> with current mission time HMS
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	local timeString  = dcsCommon.processHMS("<:h>:<:m>:<:s>", absSecs)
+	outMsg = outMsg:gsub("<t>", timeString)
+	
+	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
+	-- and <mgrs> with mgrs coords of zone point 
+	local currPoint = cfxZones.getPoint(theZone)
+	local lat, lon, alt = coord.LOtoLL(currPoint)
+	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	outMsg = outMsg:gsub("<lat>", lat)
+	outMsg = outMsg:gsub("<lon>", lon)
+	currPoint = cfxZones.getPoint(theZone)
+	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
+	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+	outMsg = outMsg:gsub("<mgrs>", mgrs)
+	return outMsg
+end
 
 function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	-- put a mark on the map 
@@ -312,26 +497,51 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	
 	-- say something
 	if cfxReconMode.announcer then 
-		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
-		trigger.action.outText("+++recon: announced for side " .. mySide, 30)
+		local msg = cfxReconMode.generateSALT(theScout, theGroup)
+		trigger.action.outTextForCoalition(mySide, msg, 30)
+--		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
+		if cfxReconMode.verbose then 
+			trigger.action.outText("+++rcn: announced for side " .. mySide, 30)
+		end 
 		-- play a sound 
 		trigger.action.outSoundForCoalition(mySide, cfxReconMode.reconSound)
 	else 
-		--trigger.action.outText("+++recon: announcer off", 30)
 	end 
 	
 	-- see if it was a prio target 
-	if cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList) then 
-		if cfxReconMode.announcer then 
-			trigger.action.outTextForCoalition(mySide, "Priority target confirmed",	30)
+	local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
+	if inList then 
+--		if cfxReconMode.announcer then 
+		if cfxReconMode.verbose then 
+			trigger.action.outText("+++rcn: Priority target spotted",	30)
 		end 
 		-- invoke callbacks
-		cfxReconMode.invokeCallbacks("priotity", mySide, theScout, theGroup, theGroup:getName())
+		cfxReconMode.invokeCallbacks("priority", mySide, theScout, theGroup, theGroup:getName())
 		
 		-- increase prio flag 
 		if cfxReconMode.prioFlag then 
-			local currVal = trigger.misc.getUserFlag(cfxReconMode.prioFlag)
-			trigger.action.setUserFlag(cfxReconMode.prioFlag, currVal + 1)
+			cfxZones.pollFlag(cfxReconMode.prioFlag, cfxReconMode.method, cfxReconMode.theZone)
+		end
+		
+		-- see if we were passed additional info in zInfo 
+		if gName and cfxReconMode.zoneInfo[gName] then 
+			local zInfo = cfxReconMode.zoneInfo[gName]
+			if zInfo.prioMessage then 
+				-- prio message displays even when announcer is off
+				local msg = zInfo.prioMessage
+				msg = cfxReconMode.processZoneMessage(msg, zInfo.theZone) 
+				trigger.action.outTextForCoalition(mySide, msg, 30)
+				if cfxReconMode.verbose or zInfo.theZone.verbose then 
+					trigger.action.outText("+++rcn: prio message sent  for prio target zone <" .. zInfo.theZone.name .. ">",30)
+				end
+			end
+			
+			if zInfo.theFlag then 
+				cfxZones.pollFlag(zInfo.theFlag, cfxReconMode.method, zInfo.theZone)
+				if cfxReconMode.verbose or zInfo.theZone.verbose then 
+					trigger.action.outText("+++rcn: banging <" .. zInfo.theFlag .. "> for prio target zone <" .. zInfo.theZone.name .. ">",30)
+				end
+			end 
 		end
 	else 
 		-- invoke callbacks
@@ -339,8 +549,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	
 		-- increase normal flag 
 		if cfxReconMode.detectFlag then 
-			local currVal = trigger.misc.getUserFlag(cfxReconMode.detectFlag)
-			trigger.action.setUserFlag(cfxReconMode.detectFlag, currVal + 1)
+			cfxZones.pollFlag(cfxReconMode.detectFlag, cfxReconMode.method, cfxReconMode.theZone)
 		end
 	end
 end
@@ -371,7 +580,8 @@ function cfxReconMode.performReconForUnit(theScout)
 				local groupName = theGroup:getName()
 				if cfxReconMode.detectedGroups[groupName] == nil then 
 					-- only now check against blackList
-					if not cfxReconMode.isStringInList(groupName, cfxReconMode.blackList) then 
+					local inList, gName = cfxReconMode.isStringInList(groupName, cfxReconMode.blackList) 
+					if not inList then 
 						-- visible and not yet seen 
 						-- perhaps add some percent chance now 
 						-- remember that we know this group 
@@ -464,11 +674,62 @@ function cfxReconMode.autoRemove()
 	end
 end
 
+-- late eval player 
+function cfxReconMode.lateEvalPlayerUnit(theUnit)
+	-- check if a player is inside one of the scout zones 
+	-- first: quick check if the player is already in a list 
+	local aGroup = theUnit:getGroup() 
+	local gName = aGroup:getName()
+	if cfxReconMode.allowedScouts[gName] then return end 
+	if cfxReconMode.blindScouts[gName] then return end 
+
+	-- get location 
+	local p = theUnit:getPoint()
+	
+	-- iterate all scoutZones
+	for idx, theZone in pairs (cfxReconMode.scoutZones) do 
+		local isScout = theZone.isScout
+		local dynamic = theZone.dynamic
+		local inZone = cfxZones.pointInZone(p, theZone)
+		if inZone then 
+			if isScout then 
+				cfxReconMode.addToAllowedScoutList(aGroup, dynamic)
+				if cfxReconMode.verbose or theZone.verbose then 
+					if dynamic then 
+						trigger.action.outText("+++rcn: added LATE DYNAMIC PLAYER" .. gName .. " to allowed scouts", 30)
+					else 
+						trigger.action.outText("+++rcn: added LATE PLAYER " .. gName .. " to allowed scouts", 30) 
+					end
+				end 
+			else 
+				cfxReconMode.addToBlindScoutList(aGroup, dynamic)
+				if cfxReconMode.verbose or theZone.verbose then 
+					if dynamic then 
+						trigger.action.outText("+++rcn: added LATE DYNAMIC PLAYER" .. gName .. " to BLIND scouts list", 30)
+					else 
+						trigger.action.outText("+++rcn: added LATE PLAYER " .. gName .. " to BLIND scouts list", 30)
+					end
+				end
+			end
+			return -- we stop after first found 
+		end
+	end
+end
+
 -- event handler 
 function cfxReconMode:onEvent(event) 
 	if not event then return end 
 	if not event.initiator then return end 
+	if not (event.id == 15 or event.id == 3) then return end 
+	
 	local theUnit = event.initiator 
+	if not theUnit:isExist() then return end 
+	local theGroup = theUnit:getGroup() 
+--	trigger.action.outText("+++rcn-ENTER onEvent: " .. event.id .. " for <" .. theUnit:getName() .. ">", 30)
+	if not theGroup then return end 
+	local gCat = theGroup:getCategory()
+	-- only continue if cat = 0 (aircraft) or 1 (helo)
+	if gCat > 1 then return end 
 	
 	-- we simply add scouts as they are garbage-collected 
 	-- every so often when they do not exist 
@@ -481,26 +742,71 @@ function cfxReconMode:onEvent(event)
 		-- scout when they are on that side. in that case
 		-- you must add manually
 		local theSide = theUnit:getCoalition()
-		if theSide == 0 and not cfxReconMode.greyScouts then 
-			return -- grey scouts are not allowed
-		end
-		if theSide == 1 and not cfxReconMode.redScouts then 
-			return -- grey scouts are not allowed
-		end
-		if theSide == 2 and not cfxReconMode.blueScouts then 
-			return -- grey scouts are not allowed
-		end
 		
-		if cfxReconMode.playerOnlyRecon then 
-			if not theUnit:getPlayerName() then 
-				return -- only players can do recon. this unit is AI
+		local isPlayer = theUnit:getPlayerName()
+		if isPlayer then  
+			-- since players wake up late, we lazy-eval their group
+			-- and add it to the blind/scout lists
+			cfxReconMode.lateEvalPlayerUnit(theUnit)
+			if cfxReconMode.verbose then 
+				trigger.action.outText("+++rcn: late player check complete for <" .. theUnit:getName() .. ">", 30)
+			end
+		else 
+			isPlayer = false -- safer than sorry
+		end 
+		
+		if cfxReconMode.autoRecon then 
+			if theSide == 0 and not cfxReconMode.greyScouts then 
+				return -- grey scouts are not allowed
+			end
+			if theSide == 1 and not cfxReconMode.redScouts then 
+				return -- grey scouts are not allowed
+			end
+			if theSide == 2 and not cfxReconMode.blueScouts then 
+				return -- grey scouts are not allowed
+			end
+		
+			if cfxReconMode.playerOnlyRecon then 
+				if not isPlayer then 
+					if cfxReconMode.verbose then 
+						trigger.action.outText("+++rcn: <" .. theUnit:getName() .. "> filtered: no player unit", 30)
+					end 
+					return -- only players can do recon. this unit is AI
+				end
+			end
+		end 
+		
+		-- check if cfxReconMode.autoRecon is enabled
+		-- otherwise, abort the aircraft is not in 
+		-- scourlist 
+		local gName = theGroup:getName()
+		if not cfxReconMode.autoRecon then 
+			-- no auto-recon. plane must be in scouts list 
+			local inList, ignored = cfxReconMode.isStringInList(gName, cfxReconMode.allowedScouts)
+			if not inList then 
+				if cfxReconMode.verbose then 
+					trigger.action.outText("+++rcn: <" .. theUnit:getName() .. "> filtered: not in scout list", 30)
+				end
+				return 
 			end
 		end
+		
+		-- check if aircraft is in blindlist 
+		-- abort if so 
+		local inList, ignored = cfxReconMode.isStringInList(gName, cfxReconMode.blindScouts)
+		if inList then 
+			if cfxReconMode.verbose then 
+				trigger.action.outText("+++rcn: <" .. theUnit:getName() .. "> filtered: unit cannot scout", 30)
+			end
+			return 
+		end
+		
 		if cfxReconMode.verbose then 
 			trigger.action.outText("+++rcn: event " .. event.id .. " for unit " .. theUnit:getName(), 30)
 		end 
 		cfxReconMode.addScout(theUnit)
 	end
+--	trigger.action.outText("+++rcn-onEvent: " .. event.id .. " for <" .. theUnit:getName() .. ">", 30)
 end
 
 --
@@ -512,35 +818,73 @@ function cfxReconMode.processScoutGroups(theGroups)
 		-- we are very early in the mission, only few groups really 
 		-- exist now, the rest of the units come in with 15 event
 		if aGroup:isExist() then 
-			local allUnits = Group.getUnits(aGroup)
-			for idy, aUnit in pairs (allUnits) do 
-				if aUnit:isExist() then 
-					cfxReconMode.addScout(aUnit)
-					if cfxReconMode.verbose then
-						trigger.action.outText("+++rcn: added unit " ..aUnit:getName() .. " to pool at startup", 30)
-					end 
-				end
+			-- see if we want to add these aircraft to the 
+			-- active scout list 
+			
+			local gName = aGroup:getName()
+			local isBlind, ignored = cfxReconMode.isStringInList(gName, cfxReconMode.blindScouts)
+			local isScout, ignored = cfxReconMode.isStringInList(gName, cfxReconMode.allowedScouts)
+			
+			local doAdd = cfxReconMode.autoRecon
+			if cfxReconMode.autoRecon then 
+				local theSide = aGroup:getCoalition()
+				if theSide == 0 and not cfxReconMode.greyScouts then
+					doAdd = false 
+				elseif theSide == 1 and not cfxReconMode.redScouts then 
+					doAdd = false 
+				elseif theSide == 2 and not cfxReconMode.blueScouts then 
+					doAdd = false 
+				end 
 			end
+			
+			if isBlind then doAdd = false end 
+			if isScout then doAdd = true end -- overrides all 
+			
+			if doAdd then 
+				local allUnits = Group.getUnits(aGroup)
+				for idy, aUnit in pairs (allUnits) do 
+					if aUnit:isExist() then 
+						if cfxReconMode.autoRecon and cfxReconMode.playerOnlyRecon and (aUnit:getPlayerName() == nil)
+						then
+							if cfxReconMode.verbose then
+								trigger.action.outText("+++rcn: skipped unit " ..aUnit:getName() .. " because not player unit", 30)
+							end
+						else
+							cfxReconMode.addScout(aUnit)
+							if cfxReconMode.verbose then
+								trigger.action.outText("+++rcn: added unit " ..aUnit:getName() .. " to pool at startup", 30)
+							end
+						end
+					end
+				end
+			else 
+				if cfxReconMode.verbose then 
+					trigger.action.outText("+++rcn: filtered group " .. gName .. " from being entered into scout pool at startup", 30)
+				end
+			end 
 		end
 	end
 end
 
 function cfxReconMode.initScouts()
 	-- get all groups of aircraft. Unrolled loop 0..2 
+	-- added helicopters, removed check for grey/red/bluescouts,
+	-- as that happens in processScoutGroups 
 	local theAirGroups = {}  
-	if cfxReconMode.greyScouts then
-		theAirGroups = coalition.getGroups(0, 0) -- 0 = aircraft
-		cfxReconMode.processScoutGroups(theAirGroups) 
-	end
-	if cfxReconMode.redScouts then
-		theAirGroups = coalition.getGroups(1, 0) -- 1 = red, 0 = aircraft
-		cfxReconMode.processScoutGroups(theAirGroups) 
-	end
-	
-	if cfxReconMode.blueScouts then
-		theAirGroups = coalition.getGroups(2, 0) -- 2 = blue, 0 = aircraft
-		cfxReconMode.processScoutGroups(theAirGroups) 
-	end
+	theAirGroups = coalition.getGroups(0, 0) -- 0 = aircraft
+	cfxReconMode.processScoutGroups(theAirGroups)
+	theAirGroups = coalition.getGroups(0, 1) -- 1 = helicopter
+	cfxReconMode.processScoutGroups(theAirGroups)
+
+	theAirGroups = coalition.getGroups(1, 0) -- 0 = aircraft
+	cfxReconMode.processScoutGroups(theAirGroups)
+	theAirGroups = coalition.getGroups(1, 1) -- 1 = helicopter
+	cfxReconMode.processScoutGroups(theAirGroups)
+
+	theAirGroups = coalition.getGroups(2, 0) -- 0 = aircraft
+	cfxReconMode.processScoutGroups(theAirGroups)
+	theAirGroups = coalition.getGroups(2, 1) -- 1 = helicopter
+	cfxReconMode.processScoutGroups(theAirGroups)
 end
 
 --
@@ -575,12 +919,20 @@ function cfxReconMode.readConfigZone()
 	
 	if cfxZones.hasProperty(theZone, "prio+") then 
 		cfxReconMode.prioFlag = cfxZones.getStringFromZoneProperty(theZone, "prio+", "none")
+	elseif cfxZones.hasProperty(theZone, "prio!") then 
+		cfxReconMode.prioFlag = cfxZones.getStringFromZoneProperty(theZone, "prio!", "*<none>")
 	end
 	
 	if cfxZones.hasProperty(theZone, "detect+") then 
 		cfxReconMode.detectFlag = cfxZones.getStringFromZoneProperty(theZone, "detect+", "none")
+	elseif cfxZones.hasProperty(theZone, "detect!") then 
+		cfxReconMode.detectFlag = cfxZones.getStringFromZoneProperty(theZone, "detect!", "*<none>")
 	end
 	
+	cfxReconMode.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	if cfxZones.hasProperty(theZone, "reconMethod") then 
+		cfxReconMode.method = cfxZones.getStringFromZoneProperty(theZone, "reconMethod", "inc")
+	end
 	
 	cfxReconMode.applyMarks = cfxZones.getBoolFromZoneProperty(theZone, "applyMarks", true)
 	cfxReconMode.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
@@ -591,6 +943,101 @@ function cfxReconMode.readConfigZone()
 	
 	cfxReconMode.removeWhenDestroyed = cfxZones.getBoolFromZoneProperty(theZone, "autoRemove", true)
 	
+	cfxReconMode.mgrs = cfxZones.getBoolFromZoneProperty(theZone, "mgrs", false)
+	
+	cfxReconMode.theZone = theZone -- save this zone 
+end
+
+--
+-- read blackList and prio list groups
+--
+
+
+function cfxReconMode.processReconZone(theZone) 
+	local theList = cfxZones.getStringFromZoneProperty(theZone, "recon", "prio")
+	theList = string.upper(theList)
+	local isBlack = dcsCommon.stringStartsWith(theList, "BLACK")
+
+	local zInfo = {}
+	zInfo.theZone = theZone
+	zInfo.isBlack = isBlack	
+	if cfxZones.hasProperty(theZone, "spotted!") then 
+		zInfo.theFlag = cfxZones.getStringFromZoneProperty(theZone, "spotted!", "*<none>")
+	end
+	
+	if cfxZones.hasProperty(theZone, "prioMessage") then 
+		zInfo.prioMessage = cfxZones.getStringFromZoneProperty(theZone, "prioMessage", "<none>")
+	end
+	
+	local dynamic = cfxZones.getBoolFromZoneProperty(theZone, "dynamic", false)
+	zInfo.dynamic = dynamic 
+	local categ = 2 -- ground troops only
+	local allGroups = cfxZones.allGroupsInZone(theZone, categ)
+	for idx, aGroup in pairs(allGroups) do 
+		local gName = aGroup:getName()
+		cfxReconMode.zoneInfo[gName] = zInfo 
+		if isBlack then 
+			cfxReconMode.addToBlackList(aGroup, dynamic)
+			if cfxReconMode.verbose or theZone.verbose then 
+				if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to blacklist", 30)
+				else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to blacklist", 30) 
+				end
+			end 
+		else 
+			cfxReconMode.addToPrioList(aGroup, dynamic)
+			if cfxReconMode.verbose or theZone.verbose then 
+				if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to priority target list", 30)
+				else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to priority target list", 30)
+				end
+			end
+		end
+	end
+end
+
+function cfxReconMode.processScoutZone(theZone) 
+	local isScout = cfxZones.getBoolFromZoneProperty(theZone, "scout", true)
+	local dynamic = cfxZones.getBoolFromZoneProperty(theZone, "dynamic")
+	theZone.dynamic = dynamic
+	theZone.isScout = isScout
+	
+	local categ = 0 -- aircraft
+	local allFixed = cfxZones.allGroupsInZone(theZone, categ)
+	local categ = 1 -- helos
+	local allRotor = cfxZones.allGroupsInZone(theZone, categ)
+	local allGroups = dcsCommon.combineTables(allFixed, allRotor)
+	for idx, aGroup in pairs(allGroups) do 
+		if isScout then 
+			cfxReconMode.addToAllowedScoutList(aGroup, dynamic)
+			if cfxReconMode.verbose or theZone.verbose then 
+				if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to allowed scouts", 30)
+				else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to allowed scouts", 30) 
+				end
+			end 
+		else 
+			cfxReconMode.addToBlindScoutList(aGroup, dynamic)
+			if cfxReconMode.verbose or theZone.verbose then 
+				if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to BLIND scouts list", 30)
+				else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to BLIND scouts list", 30)
+				end
+			end
+		end
+	end
+	
+	table.insert(cfxReconMode.scoutZones, theZone)
+end
+
+function cfxReconMode.readReconGroups()
+	local attrZones = cfxZones.getZonesWithAttributeNamed("recon")
+	for k, aZone in pairs(attrZones) do 
+		cfxReconMode.processReconZone(aZone)
+	end
+end
+
+function cfxReconMode.readScoutGroups()
+	local attrZones = cfxZones.getZonesWithAttributeNamed("scout")
+	for k, aZone in pairs(attrZones) do 
+		cfxReconMode.processScoutZone(aZone)
+	end
 end
 
 --
@@ -606,6 +1053,12 @@ function cfxReconMode.start()
 	-- read config 
 	cfxReconMode.readConfigZone()
 	
+	-- gather prio and blacklist groups 
+	cfxReconMode.readReconGroups() 
+	
+	-- gather allowed and forbidden scouts 
+	cfxReconMode.readScoutGroups()
+	
 	-- gather exiting planes 
 	cfxReconMode.initScouts()
 	
@@ -618,7 +1071,7 @@ function cfxReconMode.start()
 		cfxReconMode.autoRemove()
 	end
 	
-	if cfxReconMode.autoRecon then 
+	if true or cfxReconMode.autoRecon then 
 		-- install own event handler to detect 
 		-- when a unit takes off and add it to scout
 		-- roster 
@@ -651,8 +1104,9 @@ ideas:
 - renew lease. when already sighted, simply renew lease, maybe update location.
 - update marks and renew lease 
 TODO: red+ and blue+ - flags to increase when a plane of the other side is detected
-
+TODO: recon: scout and blind for aircraft in group to add / remove scouts, maybe use scout keyword 
  
+allow special bangs per priority group 
 --]]--
 
 

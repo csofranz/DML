@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.4"
+dcsCommon.version = "2.6.5"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -74,6 +74,9 @@ dcsCommon.version = "2.6.4"
  2.6.2 - new combineTables()
  2.6.3 - new tacan2freq()
  2.6.4 - new processHMS()
+ 2.6.5 - new bearing2compass()
+       - new bearingdegrees2compass()
+	   - new latLon2Text() - based on mist 
 	   
 --]]--
 
@@ -519,6 +522,25 @@ dcsCommon.version = "2.6.4"
 		if not A then return "***error:A***" end
 		if not B then return "***error:B***" end
 		local bearing = dcsCommon.bearingInDegreesFromAtoB(B, A) -- returns 0..360
+		if bearing < 23 then return "North" end 
+		if bearing < 68 then return "NE" end
+		if bearing < 112 then return "East" end 
+		if bearing < 158 then return "SE" end 
+		if bearing < 202 then return "South" end 
+		if bearing < 248 then return "SW" end 
+		if bearing < 292 then return "West" end
+		if bearing < 338 then return "NW" end 
+		return "North"
+	end
+	
+	function dcsCommon.bearing2compass(inrad)
+		local bearing = math.floor(inrad / math.pi * 180)
+		if bearing < 0 then bearing = bearing + 360 end
+		if bearing > 360 then bearing = bearing - 360 end
+		return dcsCommon.bearingdegrees2compass(bearing)
+	end
+	
+	function dcsCommon.bearingdegrees2compass(bearing)
 		if bearing < 23 then return "North" end 
 		if bearing < 68 then return "NE" end
 		if bearing < 112 then return "East" end 
@@ -2212,7 +2234,7 @@ function dcsCommon.getUnitHeading(theUnit)
 	local pos = theUnit:getPosition() -- returns three vectors, p is location
 
 	local heading = math.atan2(pos.x.z, pos.x.x)
-	-- make sure positive only, add 260 degrees
+	-- make sure positive only, add 360 degrees
 	if heading < 0 then
 		heading = heading + 2 * math.pi	-- put heading in range of 0 to 2*pi
 	end
@@ -2253,6 +2275,50 @@ function dcsCommon.coalition2county(inCoalition)
 	trigger.action.outText("+++dcsC: coalition2county in (" .. inCoalition .. ") converts to UN (82)!", 30)
 	return 82 -- UN 
 	
+end
+
+function dcsCommon.latLon2Text(lat, lon)
+	-- inspired by mist, thanks Grimes!
+	-- returns two strings: lat and lon 
+	
+	-- determine hemispheres by sign
+	local latHemi, lonHemi
+	if lat > 0 then latHemi = 'N' else latHemi = 'S' end
+	if lon > 0 then lonHemi = 'E' else lonHemi = 'W' end
+
+	-- remove sign since we have hemi
+	lat = math.abs(lat)
+	lon = math.abs(lon)
+
+	-- calc deg / mins 
+	local latDeg = math.floor(lat)
+	local latMin = (lat - latDeg) * 60
+	local lonDeg = math.floor(lon)
+	local lonMin = (lon - lonDeg) * 60
+
+	-- calc seconds 
+	local rawLatMin = latMin
+	latMin = math.floor(latMin)
+	local latSec = (rawLatMin - latMin) * 60
+	local rawLonMin = lonMin
+	lonMin = math.floor(lonMin)
+	local lonSec = (rawLonMin - lonMin) * 60
+
+	-- correct for rounding errors 
+	if latSec >= 60 then
+		latSec = latSec - 60
+		latMin = latMin + 1
+	end
+	if lonSec >= 60 then
+		lonSec = lonSec - 60
+		lonMin = lonMin + 1
+	end
+
+	-- prepare string output 
+	local secFrmtStr = '%06.3f'
+	local lat = string.format('%02d', latDeg) .. '°' .. string.format('%02d', latMin) .. "'" .. string.format(secFrmtStr, latSec) .. '"' .. latHemi
+	local lon = string.format('%02d', lonDeg) .. '°' .. string.format('%02d', lonMin) .. "'" .. string.format(secFrmtStr, lonSec) .. '"' .. lonHemi
+	return lat, lon  
 end
 
 --

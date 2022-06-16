@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.3.1"
+messenger.version = "1.3.2"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -22,7 +22,9 @@ messenger.messengers = {}
 	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value
 	1.3.0 - messenger? saves messageOut? attribute 
 	1.3.1 - message now can interpret value as time with <h> <m> <s> <:h> <:m> <:s>
-	
+	1.3.2 - message interprets <t> as time in HH:MM:SS of current time 
+		  - can interpret <lat>, <lon>, <mgrs>
+		  - zone-local verbosity
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -54,6 +56,24 @@ function messenger.preProcMessage(inMsg, theZone)
 	if theZone then 
 		outMsg = outMsg:gsub("<z>", theZone.name)
 	end
+	-- replace <t> with current mission time HMS
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	local timeString  = dcsCommon.processHMS("<:h>:<:m>:<:s>", absSecs)
+	outMsg = outMsg:gsub("<t>", timeString)
+	
+	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
+	-- and <mgrs> with mgrs coords of zone point 
+	local currPoint = cfxZones.getPoint(theZone)
+	local lat, lon, alt = coord.LOtoLL(currPoint)
+	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	outMsg = outMsg:gsub("<lat>", lat)
+	outMsg = outMsg:gsub("<lon>", lon)
+	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
+	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+	outMsg = outMsg:gsub("<mgrs>", mgrs)
 	return outMsg
 end 
 
@@ -133,7 +153,7 @@ function messenger.createMessengerWithZone(theZone)
 		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
 	end
 	
-	if messenger.verbose then 
+	if messenger.verbose or theZone.verbose then 
 		trigger.action.outText("+++Msg: new zone <".. theZone.name .."> will say <".. theZone.message .. ">", 30)
 	end
 end
@@ -167,7 +187,7 @@ end
 function messenger.isTriggered(theZone)
 	-- this module has triggered 
 	if theZone.messageOff then 
-		if messenger.verbose then 
+		if messenger.verbose or theZone.verbose then 
 			trigger.action.outFlag("msg: message for <".. theZone.name .."> is OFF",30)
 		end
 		return 
@@ -175,7 +195,7 @@ function messenger.isTriggered(theZone)
 	
 	local fileName = "l10n/DEFAULT/" .. theZone.soundFile
 	local msg = messenger.getMessage(theZone)
-	if messenger.verbose then 
+	if messenger.verbose or theZone.verbose then 
 		trigger.action.outText("+++Msg: <".. theZone.name .."> will say <".. msg .. ">", 30)
 	end
 	
@@ -200,7 +220,7 @@ function messenger.update()
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
 		if cfxZones.testZoneFlag(aZone, 				aZone.triggerMessagerFlag, aZone.msgTriggerMethod, 			"lastMessageTriggerValue") then 
-			if messenger.verbose then 
+			if messenger.verbose or aZone.verbose then 
 					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end
 			messenger.isTriggered(aZone)
@@ -209,14 +229,14 @@ function messenger.update()
 		-- old trigger code 		
 		if cfxZones.testZoneFlag(aZone, aZone.messageOffFlag, aZone.msgTriggerMethod, "lastMessageOff") then 
 			aZone.messageOff = true
-			if messenger.verbose then 
+			if messenger.verbose or aZone.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
 			end 
 		end
 		
 		if cfxZones.testZoneFlag(aZone, 				aZone.messageOnFlag, aZone.msgTriggerMethod, "lastMessageOn") then 
 			aZone.messageOff = false
-			if messenger.verbose then 
+			if messenger.verbose or aZone.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
 			end
 		end

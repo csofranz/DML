@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "1.0.0"
+radioMenu.version = "1.0.1"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -11,6 +11,7 @@ radioMenu.menus = {}
 --[[--
 	Version History 
 	1.0.0 Initial version 
+	1.0.1 spelling corrections
 	
 --]]--
 function radioMenu.addRadioMenu(theZone)
@@ -181,7 +182,7 @@ function radioMenu.doMenuX(args)
 	
 	cfxZones.pollFlag(theFlag, theZone.radioMethod, theZone)
 	if theZone.verbose or radioMenu.verbose then 
-		trigger.action.outText("+++menu: banging D! with <" .. theZone.radioMethod .. "> on <" .. theFlag .. "> for " .. theZone.name, 30)
+		trigger.action.outText("+++menu: banging with <" .. theZone.radioMethod .. "> on <" .. theFlag .. "> for " .. theZone.name, 30)
 	end
 
 end
