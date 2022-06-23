@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "3.0.0"
+guardianAngel.version = "3.0.1"
 guardianAngel.ups = 10
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
 guardianAngel.intervention = true -- remove missiles just before hitting
@@ -53,6 +53,9 @@ guardianAngel.requiredLibs = {
 		   - hardened missile disappear code 
 		   - all missiles are now tracked regardless whom they aim for 
 		   - removed item.wp
+	 3.0.1 - corrected error on collateral (missing delay)
+	       - Supporst cloned units 
+		   - removed legacy code 
 
 
 This script detects missiles launched against protected aircraft an 
@@ -135,7 +138,6 @@ function guardianAngel.createQItem(theWeapon, theTarget, threat)
 
 	local theItem = {}
 	theItem.theWeapon = theWeapon -- weapon that we are tracking 
-	--theItem.wP = theWeapon:getPoint() -- save location
 	theItem.weaponName = theWeapon:getName()
 	theItem.theTarget = theTarget
 	theItem.tGroup = theTarget:getGroup()
@@ -143,10 +145,8 @@ function guardianAngel.createQItem(theWeapon, theTarget, threat)
 	
 	theItem.targetName = theTarget:getName()
 	theItem.launchTimeStamp = timer.getTime()
-	--theItem.lastCheckTimeStamp = -1000
 	theItem.lastDistance = math.huge 
 	theItem.detected = false 
-	--theItem.lostTrack = false -- so we can detect sneakies!
 	theItem.missed = false -- just keep watching for re-ack
 	theItem.threat = threat 
 	theItem.lastDesc = "(new)"
@@ -162,7 +162,6 @@ function guardianAngel.retargetItem(theItem, theTarget, threat)
 		theItem.target = nil 
 		theItem.targetName = "(substitute)"
 		theItem.lastDistance = math.huge 
-		-- theItem.lostTrack = false
 		theItem.missed = false
 		theItem.lastDesc = "(retarget)"
 		return 
@@ -211,24 +210,6 @@ function guardianAngel.calcSafeExplosionPoint(wpn, pln, dist)
 	return newPoint
 end
 
---[[--
-function guardianAngel.bubbleCheck(wPos, w)
-	if true then return false end 
-	for idx, aProtectee in pairs (guardianAngel.unitsToWatchOver) do 
-		local uP = aProtectee:getPoint()
-		local d = math.floor(dcsCommon.dist(wPos, uP))
-		if d < guardianAngel.minMissileDist * 2 then 
-			trigger.action.outText("+++gA: gazing at w=" .. w:getName() .. " APR:" .. aProtectee:getName() .. ", d=" .. d .. ", cutoff=" .. guardianAngel.minMissileDist, 30)
-			if w:getTarget() then 
-				trigger.action.outText("+++gA: w is targeting " .. w:getTarget():getName(), 30)
-			else 
-				trigger.action.outText("+++gA: w is NOT targeting anything")
-			end
-		end
-	end
-	return false 
-end
---]]--
 
 function guardianAngel.monitorItem(theItem)
 	local w = theItem.theWeapon
@@ -388,63 +369,8 @@ function guardianAngel.monitorItem(theItem)
 			return false -- remove from list 
 		end
 	else 
-		--[[--
-		if not theItem.lostTrack then 
-			desc = desc .. "Missile LOST TRACK"
-			
-			if guardianAngel.announcer then
-				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
-				else 
-					trigger.action.outText(desc, 30) 
-				end			 
-			end
-			guardianAngel.invokeCallbacks("trackloss", theItem.targetName, theItem.weaponName)
-			theItem.lostTrack = true 
-		end 
-		--]]--
-		-- theItem.lastDistance = d 
-	    -- return true -- true because they can re-acquire! 
+
 	end
-	
-	--[[--
-	if d > theItem.lastDistance then
-		-- this can be wrong because if a missile is launched 
-		-- at an angle, it can initially look as if it missed 
-		if not theItem.missed then 
-			desc = desc .. " Missile MISSED!"
-			
-			if guardianAngel.announcer then 
-				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
-				else 
-					trigger.action.outText(desc, 30) 
-				end
-			end
-			guardianAngel.invokeCallbacks("miss", theItem.targetName, theItem.weaponName)
-			theItem.missed = true 
-		end 
-		theItem.lastDistance = d 
-		return true -- better not disregard - they can re-acquire!
-	end
-	--]]--
-	--[[--
-	if theItem.missed and d < theItem.lastDistance then 
-		desc = desc .. " Missile RE-ACQUIRED!"
-		
-		if guardianAngel.announcer then 
-			if guardianAngel.private then 
-				trigger.action.outTextForGroup(ID, desc, 30) 
-			else 
-				trigger.action.outText(desc, 30) 
-			end
-		end
-		theItem.missed = false  
-		guardianAngel.invokeCallbacks("reacquire", theItem.targetName, theItem.weaponName)
-	end
-	--]]--
-	
---	theItem.lastDistance = d 
 	
 	return true 
 end
@@ -729,7 +655,7 @@ function guardianAngel.somethingHappened(event)
 				end
 			end
 		else 
-			trigger.action.outText("***gA: no missile in the air for <" .. wName .. ">!!!!")
+			trigger.action.outText("***gA: no missile in the air for <" .. wName .. ">!!!!", 30)
 		end
 		-- let's see if the victim was in our list of protected 
 		-- units 
@@ -826,7 +752,6 @@ end
 function guardianAngel.collectPlayerUnits()
 	-- make sure we have all existing player units 
 	-- at start of game 
---	if not guardianAngel.autoAddPlayer then return end 
 	
 	for i=1, 2 do 
 		-- currently only two factions in dcs 
@@ -999,8 +924,3 @@ end
 --guardianAngel.addCallback(guardianAngel.testCB)
 --guardianAngel.invokeCallbacks("A", "B", "C")
 
---[[--
-to do
- - turn on and off via flags 
- - zones that designate protected/unprotected aircraft 
- --]]--

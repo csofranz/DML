@@ -1,5 +1,5 @@
 changer = {}
-changer.version = "1.0.0"
+changer.version = "1.0.1"
 changer.verbose = false 
 changer.ups = 1 
 changer.requiredLibs = {
@@ -10,6 +10,7 @@ changer.changers = {}
 --[[--
 	Version History
 	1.0.0 - Initial version 
+	1.0.1 - Better guards in config to avoid <none> Zone getter warning 
 	
 	Transmogrify an incoming signal to an output signal
 	- not 
@@ -75,17 +76,22 @@ function changer.createChangerWithZone(theZone)
 		trigger.action.outText("+++chgr: <" .. theZone.name .. "> starts paused", 30)
 	end
 	
-	theZone.changerOn = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>")
-	if cfxZones.hasProperty(theZone, "changeOn?") then 
+	if cfxZones.hasProperty(theZone, "on?") then 
+		theZone.changerOn = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>")
+		theZone.lastChangerOnValue = cfxZones.getFlagValue(theZone.changerOn, theZone)
+	elseif cfxZones.hasProperty(theZone, "changeOn?") then 
 		theZone.changerOn = cfxZones.getStringFromZoneProperty(theZone, "changeOn?", "*<none>")
+		theZone.lastChangerOnValue = cfxZones.getFlagValue(theZone.changerOn, theZone)
 	end
-	theZone.lastChangerOnValue = cfxZones.getFlagValue(theZone.changerOn, theZone)
 	
-	theZone.changerOff = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>")
-	if cfxZones.hasProperty(theZone, "changeOff?") then 
+	if cfxZones.hasProperty(theZone, "off?") then 
+		theZone.changerOff = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>")
+		theZone.lastChangerOffValue = cfxZones.getFlagValue(theZone.changerOff, theZone)
+	elseif cfxZones.hasProperty(theZone, "changeOff?") then 
 		theZone.changerOff = cfxZones.getStringFromZoneProperty(theZone, "changeOff?", "*<none>")
+		theZone.lastChangerOffValue = cfxZones.getFlagValue(theZone.changerOff, theZone)
 	end
-	theZone.lastChangerOffValue = cfxZones.getFlagValue(theZone.changerOff, theZone)
+	
 	
 	if changer.verbose or theZone.verbose then 
 		trigger.action.outText("+++chgr: new changer zone <".. theZone.name ..">", 30)

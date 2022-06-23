@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.0.0"
+cfxReconMode.version = "2.1.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -73,6 +73,10 @@ VERSION HISTORY
 	   - event guard in onEvent
 	   - <t> wildcard 
 	   - <lat>, <lon>, <mgrs> wildcards 
+ 2.0.1 - getGroup() guard for onEvent(). Objects now seem to birth. 
+ 2.1.0 - processZoneMessage uses group's position, not zone
+       - silent attribute for priority targets 
+	   - activate / deactivate by flags 
  
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -449,7 +453,7 @@ function cfxReconMode.generateSALT(theScout, theGroup)
 	return msg
 end
 
-function cfxReconMode.processZoneMessage(inMsg, theZone) 
+function cfxReconMode.processZoneMessage(inMsg, theZone, theGroup) 
 	if not inMsg then return "<nil inMsg>" end
 	local formerType = type(inMsg)
 	if formerType ~= "string" then inMsg = tostring(inMsg) end  
@@ -471,6 +475,12 @@ function cfxReconMode.processZoneMessage(inMsg, theZone)
 	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
 	-- and <mgrs> with mgrs coords of zone point 
 	local currPoint = cfxZones.getPoint(theZone)
+	if theGroup and theGroup:isExist() then 
+		-- only use group's point when group exists and alive 
+		local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
+		currPoint = theUnit:getPoint()
+	end
+	
 	local lat, lon, alt = coord.LOtoLL(currPoint)
 	lat, lon = dcsCommon.latLon2Text(lat, lon)
 	outMsg = outMsg:gsub("<lat>", lat)
@@ -483,8 +493,16 @@ function cfxReconMode.processZoneMessage(inMsg, theZone)
 end
 
 function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
+	-- see if it was a prio target and gather info 
+	local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
+	local silent = false 
+	if gName and cfxReconMode.zoneInfo[gName] then 
+		local zInfo = cfxReconMode.zoneInfo[gName]
+		silent = zInfo.silent
+	end
+	
 	-- put a mark on the map 
-	if cfxReconMode.applyMarks then 
+	if not silent and cfxReconMode.applyMarks then 
 		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup)
 		local gName = theGroup:getName()
 		local args = {mySide, theScout, theGroup, theID, gName}
@@ -496,7 +514,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end 
 	
 	-- say something
-	if cfxReconMode.announcer then 
+	if not silent and cfxReconMode.announcer then 
 		local msg = cfxReconMode.generateSALT(theScout, theGroup)
 		trigger.action.outTextForCoalition(mySide, msg, 30)
 --		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
@@ -509,7 +527,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end 
 	
 	-- see if it was a prio target 
-	local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
+	--local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
 	if inList then 
 --		if cfxReconMode.announcer then 
 		if cfxReconMode.verbose then 
@@ -528,8 +546,9 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 			local zInfo = cfxReconMode.zoneInfo[gName]
 			if zInfo.prioMessage then 
 				-- prio message displays even when announcer is off
+				-- AND EVEN WHEN SILENT!!!
 				local msg = zInfo.prioMessage
-				msg = cfxReconMode.processZoneMessage(msg, zInfo.theZone) 
+				msg = cfxReconMode.processZoneMessage(msg, zInfo.theZone, theGroup) 
 				trigger.action.outTextForCoalition(mySide, msg, 30)
 				if cfxReconMode.verbose or zInfo.theZone.verbose then 
 					trigger.action.outText("+++rcn: prio message sent  for prio target zone <" .. zInfo.theZone.name .. ">",30)
@@ -595,11 +614,41 @@ function cfxReconMode.performReconForUnit(theScout)
 	end
 end
 
+function cfxReconMode.doActivate()
+	cfxReconMode.active = true 
+	if cfxReconMode.verbose then 
+		trigger.action.outText("Recon Mode has activated", 30)
+	end 
+end
 
+function cfxReconMode.doDeActivate()
+	cfxReconMode.active = false 
+	if cfxReconMode.verbose then 
+		trigger.action.outText("Recon Mode is OFF", 30)
+	end
+end
 
 function cfxReconMode.updateQueues()
 	-- schedule next call 
 	timer.scheduleFunction(cfxReconMode.updateQueues, {}, timer.getTime() + 1/cfxReconMode.ups)
+	
+	-- check to turn on or off
+	-- check the flags for on/off
+	if cfxReconMode.activate then 
+		if cfxZones.testZoneFlag(cfxReconMode, 				cfxReconMode.activate, "change","lastActivate") then
+			cfxReconMode.doActivate()
+		end
+	end
+	
+	if cfxReconMode.deactivate then 
+		if cfxZones.testZoneFlag(cfxReconMode, 				cfxReconMode.deactivate, "change","lastDeActivate") then
+			cfxReconMode.doDeActivate()
+		end
+	end
+	
+	-- check if we are active 
+	if not cfxReconMode.active then return end 
+	
 	
 	-- we only process the first aircraft in 
 	-- the scouts array, move it to processed and then shrink
@@ -724,8 +773,12 @@ function cfxReconMode:onEvent(event)
 	
 	local theUnit = event.initiator 
 	if not theUnit:isExist() then return end 
+	if not theUnit.getGroup then 
+		-- strange, but seemingly can happen
+		return 
+	end 
 	local theGroup = theUnit:getGroup() 
---	trigger.action.outText("+++rcn-ENTER onEvent: " .. event.id .. " for <" .. theUnit:getName() .. ">", 30)
+
 	if not theGroup then return end 
 	local gCat = theGroup:getCategory()
 	-- only continue if cat = 0 (aircraft) or 1 (helo)
@@ -945,6 +998,24 @@ function cfxReconMode.readConfigZone()
 	
 	cfxReconMode.mgrs = cfxZones.getBoolFromZoneProperty(theZone, "mgrs", false)
 	
+	cfxReconMode.active = cfxZones.getBoolFromZoneProperty(theZone, "active", true)
+	if cfxZones.hasProperty(theZone, "activate?") then 
+		cfxReconMode.activate = cfxZones.getStringFromZoneProperty(theZone, "activate?", "*<none>")
+		cfxReconMode.lastActivate = cfxZones.getFlagValue(cfxReconMode.activate, theZone)
+	elseif cfxZones.hasProperty(theZone, "on?") then 
+		cfxReconMode.activate = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>") 
+		cfxReconMode.lastActivate = cfxZones.getFlagValue(cfxReconMode.activate, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "deactivate?") then 
+		cfxReconMode.deactivate = cfxZones.getStringFromZoneProperty(theZone, "deactivate?", "*<none>")
+		cfxReconMode.lastDeActivate = cfxZones.getFlagValue(cfxReconMode.deactivate, theZone)
+	elseif cfxZones.hasProperty(theZone, "off?") then 
+		cfxReconMode.deactivate = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>") 
+		cfxReconMode.lastDeActivate = cfxZones.getFlagValue(cfxReconMode.deactivate, theZone)
+	end
+	
+	
 	cfxReconMode.theZone = theZone -- save this zone 
 end
 
@@ -961,6 +1032,8 @@ function cfxReconMode.processReconZone(theZone)
 	local zInfo = {}
 	zInfo.theZone = theZone
 	zInfo.isBlack = isBlack	
+	zInfo.silent = cfxZones.getBoolFromZoneProperty(theZone, "silent", false)
+	
 	if cfxZones.hasProperty(theZone, "spotted!") then 
 		zInfo.theFlag = cfxZones.getStringFromZoneProperty(theZone, "spotted!", "*<none>")
 	end
@@ -1104,9 +1177,7 @@ ideas:
 - renew lease. when already sighted, simply renew lease, maybe update location.
 - update marks and renew lease 
 TODO: red+ and blue+ - flags to increase when a plane of the other side is detected
-TODO: recon: scout and blind for aircraft in group to add / remove scouts, maybe use scout keyword 
  
-allow special bangs per priority group 
 --]]--
 
 

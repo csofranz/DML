@@ -1,5 +1,5 @@
 	cloneZones = {}
-	cloneZones.version = "1.4.7"
+	cloneZones.version = "1.4.8"
 	cloneZones.verbose = false  
 	cloneZones.requiredLibs = {
 		"dcsCommon", -- always
@@ -46,6 +46,7 @@
 		      - cargo manager integration - pass cargo objects when present
 		1.4.6 - removed some verbosity for spawned aircraft with airfields on their routes
 		1.4.7 - DML watchflag and DML Flag polish, method-->cloneMethod
+		1.4.8 - added 'wipe?' synonym 
 		
 		
 	--]]--
@@ -231,6 +232,10 @@
 		
 		if cfxZones.hasProperty(theZone, "deClone?") then 
 			theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deClone?", "none")
+		end
+		
+		if cfxZones.hasProperty(theZone, "wipe?") then 
+			theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "wipe?", "none")
 		end
 		
 		if theZone.deSpawnFlag then 
