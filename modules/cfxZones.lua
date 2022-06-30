@@ -5,7 +5,7 @@
 -- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 --
 cfxZones = {}
-cfxZones.version = "2.7.9"
+cfxZones.version = "2.8.1"
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -80,7 +80,8 @@ cfxZones.version = "2.7.9"
 		  - unpulse 
 - 2.7.9   - getFlagValue QoL for <none>
           - setFlagValue QoL for <none>
-		  
+- 2.8.0	  - new allGroupNamesInZone()
+- 2.8.1   - new zonesLinkedToUnit()  
  
 --]]--
 cfxZones.verbose = false
@@ -593,6 +594,22 @@ function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be 
 		for key, group in pairs(allGroups) do -- iterate all groups
 			if cfxZones.isGroupPartiallyInZone(group, theZone) then
 				table.insert(inZones, group)
+			end
+		end
+	end
+	return inZones
+end
+
+function cfxZones.allGroupNamesInZone(theZone, categ) -- categ is optional, must be code 
+	-- warning: does not check for exiting!
+	--trigger.action.outText("Zone " .. theZone.name .. " radius " .. theZone.radius, 30)
+	local inZones = {}
+	local coals = {0, 1, 2} -- all coalitions
+	for idx, coa in pairs(coals) do 
+		local allGroups = coalition.getGroups(coa, categ)
+		for key, group in pairs(allGroups) do -- iterate all groups
+			if cfxZones.isGroupPartiallyInZone(group, theZone) then
+				table.insert(inZones, group:getName())
 			end
 		end
 	end
@@ -1926,6 +1943,17 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	if not dy then dy = 0 end 
 	theZone.dx = dx
 	theZone.dy = dy 
+end
+
+function cfxZones.zonesLinkedToUnit(theUnit) -- returns all zones linked to this unit 
+	if not theUnit then return {} end 
+	local linkedZones = {}
+	for idx, theZone in pairs (cfxZones.zones) do 
+		if theZone.linkedUnit == theUnit then 
+			table.insert(linkedZones, theZone)
+		end
+	end
+	return linkedZones
 end
 
 function cfxZones.updateMovingZones()

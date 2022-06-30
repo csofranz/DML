@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.1.2"
+groupTracker.version = "1.1.3"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -17,7 +17,9 @@ groupTracker.trackers = {}
 	1.1.1 - corrected clone zone reference bug
 	1.1.2 - corrected naming (removed bang from flags), deprecated old
 		  - more zone-local verbosity
-	
+	1.1.3 - spellings
+		  - addGroupToTrackerNamed bug removed accessing tracker 
+		  - new removeGroupNamedFromTrackerNamed()
 --]]--
 
 function groupTracker.addTracker(theZone)
@@ -56,7 +58,7 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 	end
 
 	if groupTracker.verbose or theTracker.verbose then 
-		trigger.action.outText("+++gTrk: will add group <" .. theGroup:getName() .. "> to tracker " .. theTracker.name, 30)
+		trigger.action.outText("+++gTrk: adding group <" .. theGroup:getName() .. "> to tracker " .. theTracker.name, 30)
 	end 
 	
 	-- we have the tracker, add the group 
@@ -86,12 +88,57 @@ function groupTracker.addGroupToTrackerNamed(theGroup, trackerName)
 	end
 	
 	if not theGroup:isExist() then 
-		trigger.action.outText("+++gTrk: group does not exist in when adding to tracker <" .. trackerName .. ">", 30)
+		trigger.action.outText("+++gTrk: group does not exist when adding to tracker <" .. trackerName .. ">", 30)
 		return 
 	end 
 	
+	local theTracker = groupTracker.getTrackerByName(trackerName)
+	if not theTracker then return end 
 	
 	groupTracker.addGroupToTracker(theGroup, theTracker)
+end
+
+function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
+	local theTracker = groupTracker.getTrackerByName(trackerName)
+	if not theTracker then return end 
+	if not gName then 
+		trigger.action.outText("+++gTrk: <nil> group name in removeGroupNameFromTrackerNamed <" .. trackerName .. ">", 30)
+		return 
+	end 
+	
+	local filteredGroups = {}
+	local foundOne = false 
+	for idx, aGroup in pairs(theTracker.trackedGroups) do 
+		if aGroup:getName() == gName then 
+			-- skip and remember 
+			foundOne = true 
+		else 
+			table.insert(filteredGroups, aGroup)
+		end
+	end
+	if (not foundOne) and (theTracker.verbose or groupTracker.verbose) then 
+		trigger.action.outText("+++gTrk: Removal Request Note: group <" .. gName .. "> wasn't tracked by <" .. trackerName .. ">", 30)
+	end 
+	
+	-- remember the new, cleanded set
+	theTracker.trackedGroups = filteredGroups
+	
+	
+	if foundOne then 
+		if theTracker.verbose or groupTracker.verbose then 
+			trigger.action.outText("+++gTrk: removed group <" .. gName .. "> from tracker <" .. trackerName .. ">", 30)
+		end 
+		
+		-- now bang/invoke addGroup!
+		if theTracker.tRemoveGroup then 
+			cfxZones.pollFlag(theTracker.tRemoveGroup, "inc", theTracker)
+		end
+	
+		-- now set numGroups
+		if theTracker.tNumGroups then 
+			cfxZones.setFlagValue(theTracker.tNumGroups, #theTracker.trackedGroups, theTracker)
+		end
+	end 
 end
 
 -- read zone 
