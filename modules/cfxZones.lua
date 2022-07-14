@@ -1,11 +1,13 @@
+cfxZones = {}
+cfxZones.version = "2.8.3"
+
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
 -- by scripting.
 --
 -- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
 --
-cfxZones = {}
-cfxZones.version = "2.8.1"
+
 --[[-- VERSION HISTORY
  - 2.2.4 - getCoalitionFromZoneProperty
          - getStringFromZoneProperty
@@ -82,7 +84,11 @@ cfxZones.version = "2.8.1"
           - setFlagValue QoL for <none>
 - 2.8.0	  - new allGroupNamesInZone()
 - 2.8.1   - new zonesLinkedToUnit()  
- 
+- 2.8.2   - flagArrayFromString trims elements before range check 
+- 2.8.3   - new verifyMethod()
+          - changed extractPropertyFromDCS() to also match attributes with blanks like "the Attr" to "theAttr"
+		  - new expandFlagName()
+
 --]]--
 cfxZones.verbose = false
 cfxZones.caseSensitiveProperties = false -- set to true to make property names case sensitive 
@@ -1222,6 +1228,32 @@ function cfxZones.pollFlag(theFlag, method, theZone)
 	
 end
 
+function cfxZones.expandFlagName(theFlag, theZone) 
+	if not theFlag then return "!NIL" end 
+	local zoneName = "<dummy>"
+	if theZone then 
+		zoneName = theZone.name -- for flag wildcards
+	end
+	
+	if type(theFlag) == "number" then 
+		-- straight number, return 
+		return theFlag
+	end
+	
+	-- we assume it's a string now
+	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces
+	local nFlag = tonumber(theFlag) 
+	if nFlag then -- a number, legal
+		return theFlag
+	end
+		
+	-- now do wildcard processing. we have alphanumeric
+	if dcsCommon.stringStartsWith(theFlag, "*") then  
+		theFlag = zoneName .. theFlag
+	end
+	return theFlag
+end
+
 function cfxZones.setFlagValueMult(theFlag, theValue, theZone)
 	local allFlags = {}
 	if dcsCommon.containsString(theFlag, ",") then 
@@ -1297,7 +1329,7 @@ function cfxZones.getFlagValue(theFlag, theZone)
 	
 	-- some QoL: detect "<none>"
 	if dcsCommon.containsString(theFlag, "<none>") then 
-		trigger.action.outText("+++Zone: warning - getFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30)
+		trigger.action.outText("+++Zone: warning - getFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30) -- break here
 	end
 	
 	-- now do wildcard processing. we have alphanumeric
@@ -1314,6 +1346,68 @@ function cfxZones.isMEFlag(inFlag)
 	-- returns true if inFlag is a pure positive number
 --	inFlag = dcsCommon.trim(inFlag)
 --	return dcsCommon.stringIsPositiveNumber(inFlag)
+end
+
+function cfxZones.verifyMethod(theMethod, theZone)
+	local lMethod = string.lower(theMethod)
+	if lMethod == "#" or lMethod == "change" then 
+		return true
+	end
+
+	if lMethod == "0" or lMethod == "no" or lMethod == "false" 
+	   or lMethod == "off" then 
+		return true  
+	end
+	
+	if lMethod == "1" or lMethod == "yes" or lMethod == "true" 
+	   or lMethod == "on" then 
+	    return true  
+	end
+	
+	if lMethod == "inc" or lMethod == "+1" then 
+		return true
+	end
+	
+	if lMethod == "dec" or lMethod == "-1" then 
+		return true 
+	end 
+	
+	if lMethod == "lohi" or lMethod == "pulse" then 
+		return true
+	end
+	
+	if lMethod == "hilo" then 
+		return true
+	end
+	
+	-- number constraints
+	-- or flag constraints 	-- ONLY RETURN TRUE IF CHANGE AND CONSTRAINT MET 
+	local op = string.sub(theMethod, 1, 1) 
+	local remainder = string.sub(theMethod, 2)
+	remainder = dcsCommon.trim(remainder) -- remove all leading and trailing spaces
+--	local rNum = tonumber(remainder)
+
+	if true then 
+		-- we have a comparison = ">", "=", "<" followed by a number 
+		-- THEY TRIGGER EACH TIME lastVal <> currVal AND condition IS MET  
+		if op == "=" then 
+			return true
+		end
+		
+		if op == "#" or op == "~" then 
+			return true
+		end 
+		
+		if op == "<" then 
+			return true
+		end
+		
+		if op == ">" then 
+			return true
+		end
+	end
+	
+	return false 
 end
 
 -- method-based flag testing 
@@ -1569,7 +1663,8 @@ function cfxZones.flagArrayFromString(inString)
 	local rawElements = dcsCommon.splitString(inString, ",")
 	-- go over all elements 
 	for idx, anElement in pairs(rawElements) do 
-		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
+		anElement = dcsCommon.trim(anElement)
+		if dcsCommon.stringStartsWithDigit(anElement) and dcsCommon.containsString(anElement, "-") then 
 			-- interpret this as a range
 			local theRange = dcsCommon.splitString(anElement, "-")
 			local lowerBound = theRange[1]
@@ -1646,6 +1741,12 @@ function cfxZones.extractPropertyFromDCS(theKey, theProperties)
 		if not cfxZones.caseSensitiveProperties then 
 			existingKey = string.lower(existingKey)
 		end
+		if existingKey == theKey then 
+			return theP.value
+		end
+		
+		-- now check after removing all blanks 
+		existingKey = dcsCommon.removeBlanks(existingKey)
 		if existingKey == theKey then 
 			return theP.value
 		end

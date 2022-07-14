@@ -1,6 +1,6 @@
 impostors={}
 
-impostors.version = "1.0.0"
+impostors.version = "1.0.1"
 impostors.verbose = false  
 impostors.ups = 1
 impostors.requiredLibs = {
@@ -15,6 +15,11 @@ impostors.callbacks = {}
 impostors.uniqueCounter = 8200000 -- clones start at 9200000
 
 --[[--
+	Version History
+	1.0.0 - initial version
+	1.0.1 - added some verbosity 
+	
+
   LIMITATIONS:
   must be on ground (or would be very silly
   does not work with any units deployed on ships
@@ -378,6 +383,12 @@ function impostors.delayedSpawn(args)
 	end 
 	local newGroup = coalition.addGroup(ctry, cat, rawData)
 	impostors.relinkZonesForGroup(relinkZones, newGroup)
+
+	if newGroup then 
+--		trigger.action.outText("+++ipst: SUCCESS!!! Spawned group <" .. newGroup:getName() .. "> for impostor <" .. rawData.name .. ">", 30)
+	else 
+		trigger.action.outText("+++ipst: failed to spawn group for impostor <" .. rawData.name .. ">", 30)
+	end
 
 	if theZone.trackWith and groupTracker.addGroupToTrackerNamed then 
 		-- add these groups to the group tracker 

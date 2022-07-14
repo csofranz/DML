@@ -1,6 +1,7 @@
 guardianAngel = {}
-guardianAngel.version = "3.0.1"
+guardianAngel.version = "3.0.2"
 guardianAngel.ups = 10
+guardianAngel.name = "Guardian Angel" -- just in case someone accesses .name  
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
 guardianAngel.intervention = true -- remove missiles just before hitting
 guardianAngel.explosion = -1 -- small poof when missile explodes. -1 = off. 
@@ -56,6 +57,7 @@ guardianAngel.requiredLibs = {
 	 3.0.1 - corrected error on collateral (missing delay)
 	       - Supporst cloned units 
 		   - removed legacy code 
+	 3.0.2 - added guardianAngel.name for those who use local flags on activate
 
 
 This script detects missiles launched against protected aircraft an 

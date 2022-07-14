@@ -1,16 +1,20 @@
 baseCaptured={}
-baseCaptured.version = "1.0.0"
+baseCaptured.version = "1.0.1"
 baseCaptured.verbose = false
+baseCaptured.ups = 1
 baseCaptured.requiredLibs = {
     "dcsCommon", -- always
     "cfxZones", -- Zones, of course
 }
+baseCaptured.handleContested = true -- 
 
 --[[--
     baseCaptured - Detects when the assigned base has been captured, idea and first implementation by cloose
 
     Version History
     1.0.0 - Initial version based on cloose's code
+	1.0.1 - contested! flag
+		  - update and handleContested
 	
 --]]--
 
@@ -50,6 +54,10 @@ function baseCaptured.createZone(theZone)
         theZone.redCap = cfxZones.getStringFromZoneProperty(theZone, "red!", "*none")
     end
 	
+	if cfxZones.hasProperty(theZone, "contested!") then
+        theZone.contested = cfxZones.getStringFromZoneProperty(theZone, "contested!", "*none")
+    end
+	
 	if cfxZones.hasProperty(theZone, "baseOwner") then
         theZone.baseOwner = cfxZones.getStringFromZoneProperty(theZone, "baseOwner", "*none")
 		cfxZones.setFlagValueMult(theZone.baseOwner, theZone.currentOwner, theZone)
@@ -79,7 +87,10 @@ function baseCaptured.triggerZone(theZone)
 			cfxZones.pollFlag(theZone.blueCap, theZone.capturedMethod, theZone)
 		end
 	else 
-		-- possibly a new side? Neutral doesn't cap
+		-- contested
+		if theZone.contested then 
+			cfxZones.pollFlag(theZone.contested, theZone.capturedMethod, theZone)
+		end
 	end
 	
     if baseCaptured.verbose or theZone.verbose then
@@ -118,6 +129,31 @@ function baseCaptured:onEvent(event)
     end
 end
 
+function baseCaptured.update()
+	-- call me in a second to poll triggers
+	timer.scheduleFunction(baseCaptured.update, {}, timer.getTime() + 1/baseCaptured.ups)
+	
+	-- look for contested event - it's not covered with capture event!
+	for idx, aZone in pairs(baseCaptured.zones) do 
+		local newOwner = aZone.theBase:getCoalition()
+
+		if (newOwner ~= aZone.currentOwner) and (newOwner == 3) then
+			if aZone.contested then 
+				cfxZones.pollFlag(aZone.contested, aZone.capturedMethod, aZone)
+			end
+			
+			aZone.currentOwner = newOwner		
+			if aZone.verbose or baseCaptured.verbose then 
+				trigger.action.outText("+++bCap: zone <" .. aZone.name .. "> has become contested!", 30)
+			end
+			if aZone.baseOwner then 
+				cfxZones.setFlagValueMult(aZone.baseOwner, newOwner, aZone)
+			end
+		end
+    end
+	
+end
+
 function baseCaptured.readConfigZone()
     -- search for configuration zone
     local theZone = cfxZones.getZoneByName("baseCapturedConfig")
@@ -127,6 +163,8 @@ function baseCaptured.readConfigZone()
 
     baseCaptured.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 
+	baseCaptured.handleContested = cfxZones.getBoolFromZoneProperty(theZone, "handleContested", true)
+	
     if baseCaptured.verbose then
         trigger.action.outText("+++bCap: read configuration from zone", 30)
     end
@@ -154,6 +192,11 @@ function baseCaptured.start()
 
     -- listen for events
     world.addEventHandler(baseCaptured)
+
+	-- start update to look for contested 
+	if baseCaptured.handleContested then 
+		baseCaptured.update()
+	end 
 
     trigger.action.outText("baseCaptured v" .. baseCaptured.version .. " started.", 30)
     return true

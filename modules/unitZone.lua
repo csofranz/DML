@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.2"
+unitZone.version = "1.2.3"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -14,6 +14,8 @@ unitZone.requiredLibs = {
 	1.2.0 - uzOn?, uzOff?, triggerMethod
 	1.2.1 - uzDirect
 	1.2.2 - uzDirectInv 
+	1.2.3 - better guards for enterZone!, exitZone!, chsngeZone!
+		  - better guards for uzOn? and uzOff?
 		  
 --]]--
 
@@ -86,9 +88,16 @@ function unitZone.createUnitZone(theZone)
 		theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "uzMethod", "inc")
 	end
 
-	theZone.enterZone = cfxZones.getStringFromZoneProperty(theZone, "enterZone!", "<none>")
-	theZone.exitZone = cfxZones.getStringFromZoneProperty(theZone, "exitZone!", "<none>")	
-	theZone.changeZone = cfxZones.getStringFromZoneProperty(theZone, "changeZone!", "<none>")
+	if cfxZones.hasProperty(theZone, "enterZone!") then 
+		theZone.enterZone = cfxZones.getStringFromZoneProperty(theZone, "enterZone!", "*<none>")
+	end 
+	if cfxZones.hasProperty(theZone, "exitZone!") then 
+		theZone.exitZone = cfxZones.getStringFromZoneProperty(theZone, "exitZone!", "*<none>")
+	end 
+	
+	if cfxZones.hasProperty(theZone, "changeZone!") then 
+		theZone.changeZone = cfxZones.getStringFromZoneProperty(theZone, "changeZone!", "*<none>")
+	end 
 	
 	if cfxZones.hasProperty(theZone, "filterFor") then 
 		local filterString = cfxZones.getStringFromZoneProperty(theZone, "filterFor", "1") -- ground 
@@ -108,11 +117,15 @@ function unitZone.createUnitZone(theZone)
 	
 	-- on/off flags
 	theZone.uzPaused = false -- we are turned on 
-	theZone.triggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOn?", "*<none1>")
-	theZone.lastTriggerOnValue = cfxZones.getFlagValue(theZone.triggerOnFlag, theZone)
-		
-	theZone.triggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOff?", "*<none2>")
-	theZone.lastTriggerOffValue = cfxZones.getFlagValue(theZone.triggerOffFlag, theZone)
+	if cfxZones.hasProperty(theZone, "uzOn?") then 
+		theZone.triggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOn?", "*<none1>")
+		theZone.lastTriggerOnValue = cfxZones.getFlagValue(theZone.triggerOnFlag, theZone)
+	end 
+	
+	if cfxZones.hasProperty(theZone, "uzOff?") then 
+		theZone.triggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOff?", "*<none2>")
+		theZone.lastTriggerOffValue = cfxZones.getFlagValue(theZone.triggerOffFlag, theZone)
+	end 
 	
 	theZone.uzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 	if cfxZones.hasProperty(theZone, "uzTriggerMethod") then 
@@ -227,17 +240,23 @@ end
 --
 function unitZone.bangState(theZone, newState)
 	
-	cfxZones.pollFlag(theZone.changeZone, theZone.uzMethod, theZone)
+	if theZone.changeZone then 
+		cfxZones.pollFlag(theZone.changeZone, theZone.uzMethod, theZone)
+	end 
 	if newState then 
-		cfxZones.pollFlag(theZone.enterZone, theZone.uzMethod, theZone)
-		if unitZone.verbose then 
-			trigger.action.outText("+++uZone: banging enter! with <" .. theZone.uzMethod .. "> on <" .. theZone.enterZone .. "> for " .. theZone.name, 30)
-		end 
-	else 
-		cfxZones.pollFlag(theZone.exitZone, theZone.uzMethod, theZone)
-		if unitZone.verbose then 
-			trigger.action.outText("+++uZone: banging exit! with <" .. theZone.uzMethod .. "> on <" .. theZone.exitZone .. "> for " .. theZone.name, 30)
+		if theZone.enterZone then 
+			cfxZones.pollFlag(theZone.enterZone, theZone.uzMethod, theZone)
+			if unitZone.verbose then 
+				trigger.action.outText("+++uZone: banging enter! with <" .. theZone.uzMethod .. "> on <" .. theZone.enterZone .. "> for " .. theZone.name, 30)
+			end
 		end
+	else 
+		if theZone.exitZone then 
+			cfxZones.pollFlag(theZone.exitZone, theZone.uzMethod, theZone)
+			if unitZone.verbose then 
+				trigger.action.outText("+++uZone: banging exit! with <" .. theZone.uzMethod .. "> on <" .. theZone.exitZone .. "> for " .. theZone.name, 30)
+			end
+		end 
 	end
 end
 
@@ -247,14 +266,14 @@ function unitZone.update()
 		
 	for idx, aZone in pairs(unitZone.unitZones) do
 		-- check if we need to pause/unpause 
-		if cfxZones.testZoneFlag(aZone, aZone.triggerOnFlag, aZone.uzTriggerMethod, "lastTriggerOnValue") then 
+		if aZone.triggerOnFlag and cfxZones.testZoneFlag(aZone, aZone.triggerOnFlag, aZone.uzTriggerMethod, "lastTriggerOnValue") then 
 			if unitZone.verbose or aZone.verbose then 
 				trigger.action.outText("+++uZone: turning " .. aZone.name .. " on", 30)
 			end 
 			aZone.uzPaused = false 
 		end
 		
-		if cfxZones.testZoneFlag(aZone, aZone.triggerOffFlag, aZone.uzTriggerMethod, "lastTriggerOffValue") then 
+		if aZone.triggerOffFlag and cfxZones.testZoneFlag(aZone, aZone.triggerOffFlag, aZone.uzTriggerMethod, "lastTriggerOffValue") then 
 			if unitZone.verbose or aZone.verbose then 
 				trigger.action.outText("+++uZone: turning " .. aZone.name .. " OFF", 30)
 			end 

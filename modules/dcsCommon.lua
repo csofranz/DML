@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.5"
+dcsCommon.version = "2.6.6"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -77,6 +77,11 @@ dcsCommon.version = "2.6.5"
  2.6.5 - new bearing2compass()
        - new bearingdegrees2compass()
 	   - new latLon2Text() - based on mist 
+ 2.6.6 - new nowString() 
+       - new str2num()
+	   - new stringRemainsStartingWith()
+       - new stripLF()
+	   - new removeBlanks()
 	   
 --]]--
 
@@ -1746,6 +1751,14 @@ dcsCommon.version = "2.6.5"
 		return trimmedArray
 	end
 	
+	function dcsCommon.stripLF(theString)
+		return theString:gsub("[\r\n]", "")
+	end
+	
+	function dcsCommon.removeBlanks(theString)
+		return theString:gsub("%s", "")
+	end
+	
 	function dcsCommon.stringIsPositiveNumber(theString)
 		-- only full integer positive numbers supported 
 		if not theString then return false end 
@@ -1818,8 +1831,8 @@ dcsCommon.version = "2.6.5"
 		if not p then return "<!NIL!>" end 
 		local t = "[x="
 		if p.x then t = t .. p.x .. ", " else t = t .. "<nil>, " end 
-		if p.y then t = t .. p.y .. ", " else t = t .. "<nil>, " end 
-		if p.z then t = t .. p.z .. "]" else t = t .. "<nil>]" end 
+		if p.y then t = t .. "y=" .. p.y .. ", " else t = t .. "y=<nil>, " end 
+		if p.z then t = t .. "z=" .. p.z .. "]" else t = t .. "z=<nil>]" end 
 		return t 
 	end
 
@@ -2047,6 +2060,33 @@ dcsCommon.version = "2.6.5"
 		return msg 
 	end
 	
+	function dcsCommon.nowString()
+		local absSecs = timer.getAbsTime()-- + env.mission.start_time
+		while absSecs > 86400 do 
+			absSecs = absSecs - 86400 -- subtract out all days 
+		end
+		return dcsCommon.processHMS("<:h>:<:m>:<:s>", absSecs)
+	end
+	
+	function dcsCommon.str2num(inVal, default) 
+		if not default then default = 0 end
+		if not inVal then return default end
+		if type(inVal) == "number" then return inVal end 				
+		local num = nil
+		if type(inVal) == "string" then num = tonumber(inVal) end
+		if not num then return default end
+		return num
+	end
+	
+	function dcsCommon.stringRemainsStartingWith(theString, startingWith)
+		-- find the first position where startingWith starts 
+		local pos = theString:find(startingWith)
+		if not pos then return theString end 
+		-- now return the entire remainder of the string from pos 
+		local nums = theString:len() - pos + 1
+		return theString:sub(-nums)
+	end
+
 --
 --
 -- V E C T O R   M A T H 

@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.3.0"
+rndFlags.version = "1.3.1"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -25,6 +25,10 @@ rndFlags.requiredLibs = {
 	1.2.0 - Watchflag integration
 	1.3.0 - DML simplification: RND!
 	        zone-local verbosity 
+	1.3.1 - 'done+1' --> 'done!', using rndMethod instead of 'inc'
+	      - added zonal verbosity 
+		  - added 'rndDone!' flag 
+		  - rndMethod defaults to "inc"
 
 --]]
 rndFlags.rndGen = {}
@@ -147,12 +151,15 @@ function rndFlags.createRNDWithZone(theZone)
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
 	
 	if not theZone.onStart and not theZone.triggerFlag then 
-		theZone.onStart = true 
+		-- theZone.onStart = true 
+		if true or theZone.verbose or rndFlags.verbose then 
+			trigger.action.outText("+++RND - WARNING: no triggers and no onStart, RND in <" .. theZone.name .. "> can't be triggered.", 30)
+		end
 	end
 	
-	theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "on")
+	theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	if cfxZones.hasProperty(theZone, "rndMethod") then 
-		theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "rndMethod", "on")
+		theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "rndMethod", "inc")
 	end
 	
 	theZone.reshuffle = cfxZones.getBoolFromZoneProperty(theZone, "reshuffle", false)
@@ -161,10 +168,17 @@ function rndFlags.createRNDWithZone(theZone)
 		theZone.flagStore = dcsCommon.copyArray(theFlags)
 	end
 	
-	-- done flag 
+	-- done flag OLD, to be deprecated
 	if cfxZones.hasProperty(theZone, "done+1") then 
-		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done+1", "none")
+		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done+1", "<none>")
+
+	-- now NEW replacements
+	elseif cfxZones.hasProperty(theZone, "done!") then 
+		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done!", "<none>")
+	elseif cfxZones.hasProperty(theZone, "rndDone!") then 
+		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "rndDone!", "<none>")
 	end
+	
 end
 
 function rndFlags.reshuffle(theZone)
@@ -197,7 +211,7 @@ function rndFlags.fire(theZone)
 		end
 		
 		if theZone.doneFlag then
-			cfxZones.pollFlag(theZone.doneFlag, "inc", theZone)
+			cfxZones.pollFlag(theZone.doneFlag, theZone.rndMethod, theZone)
 		end
 		
 		return 
@@ -262,7 +276,7 @@ end
 function rndFlags.startCycle()
 	for idx, theZone in pairs(rndFlags.rndGen) do
 		if theZone.onStart then 
-			if rndFlags.verbose then 
+			if rndFlags.verbose or theZone.verbose then 
 				trigger.action.outText("+++RND: starting " .. theZone.name, 30)
 			end 
 			rndFlags.fire(theZone)

@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.2.1"
+pulseFlags.version = "1.2.3"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -32,6 +32,9 @@ pulseFlags.requiredLibs = {
 	- 1.2.1 pulseInterval synonym for time 
 			pulses now supports range 
 			zone-local verbosity
+	- 1.2.2 outputMethod synonym
+	- 1.2.3 deprecated paused/pulsePaused 
+	        returned onStart, defaulting to true
 	
 --]]--
 
@@ -111,16 +114,26 @@ function pulseFlags.createPulseWithZone(theZone)
 		theZone.lastPauseValue = cfxZones.getFlagValue(theZone.pausePulseFlag, theZone)-- trigger.misc.getUserFlag(theZone.pausePulseFlag) -- save last value
 	end
 	
-	theZone.pulsePaused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false)
+	-- harmonizing on onStart, and converting to old pulsePaused
+	local onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", true)
+	theZone.pulsePaused = not (onStart) 
+	-- old code, to be deprecated 
+	if cfxZones.hasProperty(theZone, "paused") then
+		theZone.pulsePaused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false)
 	
-	if cfxZones.hasProperty(theZone, "pulseStopped") then 
+	elseif cfxZones.hasProperty(theZone, "pulseStopped") then 
 		theZone.pulsePaused = cfxZones.getBoolFromZoneProperty(theZone, "pulseStopped", false)
 	end
+	--]]--
 	
 	theZone.pulseMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "flip")
 	
 	if cfxZones.hasProperty(theZone, "pulseMethod") then
 		theZone.pulseMethod = cfxZones.getStringFromZoneProperty(theZone, "pulseMethod", "flip")
+	end
+	
+	if cfxZones.hasProperty(theZone, "outputMethod") then
+		theZone.pulseMethod = cfxZones.getStringFromZoneProperty(theZone, "outputMethod", "flip")
 	end
 	-- done flag 
 	if cfxZones.hasProperty(theZone, "done+1") then 
