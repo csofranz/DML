@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.2.1"
+cfxObjectSpawnZones.version = "1.3.0"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -26,7 +26,10 @@ cfxObjectSpawnZones.verbose = false
 --   1.1.5 - spawn?, spawnObjects? synonyms
 --   1.2.0 - DML flag upgrade 
 --   1.2.1 - config zone 
---         - autoLink bug (zone instead of spaneer accessed)
+--         - autoLink bug (zone instead of spawner accessed)
+--   1.3.0 - better synonym handling 
+--         - useDelicates link to delicate when spawned 
+-- 		   - spawned single and multi-objects can be made delicates
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
 cfxObjectSpawnZones.allSpawners = {}
@@ -58,13 +61,9 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
-	end
-	
-	if cfxZones.hasProperty(inZone, "spawn?") then 
+	elseif cfxZones.hasProperty(inZone, "spawn?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
-	end
-	
-	if cfxZones.hasProperty(inZone, "spawnObjects?") then 
+	elseif cfxZones.hasProperty(inZone, "spawnObjects?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObjects?", "none")
 	end
 	
@@ -115,6 +114,11 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	theSpawner.paused = cfxZones.getBoolFromZoneProperty(inZone, "paused", false)
 	theSpawner.requestable = cfxZones.getBoolFromZoneProperty(inZone, "requestable", false)
 	if theSpawner.requestable then theSpawner.paused = true end
+	
+	-- see if the spawn can be made brittle/delicte
+	if cfxZones.hasProperty(inZone, "useDelicates") then 
+		theSpawner.delicateName = cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>")
+	end
 	
 	-- see if it is linked to a ship to set realtive orig headiong
 	
@@ -258,6 +262,16 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 			end
 		end
 		
+		if aSpawner.delicateName and delicates then 
+			-- pass this object to the delicate zone mentioned 
+			local theDeli = delicates.getDelicatesByName(aSpawner.delicateName)
+			if theDeli then 
+				delicates.addStaticObjectToInventoryForZone(theDeli, theObject)
+			else 
+				trigger.action.outText("+++oSpwn: spawner <" .. aZone.name .. "> can't find delicates <" .. aSpawner.delicateName .. ">", 30)
+			end
+		end
+		
 		return 
 	end 
 	
@@ -302,6 +316,17 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 				cfxCargoManager.addCargo(theObject)
 			end
 		end
+		
+		if aSpawner.delicateName and delicates then 
+			-- pass this object to the delicate zone mentioned 
+			local theDeli = delicates.getDelicatesByName(aSpawner.delicateName)
+			if theDeli then 
+				delicates.addStaticObjectToInventoryForZone(theDeli, theObject)
+			else 
+				trigger.action.outText("+++oSpwn: spawner <" .. aZone.name .. "> can't find delicates <" .. aSpawner.delicateName .. ">", 30)
+			end
+		end
+		
 		-- update rotation
 		currDegree = currDegree + degreeIncrement
 	end

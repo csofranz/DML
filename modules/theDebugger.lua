@@ -1,12 +1,14 @@
 -- theDebugger 
 debugger = {}
-debugger.version = "1.0.1"
+debugger.version = "1.1.1"
 debugDemon = {}
-debugDemon.version = "1.0.0"
+debugDemon.version = "1.1.1"
 
 debugger.verbose = false 
 debugger.ups = 4 -- every 0.25 second  
 debugger.name = "DML Debugger" -- for compliance with cfxZones 
+
+debugger.log = ""
 
 --[[--
 	Version History
@@ -15,14 +17,67 @@ debugger.name = "DML Debugger" -- for compliance with cfxZones
 	      - changed 'on' to 'active' in config zone 
 		  - merged debugger and debugDemon
 		  - QoL check for 'debug' attribute (no '?')
-	1.0.2 - contested! flag 
+	1.1.0 - logging 
+	      - trigger.action --> debugger for outText 
+		  - persistence of logs
+		  - save <name>
+	1.1.1 - warning when trying to set a flag to a non-int
+		  
+ 
 --]]--
 
 debugger.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
+-- note: saving logs requires persistence module 
+-- will auto-abort saving if not present 
+
+
 debugger.debugZones = {}
+debugger.debugUnits = {}
+debugger.debugGroups = {}
+debugger.debugObjects = {}
+
+--
+-- Logging & saving 
+--
+
+function debugger.outText(message, seconds, cls)
+	if not message then message = "" end 
+	if not seconds then seconds = 20 end 
+	if not cls then cls = false end 
+	
+	-- append message to log, and add a lf
+	if not debugger.log then debugger.log = "" end 
+	debugger.log = debugger.log .. message .. "\n"
+	
+	-- now hand up to trigger 
+	trigger.action.outText(message, seconds, cls)
+end
+
+function debugger.saveLog(name)
+	if not _G["persistence"] then 
+		debugger.outText("+++debug: persistence module required to save log")
+		return
+	end
+	
+	if not persistence.active then 
+		debugger.outText("+++debug: persistence module can't write. ensur you desanitize lfs and io")
+		return 
+	end
+	
+	if persistence.saveText(debugger.log, name) then 
+		debugger.outText("+++debug: log saved to <" .. persistence.missionDir .. name .. ">")
+	else 
+		debugger.outText("+++debug: unable to save log to <" .. persistence.missionDir .. name .. ">")
+	end
+end
+
+
+--
+-- tracking flags 
+--
 
 function debugger.addDebugger(theZone)
 	table.insert(debugger.debugZones, theZone)
@@ -33,7 +88,7 @@ function debugger.getDebuggerByName(aName)
 		if aName == aZone.name then return aZone end 
 	end
 	if debugger.verbose then 
-		trigger.action.outText("+++debug: no debug zone with name <" .. aName ..">", 30)
+		debugger.outText("+++debug: no debug zone with name <" .. aName ..">", 30)
 	end 
 	
 	return nil 
@@ -65,7 +120,7 @@ function debugger.createDebuggerWithZone(theZone)
 	
 	-- say who we are and what we are monitoring
 	if debugger.verbose or theZone.verbose then 
-		trigger.action.outText("---debug: adding zone <".. theZone.name .."> to look for <value " .. theZone.debugInputMethod .. "> in flag(s):", 30)
+		debugger.outText("---debug: adding zone <".. theZone.name .."> to look for <value " .. theZone.debugInputMethod .. "> in flag(s):", 30)
 	end
 	
 	-- read main debug array
@@ -77,7 +132,7 @@ function debugger.createDebuggerWithZone(theZone)
 	for idx, aFlag in pairs(flagArray) do 
 		local fVal = cfxZones.getFlagValue(aFlag, theZone)
 		if debugger.verbose or theZone.verbose then 
-			trigger.action.outText("    monitoring flag <" .. aFlag .. ">, inital value is <" .. fVal .. ">", 30)
+			debugger.outText("    monitoring flag <" .. aFlag .. ">, inital value is <" .. fVal .. ">", 30)
 		end
 		valueArray[aFlag] = fVal
 	end
@@ -226,7 +281,7 @@ function debugger.debugZone(theZone)
 			-- generate the ouput message
 			local msg = theZone.debugMsg
 			msg = debugger.processDebugMsg(msg, theZone, aFlag, oldVal, newValue)
-			trigger.action.outText(msg, 30)
+			debugger.outText(msg, 30)
 		end
 	end
 
@@ -239,7 +294,7 @@ function debugger.resetObserver(theZone)
 	for idf, aFlag in pairs(theZone.flagArray) do 
 		local fVal = cfxZones.getFlagValue(aFlag, theZone)
 		if debugger.verbose or theZone.verbose then 
-			trigger.action.outText("---debug: resetting flag <" .. aFlag .. ">, to <" .. fVal .. "> for zone <" .. theZone.name .. ">", 30)
+			debugger.outText("---debug: resetting flag <" .. aFlag .. ">, to <" .. fVal .. "> for zone <" .. theZone.name .. ">", 30)
 		end
 		theZone.valueArray[aFlag] = fVal
 	end	
@@ -256,39 +311,39 @@ function debugger.showObserverState(theZone)
 	for idf, aFlag in pairs(theZone.flagArray) do 
 		local fVal = cfxZones.getFlagValue(aFlag, theZone)
 		if debugger.verbose or theZone.verbose then 
-			trigger.action.outText("     state of flag <" .. aFlag .. ">: <" .. theZone.valueArray[aFlag] .. ">", 30)
+			debugger.outText("     state of flag <" .. aFlag .. ">: <" .. theZone.valueArray[aFlag] .. ">", 30)
 		end
 		theZone.valueArray[aFlag] = fVal
 	end
 end
 
 function debugger.showState()
-	trigger.action.outText("---debug: CURRENT STATE <" .. dcsCommon.nowString() .. "> --- ", 30)
+	debugger.outText("---debug: CURRENT STATE <" .. dcsCommon.nowString() .. "> --- ", 30)
 	for idx, theZone in pairs(debugger.debugZones) do
 		-- show this zone's state
 		if #theZone.flagArray > 0 then 
-			trigger.action.outText("   state of observer <" .. theZone.name .. "> looking for <value " .. theZone.debugInputMethod .. ">:", 30)
+			debugger.outText("   state of observer <" .. theZone.name .. "> looking for <value " .. theZone.debugInputMethod .. ">:", 30)
 			debugger.showObserverState(theZone)
 		else 
 			if theZone.verbose or debugger.verbose then 
-				trigger.action.outText("   (empty observer <" .. theZone.name .. ">)", 30)
+				debugger.outText("   (empty observer <" .. theZone.name .. ">)", 30)
 			end
 		end
 	end
-	trigger.action.outText("---debug: end of state --- ", 30)
+	debugger.outText("---debug: end of state --- ", 30)
 end
 
 function debugger.doActivate()
 	debugger.active = true
 	if debugger.verbose or true then 
-		trigger.action.outText("+++ DM Debugger is now active", 30)
+		debugger.outText("+++ DM Debugger is now active", 30)
 	end 
 end
 
 function debugger.doDeactivate()
 	debugger.active = false
 	if debugger.verbose or true then 
-		trigger.action.outText("+++ debugger deactivated", 30)
+		debugger.outText("+++ debugger deactivated", 30)
 	end 
 end
 
@@ -339,7 +394,7 @@ function debugger.readConfigZone()
 	local theZone = cfxZones.getZoneByName("debuggerConfig") 
 	if not theZone then 
 		if debugger.verbose then 
-			trigger.action.outText("+++debug: NO config zone!", 30)
+			debugger.outText("+++debug: NO config zone!", 30)
 		end 
 		theZone = cfxZones.createSimpleZone("debuggerConfig") 
 	end 
@@ -371,7 +426,7 @@ function debugger.readConfigZone()
 	debugger.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 4)
 	
 	if debugger.verbose then 
-		trigger.action.outText("+++debug: read config", 30)
+		debugger.outText("+++debug: read config", 30)
 	end 
 end
 
@@ -398,22 +453,22 @@ function debugger.start()
 	
 	local attrZones = cfxZones.getZonesWithAttributeNamed("debug")
 	for k, aZone in pairs(attrZones) do 
-		trigger.action.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
+		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
 	end
 	
 	-- say if we are active
 	if debugger.verbose then 
 		if debugger.active then 
-			trigger.action.outText("+++debugger loaded and active", 30)
+			debugger.outText("+++debugger loaded and active", 30)
 		else 
-			trigger.action.outText("+++ debugger: standing by for activation", 30)
+			debugger.outText("+++ debugger: standing by for activation", 30)
 		end
 	end
 	
 	-- start update 
 	debugger.update()
 	
-	trigger.action.outText("cfx debugger v" .. debugger.version .. " started.", 30)
+	debugger.outText("cfx debugger v" .. debugger.version .. " started.", 30)
 	return true 
 end
 
@@ -441,6 +496,7 @@ debugDemon.verbose = false
 --[[--
 	Version History
 	1.0.0 - initial version 
+	1.1.0 - save command, requires persistence
 	
 --]]--
 
@@ -559,7 +615,7 @@ function debugDemon.executeCommand(theCommands, event)
 		local success = theInvoker(arguments, event)
 		return success
 	else 
-		trigger.action.outText("***error: unknown command <".. cmd .. ">", 30)
+		debugger.outText("***error: unknown command <".. cmd .. ">", 30)
 		return false
 	end
 	
@@ -592,7 +648,7 @@ end
 -- COMMANDS
 --
 function debugDemon.processHelpCommand(args, event)
-trigger.action.outText("*** debugger: commands are:" ..
+debugger.outText("*** debugger: commands are:" ..
 	"\n  " .. debugDemon.markOfDemon .. "show <flagname/observername> -- show current values for flag or observer" ..
 	"\n  " .. debugDemon.markOfDemon .. "set <flagname> <number> -- set flag to value <number>" ..
 	"\n  " .. debugDemon.markOfDemon .. "inc <flagname> -- increase flag by 1, changing it" ..
@@ -614,6 +670,8 @@ trigger.action.outText("*** debugger: commands are:" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "start -- starts debugger" ..
 	"\n  " .. debugDemon.markOfDemon .. "stop -- stop debugger" ..
 
+	"\n\n  " .. debugDemon.markOfDemon .. "save [<filename>] -- saves debugger log to storage" ..
+
 	"\n\n  " .. debugDemon.markOfDemon .. "? or -help  -- this text", 30)
 	return true 
 end
@@ -622,14 +680,14 @@ function debugDemon.processNewCommand(args, event)
 	-- syntax new <observername> [[for] <condition>]
 	local observerName = args[1]
 	if not observerName then 
-		trigger.action.outText("*** new: missing observer name.", 30)
+		debugger.outText("*** new: missing observer name.", 30)
 		return false -- allows correction 
 	end
 	
 	-- see if this observer already existst
 	local theObserver = debugger.getDebuggerByName(observerName)
 	if theObserver then 
-		trigger.action.outText("*** new: observer <" .. observerName .. "> already exists.", 30)
+		debugger.outText("*** new: observer <" .. observerName .. "> already exists.", 30)
 		return false -- allows correction 
 	end
 	
@@ -638,7 +696,7 @@ function debugDemon.processNewCommand(args, event)
 	local remainderName = event.remainder
 	local rObserver = debugger.getDebuggerByName(remainderName)
 	if rObserver then 
-		trigger.action.outText("*** new: observer <" .. remainderName .. "> already exists.", 30)
+		debugger.outText("*** new: observer <" .. remainderName .. "> already exists.", 30)
 		return false -- allows correction 
 	end
 	
@@ -655,14 +713,14 @@ function debugDemon.processNewCommand(args, event)
 	if condition == "for" then condition = args[3] end 
 	if condition then 
 		if not cfxZones.verifyMethod(condition, theZone) then 
-			trigger.action.outText("*** new: illegal trigger condition <" .. condition .. "> for observer <" .. observerName .. ">", 30)
+			debugger.outText("*** new: illegal trigger condition <" .. condition .. "> for observer <" .. observerName .. ">", 30)
 			return false 
 		end
 		theZone.debugInputMethod = condition
 	end
 	
 	debugger.addDebugger(theZone)
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger: new observer <" .. observerName .. "> for <" .. theZone.debugInputMethod .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: new observer <" .. observerName .. "> for <" .. theZone.debugInputMethod .. ">", 30)
 	return true 
 end
 
@@ -670,14 +728,14 @@ function debugDemon.processUpdateCommand(args, event)
 	-- syntax update <observername> [[to] <condition>]
 	local observerName = args[1]
 	if not observerName then 
-		trigger.action.outText("*** update: missing observer name.", 30)
+		debugger.outText("*** update: missing observer name.", 30)
 		return false -- allows correction 
 	end
 	
 	-- see if this observer already existst
 	local theZone = debugger.getDebuggerByName(observerName)
 	if not theZone then 
-		trigger.action.outText("*** update: observer <" .. observerName .. "> does not exist exists.", 30)
+		debugger.outText("*** update: observer <" .. observerName .. "> does not exist exists.", 30)
 		return false -- allows correction 
 	end
 		
@@ -685,13 +743,13 @@ function debugDemon.processUpdateCommand(args, event)
 	if condition == "to" then condition = args[3] end 
 	if condition then 
 		if not cfxZones.verifyMethod(condition, theZone) then 
-			trigger.action.outText("*** update: illegal trigger condition <" .. condition .. "> for observer <" .. observerName .. ">", 30)
+			debugger.outText("*** update: illegal trigger condition <" .. condition .. "> for observer <" .. observerName .. ">", 30)
 			return false 
 		end
 		theZone.debugInputMethod = condition
 	end
 	
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger: updated observer <" .. observerName .. "> to <" .. theZone.debugInputMethod .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: updated observer <" .. observerName .. "> to <" .. theZone.debugInputMethod .. ">", 30)
 	return true 
 end
 
@@ -699,21 +757,21 @@ function debugDemon.processDropCommand(args, event)
 	-- syntax drop <observername>
 	local observerName = event.remainder -- remainder
 	if not observerName then 
-		trigger.action.outText("*** drop: missing observer name.", 30)
+		debugger.outText("*** drop: missing observer name.", 30)
 		return false -- allows correction 
 	end
 	
 	-- see if this observer already existst
 	local theZone = debugger.getDebuggerByName(observerName)
 	if not theZone then 
-		trigger.action.outText("*** drop: observer <" .. observerName .. "> does not exist exists.", 30)
+		debugger.outText("*** drop: observer <" .. observerName .. "> does not exist exists.", 30)
 		return false -- allows correction 
 	end
 	
 	-- now simply and irrevocable remove the observer, unless it's home, 
 	-- in which case it's simply reset 
 	if theZone == debugDemon.observer then 
-		trigger.action.outText("*** drop: <" .. observerName .. "> is MY PRECIOUS and WILL NOT be dropped.", 30)
+		debugger.outText("*** drop: <" .. observerName .. "> is MY PRECIOUS and WILL NOT be dropped.", 30)
 		-- can't really happen since it contains blanks, but
 		-- we've seen stranger things
 		return false -- allows correction 
@@ -721,7 +779,7 @@ function debugDemon.processDropCommand(args, event)
 	
 	debugger.removeDebugger(theZone)
 	
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger: dropped observer <" .. observerName .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: dropped observer <" .. observerName .. ">", 30)
 	return true 
 end
 -- observe command: add a new flag to observe
@@ -730,7 +788,7 @@ function debugDemon.processObserveCommand(args, event)
 	-- args[1] is the name of the flag 
 	local flagName = args[1]
 	if not flagName then 
-		trigger.action.outText("*** observe: missing flag name.", 30)
+		debugger.outText("*** observe: missing flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -738,7 +796,7 @@ function debugDemon.processObserveCommand(args, event)
 	if args[2] == "with" then 
 		local aName = args[3]
 		if not aName then 
-			trigger.action.outText("*** observe: missing <observer name> after 'with'.", 30)
+			debugger.outText("*** observe: missing <observer name> after 'with'.", 30)
 			return false -- allows correction 
 		end
 		aName = dcsCommon.stringRemainsStartingWith(event.remainder, aName)
@@ -746,12 +804,12 @@ function debugDemon.processObserveCommand(args, event)
 		if not withTracker then 
 --			withTracker = debugDemon.createObserver(aName)
 --			debugger.addDebugger(withTracker)
-			trigger.action.outText("*** observe: no observer <" .. aName .. "> exists", 30)
+			debugger.outText("*** observe: no observer <" .. aName .. "> exists", 30)
 			return false -- allows correction
 		end 
 	else -- not with as arg 2 
 		if #args > 1 then 
-			trigger.action.outText("*** observe: unknown command after flag name '" .. flagName .. "'.", 30)
+			debugger.outText("*** observe: unknown command after flag name '" .. flagName .. "'.", 30)
 			return false -- allows correction 
 		end
 		-- use own observer  
@@ -759,13 +817,13 @@ function debugDemon.processObserveCommand(args, event)
 	end
 	
 	if debugger.isObservingWithObserver(flagName, withTracker) then 
-		trigger.action.outText("*** observe: already observing " .. flagName .. " with <" .. withTracker.name .. ">" , 30)
+		debugger.outText("*** observe: already observing " .. flagName .. " with <" .. withTracker.name .. ">" , 30)
 		return true
 	end
 	
 	-- we add flag to tracker and init value
 	debugger.addFlagToObserver(flagName, withTracker)
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger: now observing <" .. flagName .. "> for value " .. withTracker.debugInputMethod .. " with <" .. withTracker.name .. ">.", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: now observing <" .. flagName .. "> for value " .. withTracker.debugInputMethod .. " with <" .. withTracker.name .. ">.", 30)
 	return true
 end
 
@@ -774,7 +832,7 @@ function debugDemon.processShowCommand(args, event)
 	-- observer has precendce over flag 
 	local theName = args[1]
 	if not theName then 
-		trigger.action.outText("*** show: missing observer/flag name.", 30)
+		debugger.outText("*** show: missing observer/flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -785,12 +843,12 @@ function debugDemon.processShowCommand(args, event)
 	if not theObserver then 
 		-- we directly use trigger.misc
 		local fVal = trigger.misc.getUserFlag(theName)
-		trigger.action.outText("[" .. dcsCommon.nowString() .. "] flag <" .. theName .. "> : value <".. fVal .. ">", 30)
+		debugger.outText("[" .. dcsCommon.nowString() .. "] flag <" .. theName .. "> : value <".. fVal .. ">", 30)
 		return true 
 	end
 	
 	-- if we get here, we want to show an entire observer 
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] flags observed by <" .. theName .. "> looking for <value ".. theObserver.debugInputMethod .. ">:", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] flags observed by <" .. theName .. "> looking for <value ".. theObserver.debugInputMethod .. ">:", 30)
 	local flags = theObserver.flagArray
 	local values = theObserver.valueArray
 	for idx, flagName in pairs(flags) do 
@@ -804,7 +862,7 @@ function debugDemon.processShowCommand(args, event)
 			theMark = " ! "
 			trailer = ", HIT!"
 		end 
-		trigger.action.outText(theMark .. "f:<" .. flagName .. "> = <".. fVal .. "> [current, state = <" .. values[flagName] .. ">" .. trailer .. "]", 30)
+		debugger.outText(theMark .. "f:<" .. flagName .. "> = <".. fVal .. "> [current, state = <" .. values[flagName] .. ">" .. trailer .. "]", 30)
 	end 
 	
 	return true 
@@ -836,7 +894,7 @@ function debugDemon.processSnapCommand(args, event)
 		theName = dcsCommon.stringRemainsStartingWith(event.remainder, theName)
 		theObserver = debugger.getDebuggerByName(theName)
 		if not theObserver then 
-			trigger.action.outText("*** snap: unknown observer name <" .. theName .. ">.", 30)
+			debugger.outText("*** snap: unknown observer name <" .. theName .. ">.", 30)
 			return false -- allows correction
 		end
 	end 
@@ -861,26 +919,26 @@ function debugDemon.processSnapCommand(args, event)
 	
 	local sz = dcsCommon.getSizeOfTable(snapshot)
 	debugDemon.snapshot = snapshot
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: new snapshot created, " .. sz .. " flags.", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: new snapshot created, " .. sz .. " flags.", 30)
 	
 	return true 
 end
 
 function debugDemon.processCompareCommand(args, event)
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: comparing snapshot with current flag values", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: comparing snapshot with current flag values", 30)
 	for flagName, val in pairs (debugDemon.snapshot) do 
 		local cVal = trigger.misc.getUserFlag(flagName)
 		local mark = '   '
 		if cVal ~= val then mark = ' ! ' end
-		trigger.action.outText(mark .. "<" .. flagName .. "> snap = <" .. val .. ">, now = <" .. cVal .. "> " .. mark, 30)
+		debugger.outText(mark .. "<" .. flagName .. "> snap = <" .. val .. ">, now = <" .. cVal .. "> " .. mark, 30)
 	end
-	trigger.action.outText("*** END", 30)
+	debugger.outText("*** END", 30)
 	return true 
 end
 
 function debugDemon.processNoteCommand(args, event)
 	local n = event.remainder
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "]: " .. n, 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "]: " .. n, 30)
 	return true
 end
 
@@ -888,7 +946,7 @@ function debugDemon.processSetCommand(args, event)
 	-- syntax set <flagname> <value>
 	local theName = args[1]
 	if not theName then 
-		trigger.action.outText("*** set: missing flag name.", 30)
+		debugger.outText("*** set: missing flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -900,13 +958,21 @@ function debugDemon.processSetCommand(args, event)
 	end
 	
 	if not theVal or not (tonumber(theVal)) then 
-		trigger.action.outText("*** set: missing or illegal value for flag <" .. theName .. ">.", 30)
+		debugger.outText("*** set: missing or illegal value for flag <" .. theName .. ">.", 30)
 		return false -- allows correction
 	end 
 	
-	-- we set directly, no cfxZones procing
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: set flag <" .. theName .. "> to <" .. theVal .. ">", 30)
+	theVal = tonumber(theVal) 
 	trigger.action.setUserFlag(theName, theVal)
+	-- we set directly, no cfxZones proccing
+	local note =""
+	-- flags are ints only?
+	if theVal ~= math.floor(theVal) then 
+		note = " [int! " .. math.floor(theVal) .. "]"
+	end
+	
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: set flag <" .. theName .. "> to <" .. theVal .. ">" .. note, 30)
+	
 	return true 
 end
 
@@ -914,7 +980,7 @@ function debugDemon.processIncCommand(args, event)
 	-- syntax inc <flagname>
 	local theName = args[1]
 	if not theName then 
-		trigger.action.outText("*** inc: missing flag name.", 30)
+		debugger.outText("*** inc: missing flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -922,7 +988,7 @@ function debugDemon.processIncCommand(args, event)
 	local nVal = cVal + 1 
 	
 	-- we set directly, no cfxZones procing
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: inc flag <" .. theName .. "> from <" .. cVal .. "> to <" .. nVal .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: inc flag <" .. theName .. "> from <" .. cVal .. "> to <" .. nVal .. ">", 30)
 	trigger.action.setUserFlag(theName, nVal)
 	return true 
 end
@@ -931,7 +997,7 @@ function debugDemon.processFlipCommand(args, event)
 	-- syntax flip <flagname> 
 	local theName = args[1]
 	if not theName then 
-		trigger.action.outText("*** flip: missing flag name.", 30)
+		debugger.outText("*** flip: missing flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -939,7 +1005,7 @@ function debugDemon.processFlipCommand(args, event)
 	if cVal == 0 then nVal = 1 else nVal = 0 end 
 	
 	-- we set directly, no cfxZones procing
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: flipped flag <" .. theName .. "> from <" .. cVal .. "> to <" .. nVal .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: flipped flag <" .. theName .. "> from <" .. cVal .. "> to <" .. nVal .. ">", 30)
 	trigger.action.setUserFlag(theName, nVal)
 	return true 
 end
@@ -952,9 +1018,9 @@ function debugDemon.processListCommand(args, event)
 		prefix = event.remainder -- dcsCommon.stringRemainsStartingWith(event.text, prefix)
 	end
 	if prefix then 
-		trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] listing observers whose name contains <" .. prefix .. ">:", 30)
+		debugger.outText("*** [" .. dcsCommon.nowString() .. "] listing observers whose name contains <" .. prefix .. ">:", 30)
 	else 
-		trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] listing all observers:", 30)
+		debugger.outText("*** [" .. dcsCommon.nowString() .. "] listing all observers:", 30)
 	end
 	
 	local allObservers = debugger.debugZones
@@ -966,7 +1032,7 @@ function debugDemon.processListCommand(args, event)
 		end
 		
 		if doList then 
-			trigger.action.outText("  <" .. theName .. "> for <value " .. theZone.debugInputMethod .. "> (" .. #theZone.flagArray .. " flags)", 30)
+			debugger.outText("  <" .. theName .. "> for <value " .. theZone.debugInputMethod .. "> (" .. #theZone.flagArray .. " flags)", 30)
 		end
 	end
     return true 
@@ -976,20 +1042,20 @@ function debugDemon.processWhoCommand(args, event)
 	-- syntax: who <flagname>
 	local flagName = event.remainder -- args[1]
 	if not flagName or flagName:len()<1 then 
-		trigger.action.outText("*** who: missing flag name.", 30)
+		debugger.outText("*** who: missing flag name.", 30)
 		return false -- allows correction 
 	end
 
 	local observers = debugger.isObserving(flagName)
 
 	if not observers or #observers < 1 then 
-		trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] flag <" .. flagName .. "> is currently not observed", 30)
+		debugger.outText("*** [" .. dcsCommon.nowString() .. "] flag <" .. flagName .. "> is currently not observed", 30)
 		return false
 	end 
 
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] flag <" .. flagName .. "> is currently observed by", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] flag <" .. flagName .. "> is currently observed by", 30)
 	for idx, theZone in pairs(observers) do 
-		trigger.action.outText("  <" .. theZone.name .. "> looking for <value " .. theZone.debugInputMethod .. ">", 30)
+		debugger.outText("  <" .. theZone.name .. "> looking for <value " .. theZone.debugInputMethod .. ">", 30)
 	end
 	
 	return true
@@ -1001,7 +1067,7 @@ function debugDemon.processForgetCommand(args, event)
 
 	local flagName = args[1]
 	if not flagName then 
-		trigger.action.outText("*** forget: missing flag name.", 30)
+		debugger.outText("*** forget: missing flag name.", 30)
 		return false -- allows correction 
 	end
 	
@@ -1009,19 +1075,19 @@ function debugDemon.processForgetCommand(args, event)
 	if args[2] == "with" or args[2] == "from" then -- we also allow 'from'
 		local aName = args[3]
 		if not aName then 
-			trigger.action.outText("*** forget: missing <observer name> after 'with'.", 30)
+			debugger.outText("*** forget: missing <observer name> after 'with'.", 30)
 			return false -- allows correction 
 		end
 		
 		aName = dcsCommon.stringRemainsStartingWith(event.remainder, aName)
 		withTracker = debugger.getDebuggerByName(aName)
 		if not withTracker then 
-			trigger.action.outText("*** forget: no observer named <" .. aName .. ">", 30)
+			debugger.outText("*** forget: no observer named <" .. aName .. ">", 30)
 			return false
 		end 
 	else -- not with as arg 2 
 		if #args > 1 then 
-			trigger.action.outText("*** forget: unknown command after flag name '" .. flagName .. "'.", 30)
+			debugger.outText("*** forget: unknown command after flag name '" .. flagName .. "'.", 30)
 			return false -- allows correction 
 		end
 		-- use own observer  
@@ -1029,13 +1095,13 @@ function debugDemon.processForgetCommand(args, event)
 	end
 	
 	if not debugger.isObservingWithObserver(flagName, withTracker) then 
-		trigger.action.outText("*** forget: observer <" .. withTracker.name .. "> does not observe flag <" .. flagName .. ">", 30)
+		debugger.outText("*** forget: observer <" .. withTracker.name .. "> does not observe flag <" .. flagName .. ">", 30)
 		return false
 	end
 	
 	-- we add flag to tracker and init value
 	debugger.removeFlagFromObserver(flagName, withTracker)
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger: no longer observing " .. flagName .. " with <" .. withTracker.name .. ">.", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: no longer observing " .. flagName .. " with <" .. withTracker.name .. ">.", 30)
 	return true
 end
 
@@ -1057,24 +1123,36 @@ function debugDemon.processResetCommand(args, event)
 	local obsName = args[1]
 	if not obsName then 
 		debugger.reset() -- reset all
-		trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debug: reset complete.", 30)
+		debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: reset complete.", 30)
 		return true -- allows correction 
 	end
 	
 	local withTracker = nil 
-	--if args[2] == "with" then 
-	local aName = args[1]
-	aName = event.remainder -- dcsCommon.stringRemainsStartingWith(event.text, aName)
+	local aName = event.remainder 
 	withTracker = debugger.getDebuggerByName(aName)
 	if not withTracker then 
-		trigger.action.outText("*** reset: no observer <" .. aName .. ">", 30)
+		debugger.outText("*** reset: no observer <" .. aName .. ">", 30)
 		return false
 	end 
 	
 	debugger.resetObserver(withTracker)
 	
-	trigger.action.outText("*** [" .. dcsCommon.nowString() .. "] debugger:reset observer <" .. withTracker.name .. ">", 30)
+	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger:reset observer <" .. withTracker.name .. ">", 30)
 	return true
+end
+
+function debugDemon.processSaveCommand(args, event)
+	-- save log to file, requires persistence module 
+	-- syntax: -save [<fileName>]
+	local aName = event.remainder
+	if not aName or aName:len() < 1 then 
+		aName = "DML Debugger Log"
+	end
+	if not dcsCommon.stringEndsWith(aName, ".txt") then 
+		aName = aName .. ".txt"
+	end
+	debugger.saveLog(aName)
+	return true 
 end
 --
 -- init and start
@@ -1084,7 +1162,7 @@ function debugDemon.readConfigZone()
 	local theZone = cfxZones.getZoneByName("debugDemonConfig") 
 	if not theZone then 
 		if debugDemon.verbose then 
-			trigger.action.outText("+++debug: NO config zone!", 30)
+			debugger.outText("+++debug (daemon): NO config zone!", 30)
 		end 
 		theZone = cfxZones.createSimpleZone("debugDemonConfig") 
 	end 
@@ -1099,7 +1177,7 @@ function debugDemon.readConfigZone()
 	
 	
 	if debugger.verbose then 
-		trigger.action.outText("+++debug (deamon): read config", 30)
+		debugger.outText("+++debug (deamon): read config", 30)
 	end 
 end
 
@@ -1139,6 +1217,8 @@ function debugDemon.init()
 	debugDemon.addCommndProcessor("start", debugDemon.processStartCommand)
 	debugDemon.addCommndProcessor("stop", debugDemon.processStopCommand)
 	debugDemon.addCommndProcessor("reset", debugDemon.processResetCommand)
+	
+	debugDemon.addCommndProcessor("save", debugDemon.processSaveCommand)
 
 	debugDemon.addCommndProcessor("?", debugDemon.processHelpCommand)
 	debugDemon.addCommndProcessor("help", debugDemon.processHelpCommand)
@@ -1159,7 +1239,11 @@ function debugDemon.start()
 	debugDemon.snapshot = debugDemon.createSnapshot(debugger.debugZones)
 	debugDemon.demonID = world.addEventHandler(debugDemon)
 		
-	trigger.action.outText("interactive debugDemon v" .. debugDemon.version .. " started" .. "\n  enter " .. debugDemon.markOfDemon .. "? in a map mark for help", 30)
+	debugger.outText("interactive debugDemon v" .. debugDemon.version .. " started" .. "\n  enter " .. debugDemon.markOfDemon .. "? in a map mark for help", 30)
+	
+	if not _G["persistence"] then 
+		debugger.outText("\n  note: '-save' disabled, no persistence module found", 30)
+	end
 end
 
 if debugDemon.init() then 
@@ -1170,6 +1254,11 @@ else
 end
 
 --[[--
-	- track units/groups: health changes 
-	- track players: unit change 
+	- track units/groups/objects: health changes 
+	- track players: unit change, enter, exit 
+	- inspect objects, dumping category, life, if it's tasking, latLon, alt, speed, direction 
+	
+	- exec files. save all commands and then run them from script 
+	- remove units via delete and explode
+	
 --]]--

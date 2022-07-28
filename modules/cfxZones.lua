@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.8.3"
+cfxZones.version = "2.8.4"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -88,6 +88,7 @@ cfxZones.version = "2.8.3"
 - 2.8.3   - new verifyMethod()
           - changed extractPropertyFromDCS() to also match attributes with blanks like "the Attr" to "theAttr"
 		  - new expandFlagName()
+- 2.8.4   - fixed bug in setFlagValue()
 
 --]]--
 cfxZones.verbose = false
@@ -867,11 +868,12 @@ end
 -- get closest zone returns the zone that is closest to point 
 function cfxZones.getClosestZone(point, theZones)
 	if not theZones then theZones = cfxZones.zones end
+	local lPoint = {x=point.x, y=0, z=point.z}
 	local currDelta = math.huge 
 	local closestZone = nil
 	for zName, zData in pairs(theZones) do 
 		local zPoint = cfxZones.getPoint(zData)
-		local delta = dcsCommon.dist(point, zPoint)
+		local delta = dcsCommon.dist(lPoint, zPoint) -- emulate flag compare 
 		if (delta < currDelta) then 
 			currDelta = delta
 			closestZone = zData
@@ -1276,7 +1278,7 @@ end
 function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	local zoneName = "<dummy>"
 	if not theZone then 
-		trigger.action.outText("+++Zne: no zone on setFlagValue")
+		trigger.action.outText("+++Zne: no zone on setFlagValue", 30) -- mod me for detector
 	else 
 		zoneName = theZone.name -- for flag wildcards
 	end

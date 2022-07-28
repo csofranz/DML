@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.3.1"
+rndFlags.version = "1.3.2"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -29,8 +29,10 @@ rndFlags.requiredLibs = {
 	      - added zonal verbosity 
 		  - added 'rndDone!' flag 
 		  - rndMethod defaults to "inc"
+	1.3.2 - moved flagArrayFromString to dcsCommon
 
 --]]
+
 rndFlags.rndGen = {}
 
 function rndFlags.addRNDZone(aZone)
@@ -38,6 +40,8 @@ function rndFlags.addRNDZone(aZone)
 end
 
 function rndFlags.flagArrayFromString(inString)
+	return dcsCommon.flagArrayFromString(inString, rndFlags.verbose)
+	--[[--
 	if string.len(inString) < 1 then 
 		trigger.action.outText("+++RND: empty flags", 30)
 		return {} 
@@ -88,6 +92,7 @@ function rndFlags.flagArrayFromString(inString)
 		trigger.action.outText("+++RND: <" .. #flags .. "> flags total", 30)
 	end 
 	return flags
+	--]]--
 end
 
 --

@@ -1,5 +1,5 @@
 cfxCargoReceiver = {}
-cfxCargoReceiver.version = "1.2.1" 
+cfxCargoReceiver.version = "1.2.2" 
 cfxCargoReceiver.ups = 1 -- once a second 
 cfxCargoReceiver.maxDirectionRange = 500 -- in m. distance when cargo manager starts talking to pilots who are carrying that cargo
 cfxCargoReceiver.requiredLibs = {
@@ -17,6 +17,9 @@ cfxCargoReceiver.requiredLibs = {
   - 1.2.0 method
 		  f!, cargoReceived!
   - 1.2.1 cargoMethod 
+  - 1.2.2 removed deprecated functions 
+		  corrected pollFlag bug (not passing zone along)
+		  distance to receiver is given as distance to zone boundary 
   
   
   CargoReceiver is a zone enhancement you use to be automatically 
@@ -39,13 +42,15 @@ function cfxCargoReceiver.processReceiverZone(aZone) -- process attribute and ad
 	-- isCargoReceiver flag and we are good
 	aZone.isCargoReceiver = true 
 	-- we can add additional processing here 
-	aZone.autoRemove = cfxZones.getBoolFromZoneProperty(aZone, "autoRemove", false) -- maybe add a removedelay
-	
+	aZone.autoRemove = cfxZones.getBoolFromZoneProperty(aZone, "autoRemove", false) -- maybe add a removeDelay
+	aZone.removeDelay = cfxZones.getNumberFromZoneProperty(aZone, "removeDelay", 1)
+	if aZone.removeDelay < 1 then aZone.removeDelay = 1 end 
 	aZone.silent = cfxZones.getBoolFromZoneProperty(aZone, "silent", false)
 	
 	--trigger.action.outText("+++rcv: recognized receiver zone: " .. aZone.name , 30)
 	
 	-- same integration as object destruct detector for flags
+	--[[--
 	if cfxZones.hasProperty(aZone, "setFlag") then 
 		aZone.setFlag = cfxZones.getStringFromZoneProperty(aZone, "setFlag", "999")
 	end
@@ -70,7 +75,7 @@ function cfxCargoReceiver.processReceiverZone(aZone) -- process attribute and ad
 	if cfxZones.hasProperty(aZone, "f-1") then 
 		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f-1", "999")
 	end
-	
+	--]]--
 	-- new method support
 	aZone.cargoMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
 	if cfxZones.hasProperty(aZone, "cargoMethod") then 
@@ -79,9 +84,7 @@ function cfxCargoReceiver.processReceiverZone(aZone) -- process attribute and ad
 	
 	if cfxZones.hasProperty(aZone, "f!") then 
 		aZone.outReceiveFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*<none>")
-	end
-
-	if cfxZones.hasProperty(aZone, "cargoReceived!") then 
+	elseif cfxZones.hasProperty(aZone, "cargoReceived!") then 
 		aZone.outReceiveFlag = cfxZones.getStringFromZoneProperty(aZone, "cargoReceived!", "*<none>")
 	end
 	
@@ -112,7 +115,25 @@ end
 --
 -- cargo event happened. Called by Cargo Manager
 --
+function cfxCargoReceiver.removeCargo(args)
+	-- asynch call
+	if not args then return end 
+	local theObject = args.theObject 
+	local theZone = args.theZone 
+	if not theObject then return end 
+	if not theObject:isExist() then 
+		-- maybe blew up? anyway, we are done 
+		return
+	end 
+	if args.theZone.verbose or cfxCargoReceiver.verbose then 
+		trigger.action.outText("+++crgR: removed object <" .. theObject.getName() .. "> from cargo zone <" .. theZone.name .. ">", 30)
+	end 
+	
+	theObject:destroy()
+end
+
 function cfxCargoReceiver.cargoEvent(event, object, name) 
+	-- usually called from cargomanager 
 	--trigger.action.outText("Cargo Receiver: event <" .. event .. "> for " .. name, 30)
 	if not event then return end 
 	if event == "grounded" then 
@@ -135,6 +156,7 @@ function cfxCargoReceiver.cargoEvent(event, object, name)
 				cfxCargoReceiver.invokeCallback("deliver", object, name, aZone)
 				
 				-- set flags as indicated
+				--[[--
 				if aZone.setFlag then 
 					trigger.action.setUserFlag(aZone.setFlag, 1)
 				end
@@ -149,16 +171,20 @@ function cfxCargoReceiver.cargoEvent(event, object, name)
 					local val = trigger.misc.getUserFlag(aZone.decreaseFlag) - 1
 					trigger.action.setUserFlag(aZone.decreaseFlag, val)
 				end
-				
+				--]]--
 				if aZone.outReceiveFlag then 
-					cfxZones.pollFlag(aZone.outReceiveFlag, aZone.cargoMethod)
+					cfxZones.pollFlag(aZone.outReceiveFlag, aZone.cargoMethod, aZone)
 				end
 				
 				--trigger.action.outText("+++rcv: " .. name .. " delivered in zone " .. aZone.name, 30)
 				--trigger.action.outSound("Quest Snare 3.wav")
 				if aZone.autoRemove then 
-					-- maybe schedule this in a few seconds?
-					object:destroy()
+					-- schedule this for in a few seconds?
+					local args = {}
+					args.theObject = object 
+					args.theZone = aZone 
+					timer.scheduleFunction(cfxCargoReceiver.removeCargo, args, timer.getTime() + aZone.removeDelay)
+					--object:destroy()
 				end
 			end
 		end
@@ -177,11 +203,16 @@ function cfxCargoReceiver.update()
 	-- new we see if any of these are close to a delivery zone 
 	for idx, aCargo in pairs(liftedCargos) do 
 		local thePoint = aCargo:getPoint()
-		local receiver, delta = cfxZones.getClosestZone(
+		local receiver = cfxZones.getClosestZone(
 			thePoint,
 			cfxCargoReceiver.receiverZones -- must be indexed by name
 			)
 		-- we now check if we are in 'speaking range' and receiver can talk 
+		-- modify delta by distance to boundary, not 
+		-- center
+		local delta = dcsCommon.distFlat(thePoint, cfxZones.getPoint(receiver))
+		delta = delta - receiver.radius
+		
 		if (receiver.silent == false) and 
 		   (delta < cfxCargoReceiver.maxDirectionRange) then 
 			-- this cargo can be talked down. 
@@ -195,7 +226,7 @@ function cfxCargoReceiver.update()
 				local theUnit = info.unit
 				if theUnit:isExist() then 
 					local uPoint = theUnit:getPoint()
-					local currDelta = dcsCommon.dist(thePoint, uPoint)
+					local currDelta = dcsCommon.distFlat(thePoint, uPoint)
 					if currDelta < minDelta then 
 						minDelta = currDelta
 						closestUnit = theUnit
@@ -217,7 +248,7 @@ function cfxCargoReceiver.update()
 							receiver.point, 
 							thePoint, 
 							ownHeading) .. " o'clock"
-						message = receiver.name .. " is " .. math.floor(delta) .. "m at your " .. oclock
+						message = receiver.name .. " (r=" .. receiver.radius .. "m) is " .. math.floor(delta) .. "m at your " .. oclock
 					end
 					-- add agl
 					local agl = dcsCommon.getUnitAGL(aCargo)

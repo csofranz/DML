@@ -566,5 +566,5 @@ end
 To do
 - reset? flag: will reset all to MX locationS
 - add a zone's follow ability to impostors by allowing linkedUnit to work with impostors 
-
+- impostor on idle option. when task of group goes to idle, the group turns into impostors 
 --]]--

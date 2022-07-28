@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.6"
+dcsCommon.version = "2.6.8"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -82,7 +82,9 @@ dcsCommon.version = "2.6.6"
 	   - new stringRemainsStartingWith()
        - new stripLF()
 	   - new removeBlanks()
-	   
+ 2.6.7 - new menu2text()
+ 2.6.8 - new getMissionName()
+       - new flagArrayFromString()
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1882,6 +1884,21 @@ dcsCommon.version = "2.6.6"
 		return catNum
 	end
 
+	function dcsCommon.menu2text(inMenu)
+		if not inMenu then return "<nil>" end
+		local s = ""
+		for n, v in pairs(inMenu) do 
+			if type(v) == "string" then 
+				if s == "" then s = "[" .. v .. "]"  else 
+					s = s .. " | [" .. type(v) .. "]" end
+			else 
+				if s == "" then s = "[<" .. type(v) .. ">]"  else
+					s = s .. " | [<" .. type(v) .. ">]" end
+			end
+		end
+		return s
+	end
+
 	-- recursively show the contents of a variable
 	function dcsCommon.dumpVar(key, value, prefix, inrecursion)
 		if not inrecursion then 
@@ -2361,6 +2378,68 @@ function dcsCommon.latLon2Text(lat, lon)
 	return lat, lon  
 end
 
+-- get mission name. If mission file name without ".miz"
+function dcsCommon.getMissionName()
+	local mn = net.dostring_in("gui", "return DCS.getMissionName()")
+	return mn
+end
+
+function dcsCommon.flagArrayFromString(inString, verbose)
+	if not verbose then verbose = false end 
+	
+	if verbose then 
+		trigger.action.outText("+++flagArray: processing <" .. inString .. ">", 30)
+	end 
+
+	if string.len(inString) < 1 then 
+		trigger.action.outText("+++flagArray: empty flags", 30)
+		return {} 
+	end
+	
+	
+	local flags = {}
+	local rawElements = dcsCommon.splitString(inString, ",")
+	-- go over all elements 
+	for idx, anElement in pairs(rawElements) do 
+		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
+			-- interpret this as a range
+			local theRange = dcsCommon.splitString(anElement, "-")
+			local lowerBound = theRange[1]
+			lowerBound = tonumber(lowerBound)
+			local upperBound = theRange[2]
+			upperBound = tonumber(upperBound)
+			if lowerBound and upperBound then
+				-- swap if wrong order
+				if lowerBound > upperBound then 
+					local temp = upperBound
+					upperBound = lowerBound
+					lowerBound = temp 
+				end
+				-- now add add numbers to flags
+				for f=lowerBound, upperBound do 
+					table.insert(flags, f)
+
+				end
+			else
+				-- bounds illegal
+				trigger.action.outText("+++flagArray: ignored range <" .. anElement .. "> (range)", 30)
+			end
+		else
+			-- single number
+			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
+			if f then 
+				table.insert(flags, f)
+
+			else 
+				trigger.action.outText("+++flagArray: ignored element <" .. anElement .. "> (single)", 30)
+			end
+		end
+	end
+	if verbose then 
+		trigger.action.outText("+++flagArray: <" .. #flags .. "> flags total", 30)
+	end 
+	return flags
+end
 --
 --
 -- INIT

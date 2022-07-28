@@ -1,5 +1,5 @@
 delicates = {}
-delicates.version = "1.0.0"
+delicates.version = "1.1.0"
 delicates.verbose = false 
 delicates.ups = 1 
 delicates.requiredLibs = {
@@ -12,6 +12,11 @@ delicates.inventory = {}
 --[[--
 	Version History 
 	1.0.0 - initial version 
+	1.1.0 - better synonym handling for f! and out!
+	      - addStaticObjectInventoryForZone
+		  - blowAll?
+		  - safetyMargin - safety margin. defaults to 10%
+	
 	
 --]]--
 function delicates.adddDelicates(theZone)
@@ -68,7 +73,7 @@ function delicates.makeZoneInventory(theZone)
 			for idy, anObject in pairs(collector) do
 				local oName = anObject:getName()
 				if type(oName) == 'number' then oName = tostring(oName) end
-				local oLife = anObject:getLife()
+				local oLife = anObject:getLife() - anObject:getLife() * theZone.safetyMargin
 				if theZone.verbose or delicates.verbose then
 					trigger.action.outText("+++deli: cat=".. aCat .. ":<" .. oName .. "> Life=" .. oLife, 30)
 				end 
@@ -91,18 +96,36 @@ function delicates.makeZoneInventory(theZone)
 	end
 end
 
+function delicates.addStaticObjectToInventoryForZone(theZone, theStatic)
+	if not theZone then return end 
+	if not theStatic then return end 
+	
+	local desc = {}
+	desc.cat = theStatic:getCategory()
+	desc.oLife = theStatic:getLife() - theStatic:getLife() * theZone.safetyMargin
+	if desc.oLife < 0 then desc.oLife = 0 end 
+	desc.theZone = theZone 
+	desc.oName = theStatic:getName() 
+	delicates.inventory[desc.oName] = desc
+	
+	if theZone.verbose or delicates.verbose then 
+		trigger.action.outText("+++deli: added static <" .. desc.oName .. "> to <" .. theZone.name .. "> with minimal life = <" .. desc.oLife .. "/" .. theStatic:getLife() .. "> = safety margin of " .. theZone.safetyMargin * 100 .. "%", 30)
+	end 
+end 
+
 function delicates.createDelicatesWithZone(theZone)
 	theZone.power = cfxZones.getNumberFromZoneProperty(theZone, "power", 10)
 	
 	if cfxZones.hasProperty(theZone, "delicatesHit!") then
 		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "delicatesHit!", "*<none>")
-	end 
-	if cfxZones.hasProperty(theZone, "f!") then
+	elseif cfxZones.hasProperty(theZone, "f!") then
 		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "f!", "*<none>")
-	end
-	if cfxZones.hasProperty(theZone, "out!") then
+	elseif cfxZones.hasProperty(theZone, "out!") then
 		theZone.delicateHit = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
 	end
+	
+	-- safety margin
+	theZone.safetyMargin = cfxZones.getNumberFromZoneProperty(theZone, "safetyMargin", 0)
 	
 	-- DML Method 
 	theZone.delicateHitMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
@@ -110,12 +133,21 @@ function delicates.createDelicatesWithZone(theZone)
 		theZone.delicateHitMethod = cfxZones.getStringFromZoneProperty(theZone, "delicatesMethod", "inc")
 	end
 	
+	theZone.delicateTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "thriggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "delicateTriggerMethod") then 
+		theZone.delicateTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "delicatesMethod", "change")
+	end
 	
 	theZone.delicateRemove = cfxZones.getBoolFromZoneProperty(theZone, "remove", true)
 	
 	-- read objects for this zone
 	-- may want to filter by objects, can be passed in delicates
 	delicates.makeZoneInventory(theZone) 
+	
+	if cfxZones.hasProperty(theZone, "blowAll?") then 
+		theZone.blowAll = cfxZones.getStringFromZoneProperty(theZone, "blowAll?", "*<none>")
+		theZone.lastBlowAll = cfxZones.getFlagValue(theZone.blowAll, theZone)
+	end
 	
 	if delicates.verbose or theZone.verbose then 
 		trigger.action.outText("+++deli: new delicates zone <".. theZone.name ..">", 30)
@@ -185,14 +217,42 @@ function delicates:onEvent(theEvent)
 	local oName = theObj:getName()
 	local desc = delicates.inventory[oName]
 	if desc then 
---		trigger.action.outText("+++deli: REGISTERED HIT -- removing!", 30)
-		delicates.blowUpObject(desc)
-		-- remove it from further searches
-		delicates.inventory[oName] = nil 
+		-- see if damage exceeds maximum 
+		local cLife = theObj:getLife()
+		if cLife < desc.oLife then
+			if desc.theZone.verbose or delicates.verbose then 
+				trigger.action.outText("+++deli: BRITTLE TRIGGER: life <" .. cLife .. "> below safety margin <" .. oDesc.oLife .. ">", 30)
+			end
+			delicates.blowUpObject(desc)
+			-- remove it from further searches
+			delicates.inventory[oName] = nil
+		else 
+			if desc.theZone.verbose or delicates.verbose then 
+				trigger.action.outText("+++deli: CLOSE CALL, but life <" .. cLife .. "> within safety margin <" .. oDesc.oLife .. ">", 30)
+			end
+		end
 	end
-	
---	trigger.action.outText("+++deli: we hit " .. oName, 30)
-	
+		
+end
+
+--
+-- blow entire zone 
+--
+function delicates.blowZone(theZone)
+	if not theZone then return end 
+	local zName = theZone.name 
+	local newInventory = {}
+	local delay = 0.7
+	for oName, oDesc in pairs (delicates.inventory) do 
+		if oDesc.theZone.name == zName then 
+			delicates.blowUpObject(oDesc, delay)
+			delay = delay + 0.2 -- stagger explosions
+		else 
+			newInventory[oName] = oDesc
+		end
+	end
+
+	delicates.inventory = newInventory
 end
 
 --
@@ -228,12 +288,12 @@ function delicates.update()
 		if theObj then 
 			local cLife = theObj:getLife()
 			if cLife >= oDesc.oLife then 
-				-- transfer to next iter 
+				-- all well, transfer to next iter 
 				newInventory[oName] = oDesc
 			else 
-				-- blow stuff up 
+				-- health beneath min. blow stuff up 
 				if oDesc.theZone.verbose or delicates.verbose then
-					trigger.action.outText(oName .. " was hit, will blow up, new health is at " .. oDesc.oLife .. ".", 30)
+					trigger.action.outText(oName .. " was hit, will blow up, current health is <" .. cLife .. ">, min health was " .. oDesc.oLife .. ".", 30)
 				end 
 				delicates.blowUpObject(oDesc)
 			end
@@ -245,6 +305,13 @@ function delicates.update()
 		end
 	end
 	delicates.inventory = newInventory
+	
+	-- now scan all zones for signals 
+	for idx, theZone in pairs(delicates.theDelicates) do 
+		if theZone.blowAll and cfxZones.testZoneFlag(theZone, theZone.blowAll, theZone.delicateTriggerMethod, "lastBlowAll") then 
+			delicates.blowZone(theZone)
+		end
+	end
 end
 
 --

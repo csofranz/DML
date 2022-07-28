@@ -1,5 +1,6 @@
 cfxMX = {}
-cfxMX.version = "1.1.0"
+cfxMX.version = "1.2.0"
+cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
  
@@ -12,6 +13,10 @@ cfxMX.version = "1.1.0"
 	     - on start up collects a cross reference table of all 
 		   original group id 
 		 - add linkUnit for statics 
+   1.2.0 - added group name reference table 
+		 - added group type reference 
+		 - added references for allFixed, allHelo, allGround, allSea, allStatic
+		 
    
  
 --]]--
@@ -19,6 +24,11 @@ cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.groupDataByName = {}
 
+cfxMX.allFixedByName = {}
+cfxMX.allHeloByName = {}
+cfxMX.allGroundByName = {}
+cfxMX.allSeaByName = {}
+cfxMX.allStaticByName ={}
 
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -154,7 +164,7 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 	return nil, "<none>", "<none>", "<no group name>"
 end
 
-function cfxMX.createCrossReference()
+function cfxMX.createCrossReferences()
 	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
 		local coa_name = coa_name_miz
 		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
@@ -178,7 +188,7 @@ function cfxMX.createCrossReference()
 							   obj_type_name == "ship" or 
 							   obj_type_name == "plane" or 
 							   obj_type_name == "vehicle" or 
-							   obj_type_name == "static" 
+							   obj_type_name == "static" -- what about "cargo"?
 							then -- (so it's not id or name)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
@@ -188,6 +198,21 @@ function cfxMX.createCrossReference()
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
 										cfxMX.groupDataByName[aName] = group_data
+										-- now make the type-specific xrefs
+										if obj_type_name == "helicopter" then 
+											cfxMX.allHeloByName[aName] = group_data 
+										elseif obj_type_name == "ship" then 
+											cfxMX.allSeaByName[aName] = group_data
+										elseif obj_type_name == "plane" then 
+											cfxMX.allFixedByName[aName] = group_data
+										elseif obj_type_name == "vehicle" then 
+											cfxMX.allGroundByName[aName] = group_data
+										elseif obj_type_name == "static" then 
+											cfxMX.allStaticByName[aName] = group_data
+										else 
+											-- should be impossible, but still
+											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)
+										end
 									end
 								end --if has category data 
 							end --if plane, helo etc... category
@@ -212,8 +237,10 @@ function cfxMX.catText2ID(inText)
 end
  
 function cfxMX.start()
-	cfxMX.createCrossReference()
-	trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)
+	cfxMX.createCrossReferences()
+	if cfxMX.verbose then 
+		trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)
+	end
 end
 
 -- start 

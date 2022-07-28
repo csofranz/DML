@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "1.0.1"
+radioMenu.version = "1.1.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -12,6 +12,9 @@ radioMenu.menus = {}
 	Version History 
 	1.0.0 Initial version 
 	1.0.1 spelling corrections
+	1.1.0 removeMenu 
+	      addMenu 
+		  menuVisible 
 	
 --]]--
 function radioMenu.addRadioMenu(theZone)
@@ -32,17 +35,60 @@ end
 --
 -- read zone 
 -- 
+function radioMenu.installMenu(theZone)
+	if theZone.coalition == 0 then 
+		theZone.rootMenu = missionCommands.addSubMenu(theZone.rootName, nil) 
+	else 
+		theZone.rootMenu = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, nil) 
+	end
+	
+	local menuA = cfxZones.getStringFromZoneProperty(theZone, "itemA", "<no A submenu>")
+	if theZone.coalition == 0 then 
+		theZone.menuA = missionCommands.addCommand(menuA, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "A"})
+	else 
+		theZone.menuA = missionCommands.addCommandForCoalition(theZone.coalition, menuA, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "A"})
+	end 
+	
+	if cfxZones.hasProperty(theZone, "itemB") then 
+		local menuB = cfxZones.getStringFromZoneProperty(theZone, "itemB", "<no B submenu>")
+		if theZone.coalition == 0 then 
+			theZone.menuB = missionCommands.addCommand(menuB, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "B"})
+		else 
+			theZone.menuB = missionCommands.addCommandForCoalition(theZone.coalition, menuB, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "B"})
+		end
+	end
+
+	if cfxZones.hasProperty(theZone, "itemC") then 
+		local menuC = cfxZones.getStringFromZoneProperty(theZone, "itemC", "<no C submenu>")
+		if theZone.coalition == 0 then 
+			theZone.menuC = missionCommands.addCommand(menuC, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "C"})
+		else 
+			theZone.menuC = missionCommands.addCommandForCoalition(theZone.coalition, menuC, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "C"})
+		end
+	end
+	
+	if cfxZones.hasProperty(theZone, "itemD") then 
+		local menuD = cfxZones.getStringFromZoneProperty(theZone, "itemD", "<no D submenu>")
+		if theZone.coalition == 0 then 
+			theZone.menuD = missionCommands.addCommand(menuD, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "D"})
+		else 
+			theZone.menuD = missionCommands.addCommandForCoalition(theZone.coalition, menuD, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "D"})
+		end
+	end
+end
+
 function radioMenu.createRadioMenuWithZone(theZone)
-	local rootName = cfxZones.getStringFromZoneProperty(theZone, "radioMenu", "<No Name>")
+	theZone.rootName = cfxZones.getStringFromZoneProperty(theZone, "radioMenu", "<No Name>")
 	
 	theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
 	
-	if theZone.coalition == 0 then 
-		theZone.rootMenu = missionCommands.addSubMenu(rootName, nil) 
-	else 
-		theZone.rootMenu = missionCommands.addSubMenuForCoalition(theZone.coalition, rootName, nil) 
-	end
+	theZone.menuVisible = cfxZones.getBoolFromZoneProperty(theZone, "menuVisible", true)
 	
+	-- install menu if not hidden
+	if theZone.menuVisible then 
+		radioMenu.installMenu(theZone)
+	end
+	--[[--
 	-- now do the two options
 	local menuA = cfxZones.getStringFromZoneProperty(theZone, "itemA", "<no A submenu>")
 	if theZone.coalition == 0 then 
@@ -78,12 +124,15 @@ function radioMenu.createRadioMenuWithZone(theZone)
 		end
 	end
 	
+	--]]--
 	
 	-- get the triggers & methods here 
 	theZone.radioMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	if cfxZones.hasProperty(theZone, "radioMethod") then 
 		theZone.radioMethod = cfxZones.getStringFromZoneProperty(theZone, "radioMethod", "inc")
 	end
+	
+	theZone.radioTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "radioTriggerMethod", "change")
 	
 	theZone.itemAChosen = cfxZones.getStringFromZoneProperty(theZone, "A!", "*<none>")
 	theZone.cooldownA = cfxZones.getNumberFromZoneProperty(theZone, "cooldownA", 0)
@@ -104,6 +153,16 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	theZone.cooldownD = cfxZones.getNumberFromZoneProperty(theZone, "cooldownD", 0)
 	theZone.mcdD = 0
 	theZone.busyD = cfxZones.getStringFromZoneProperty(theZone, "busyD", "Please stand by (<s> seconds)")
+	
+	if cfxZones.hasProperty(theZone, "removeMenu?") then 
+		theZone.removeMenu = cfxZones.getStringFromZoneProperty(theZone, "removeMenu?", "*<none>")
+		theZone.lastRemoveMenu = cfxZones.getFlagValue(theZone.removeMenu, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "addMenu?") then 
+		theZone.addMenu = cfxZones.getStringFromZoneProperty(theZone, "addMenu?", "*<none>")
+		theZone.lastAddMenu = cfxZones.getFlagValue(theZone.addMenu, theZone)
+	end
 	
 	if radioMenu.verbose or theZone.verbose then 
 		trigger.action.outText("+++radioMenu: new radioMenu zone <".. theZone.name ..">", 30)
@@ -189,13 +248,44 @@ end
 --
 -- Update -- required when we can enable/disable a zone's menu
 --
---[[--
+
 function radioMenu.update()
 	-- call me in a second to poll triggers
 	timer.scheduleFunction(radioMenu.update, {}, timer.getTime() + 1/radioMenu.ups)
+	
+	-- iterate all menus
+	for idx, theZone in pairs(radioMenu.menus) do 
+		if theZone.removeMenu 
+		and cfxZones.testZoneFlag(theZone, theZone.removeMenu, theZone.radioTriggerMethod, "lastRemoveMenu") 
+		and theZone.menuVisible
+		then 
+			if theZone.verbose or radioMenu.verbose then 
+				trigger.action.outText("+++menu: removing <" .. dcsCommon.menu2text(theZone.rootMenu) .. "> for <" .. theZone.name .. ">", 30)
+			end 
+			
+			if theZone.coalition == 0 then 
+				missionCommands.removeItem(theZone.rootMenu) 
+			else 
+				missionCommands.removeItemForCoalition(theZone.coalition, theZone.rootMenu) 
+			end
+			
+			theZone.menuVisible = false 
+		end
 		
+		if theZone.addMenu 
+		and cfxZones.testZoneFlag(theZone, theZone.addMenu, theZone.radioTriggerMethod, "lastAddMenu") 
+		and (not theZone.menuVisible)
+		then 
+			if theZone.verbose or radioMenu.verbose then 
+				trigger.action.outText("+++menu: adding menu from <" .. theZone.name .. ">", 30)
+			end 
+			
+			radioMenu.installMenu(theZone) -- auto-handles coalition
+			theZone.menuVisible = true 
+		end
+	end
 end
---]]--
+
 
 --
 -- Config & Start
@@ -238,7 +328,7 @@ function radioMenu.start()
 	end
 	
 	-- start update 
-	--radioMenu.update()
+	radioMenu.update()
 	
 	trigger.action.outText("cfx radioMenu v" .. radioMenu.version .. " started.", 30)
 	return true 
@@ -251,7 +341,5 @@ if not radioMenu.start() then
 end
 
 --[[--
-	to do: turn on/off via flags
 	callbacks for the menus 
-	one-shot items 
 --]]--
