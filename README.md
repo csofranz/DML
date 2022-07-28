@@ -3,7 +3,15 @@ A Toolbox For Mission Designers
 (no Lua Required)
 
 ## What?
-DML is a **mission-building toolbox** for Eagle Dynamic's DCS combat flight simulator that **does not require Lua**, yet it also provides comprehensive support if you do want to use Lua. At its heart are modules that **attach themselves to Mission Editor’s (ME) Trigger Zones** to provide new abilities. Mission designers control these new abilities in ME by adding ‘Attributes’ to these Trigger Zones.
+DML is a **mission-building toolbox** for Eagle Dynamic's DCS combat flight simulator. It contains many modules that all can do something for you. It’s built similar to a box of LEGO® bricks – you seldom need all, and you can start having fun building stuff knowing just the basics and using just a few.
+Here are some examples:
+-	Do you want to add a moving NDB to a ship? Just add the NDB module
+-	Want to keep kill scores? Add the PlayerScore module.
+-	How about dynamically spawn troops when you need? Look at Cloners.
+-	Your mission needs random civilian traffic? Check out Civ Air.
+
+Even better, **DML does not require Lua**, yet it also provides comprehensive support for Lua. 
+At its heart are modules that attach themselves to Mission Editor’s (ME) Trigger Zones to provide new abilities. Mission designers control abilities in ME by adding ‘Attributes’ to these Trigger Zones.
 
 ![image](https://user-images.githubusercontent.com/21967811/150338060-10061782-c59c-46ac-8e42-ab598aae1fc9.png)
 
@@ -64,6 +72,8 @@ So, what’s in DML right now? In a nutshell here’s what you get:
   - Conquerable Zones and FARPS
   - (moving) NDB
   - Map/Scenery Object destruction Detector 
+- **Persistence** – players can **save a mission and then later continue** it (within the confines of DCS’s limitations)
+- An **Interactive Debugger** to inspect flag values, report any time they change their value or if their value changes to a specific number – with ME integration that allows you to set up debugging missions before you run them
 - **Foundation**, a library of ready-to-use methods **(only for mission designers who use Lua)**. They support
   - Advanced Event Handlers for mission and player events
   - Zone management and attaching/reading zone attributes
