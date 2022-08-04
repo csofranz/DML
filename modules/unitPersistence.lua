@@ -1,6 +1,7 @@
 unitPersistence = {}
-unitPersistence.version = '1.0.0'
+unitPersistence.version = '1.0.1'
 unitPersistence.verbose = false 
+unitPersistence.updateTime = 60 -- seconds. Once every minute check statics
 unitPersistence.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -10,6 +11,10 @@ unitPersistence.requiredLibs = {
 --[[--
 	Version History 
 	1.0.0 - initial version
+	1.0.1 - handles late activation 
+	      - handles linked static objects 
+		  - does no longer mess with heliports 
+		  - update statics once a minute, not second 
 	
 	REQUIRES PERSISTENCE AND MX
 
@@ -66,7 +71,7 @@ function unitPersistence.saveData()
 	
 	-- process all static objects placed with ME 
 	for oName, oData in pairs(unitPersistence.statics) do 
-		if not oData.isDead then 
+		if not oData.isDead or oData.lateActivation then 
 			-- fetch the object and see if it's still alive
 			local theObject = StaticObject.getByName(oName)
 			if theObject and theObject:isExist() then
@@ -75,17 +80,16 @@ function unitPersistence.saveData()
 				oData.x = pos.x
 				oData.y = pos.z -- (!!)
 				oData.isDead = theObject:getLife() < 1
---				trigger.action.outText("deadcheck: " .. oName .. " has health=" .. theObject:getLife(), 30)
 				oData.dead = oData.isDead
 			else 
 				oData.isDead = true
 				oData.dead = true 
---				trigger.action.outText("deadcheck: " .. oName .. " certified dead", 30)
 			end
 		end
 		if unitPersistence.verbose then 
 			local note = "(ok)"
 			if oData.isDead then note = "(dead)" end 
+			if oData.lateActivation then note = "(late active)" end 
 			trigger.action.outText("unitPersistence: save - processed group <" .. oName .. ">. " .. note, 30)
 		end
 	end
@@ -154,7 +158,7 @@ function unitPersistence.loadMission()
 					trigger.action.outText("+++ failed to add modified group <" .. groupName .. ">")
 				end
 				if unitPersistence.verbose then 
-					trigger.action.outText("+++unitPersistence: updated group <" .. groupName .. "> of cat <" .. cat .. "> for cty <" .. cty .. ">", 30)
+				--	trigger.action.outText("+++unitPersistence: updated group <" .. groupName .. "> of cat <" .. cat .. "> for cty <" .. cty .. ">", 30)
 				end 
 			end 
 		end
@@ -167,11 +171,27 @@ function unitPersistence.loadMission()
 	-- and now the same for static objects 
 	if theData.statics then 
 		for name, staticData in pairs(theData.statics) do
-			local theStatic = StaticObject.getByName(name)
-			if not theStatic then 
-				mismatchWarning = true 
+			--local theStatic = StaticObject.getByName(name)
+			if staticData.lateActivation then 
+				-- this one will not be in the game now, skip
+				if unitPersistence.verbose then
+					trigger.action.outText("+++unitPersistence: static <" .. name .. "> is late activate, no update", 30)
+				end
+			--elseif not theStatic then 
+			--	mismatchWarning = true 
+			elseif staticData.category == "Heliports" then 
+				-- FARPS are static objects that HATE to be 
+				-- messed with, so we don't 
+				if unitPersistence.verbose then
+					trigger.action.outText("+++unitPersistence: static <" .. name .. "> is Heliport, no update", 30)
+				end
 			else
 				local newStatic = dcsCommon.clone(staticData)
+				-- add link info if it exists
+				newStatic.linkUnit = cfxMX.linkByName[name]
+				if newStatic.linkUnit and unitPersistence.verbose then 
+					trigger.action.outText("+++unitPersistence: linked static <" .. name .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
+				end
 				local cty = staticData.cty 
 				local cat = staticData.cat
 				-- spawn new one, replacing same.named old, dead if required 
@@ -182,7 +202,7 @@ function unitPersistence.loadMission()
 				if unitPersistence.verbose then 
 					local note = ""
 					if newStatic.dead then note = " (dead)" end 
-					trigger.action.outText("+++unitPersistence: updated static <" .. name .. "> for cty <" .. cty .. ">" .. note, 30)
+					-- trigger.action.outText("+++unitPersistence: updated static <" .. name .. "> for cty <" .. cty .. ">" .. note, 30)
 				end 
 			end
 		end
@@ -194,6 +214,31 @@ function unitPersistence.loadMission()
 	-- set mission according to data received from last save 
 	if unitPersistence.verbose then 
 		trigger.action.outText("unitPersistence: units set from save data.", 30)
+	end
+end
+
+--
+-- Update
+--
+function unitPersistence.update()
+	-- we check every minute
+	timer.scheduleFunction(unitPersistence.update, {}, timer.getTime() + unitPersistence.updateTime)
+	-- do a quick scan for all late activated static objects and if they 
+	-- are suddently visible, remove their late activate state 
+	--for groupName, groupdata in pairs(unitPersistence.groundTroops) do 
+		-- currently not needed
+	--end
+	
+	for objName, objData in pairs(unitPersistence.statics) do 
+		if objData.lateActivation then 
+			local theStatic = StaticObject.getByName(objData.name)
+			if theStatic then 
+				objData.lateActivation = false 
+				if unitPersistence.verbose then 
+					trigger.action.outText("+++unitPersistence: <" ..  objData.name .. "> has activated", 30)
+				end	
+			end
+		end
 	end
 end
 
@@ -250,20 +295,28 @@ function unitPersistence.start()
 			theStatic.isDead = false 
 			theStatic.groupId = mxData.groupId
 			theStatic.cat = cfxMX.catText2ID("static")
+			theStatic.cty = cfxMX.countryByName[name]
 			local gameOb = StaticObject.getByName(theStatic.name)
 			if not gameOb then 
-				trigger.action.outText("+++warning: static object <" .. theStatic.name .. "> does not exist in-game!?", 30)
+				if unitPersistence.verbose then 
+					trigger.action.outText("+++unitPersistence: static object <" .. theStatic.name .. "> has late activation", 30)
+				end 
+				theStatic.lateActivation = true 
 			else 
-				theStatic.cty = gameOb:getCountry()
-				unitPersistence.statics[theStatic.name] = theStatic
+				--theStatic.cty = gameOb:getCountry()
+				--unitPersistence.statics[theStatic.name] = theStatic
 			end
+			unitPersistence.statics[theStatic.name] = theStatic
 		end
 	end
-	
+		
 	-- when we run, persistence has run and may have data ready for us
 	if persistence.hasData then
 		unitPersistence.loadMission()
 	end
+	
+	-- start update 
+	unitPersistence.update()
 	
 	return true 
 end
@@ -274,3 +327,7 @@ if not unitPersistence.start() then
 	end
 	unitPersistence = nil 
 end
+--[[--
+	ToDo: linked statics and linked units on restore 
+
+--]]--

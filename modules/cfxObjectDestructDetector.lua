@@ -1,22 +1,24 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "1.2.0" 
+cfxObjectDestructDetector.version = "1.3.0" 
+cfxObjectDestructDetector.verbose = false 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
-cfxObjectDestructDetector.verbose = false 
 --[[--
    VERSION HISTORY 
    1.0.0 initial version, based on parashoo, arty zones  
    1.0.1 fixed bug: trigger.MISC.getUserFlag()
    1.1.0 added support for method, f! and destroyed! 
    1.2.0 DML / Watchflag support 
+   1.3.0 Persistence support 
    
    
    Detect when an object with OBJECT ID as assigned in ME dies 
    *** EXTENDS ZONES 
    
 --]]--
+
 cfxObjectDestructDetector.objectZones = {}
 
 --
@@ -41,6 +43,14 @@ function cfxObjectDestructDetector.addObjectDetectZone(aZone)
 	table.insert(cfxObjectDestructDetector.objectZones, aZone)
 end
 
+function cfxObjectDestructDetector.getObjectDetectZoneByName(aName)
+	for idx, aZone in pairs(cfxObjectDestructDetector.objectZones) do 
+		if aZone.name == aName then return aZone end 
+	end
+	-- add landHeight to this zone 
+	return nil
+end
+
 --
 -- processing of zones 
 --
@@ -48,6 +58,10 @@ function cfxObjectDestructDetector.processObjectDestructZone(aZone)
 	aZone.name = cfxZones.getStringFromZoneProperty(aZone, "NAME", aZone.name)
 --	aZone.coalition = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0)
 	aZone.ID = cfxZones.getNumberFromZoneProperty(aZone, "OBJECT ID", 1)  -- THIS!
+	-- persistence interface
+	aZone.isDestroyed = false 
+	
+	--[[-- old code, to be decom'd --]]--
 	if cfxZones.hasProperty(aZone, "setFlag") then 
 		aZone.setFlag = cfxZones.getStringFromZoneProperty(aZone, "setFlag", "999")
 	end
@@ -73,16 +87,16 @@ function cfxObjectDestructDetector.processObjectDestructZone(aZone)
 		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f-1", "999")
 	end
 	
-	-- new method support
-	aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "flip")
+	-- DML method support
+	aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
 	if cfxZones.hasProperty(aZone, "oddMethod") then 
-		aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "oddMethod", "flip")
+		aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "oddMethod", "inc")
 	end
 	
 	
-	if cfxZones.hasProperty(aZone, "f!") then 
-		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*none")
-	end
+	-- we now always have that property
+	aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*none")
+
 	if cfxZones.hasProperty(aZone, "destroyed!") then 
 		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "destroyed!", "*none")
 	end
@@ -102,7 +116,7 @@ function cfxObjectDestructDetector:onEvent(event)
 		if not id then return end 
 		
 		for idx, aZone in pairs(cfxObjectDestructDetector.objectZones) do 
-			if aZone.ID == id then 
+			if (not aZone.isDestroyed) and aZone.ID == id then 
 				-- flag manipulation 
 				-- OLD FLAG SUPPORT, SOON TO BE REMOVED
 				if aZone.setFlag then 
@@ -128,13 +142,16 @@ function cfxObjectDestructDetector:onEvent(event)
 				
 				-- invoke callbacks 
 				cfxObjectDestructDetector.invokeCallbacksFor(aZone)
-				if cfxObjectDestructDetector.verbose then 
+				if aZone.verbose or cfxObjectDestructDetector.verbose then 
 					trigger.action.outText("OBJECT KILL: " .. id, 30)
 				end
 
 				-- we could now remove the object from the list 
 				-- for better performance since it cant
 				-- die twice 
+				
+				-- save state for persistence
+				aZone.isDestroyed = true 
 				
 				return 
 			end
@@ -143,8 +160,85 @@ function cfxObjectDestructDetector:onEvent(event)
     end
 	
 end
--- add event handler
 
+--
+-- persistence: save and load data 
+--
+function cfxObjectDestructDetector.saveData() -- invoked by persistence
+	local theData = {}
+	local zoneInfo = {}
+	for idx, aZone in pairs(cfxObjectDestructDetector.objectZones) do
+		-- save all pertinent info. in our case, it's just 
+		-- the isDestroyed and flag info info
+		info = {}
+		info.isDestroyed = aZone.isDestroyed
+		info.outDestroyVal = cfxZones.getFlagValue(aZone.outDestroyFlag, aZone)
+		zoneInfo[aZone.name] = info
+	end
+	-- expasion proof: assign as own field
+	theData.zoneInfo = zoneInfo
+	return theData
+end
+
+function cfxObjectDestructDetector.loadMission()
+	if cfxObjectDestructDetector.verbose then 
+		trigger.action.outText("+++oDDet: persistence - loading data", 30)
+	end
+	
+	local theData = persistence.getSavedDataForModule("cfxObjectDestructDetector")
+	if not theData then 
+		return 
+	end
+	
+	-- iterate the data, and fail graciously if 
+	-- we can't find a zone. it's probably beed edited out
+	local zoneInfo = theData.zoneInfo
+	if not zoneInfo then return end 
+	if cfxObjectDestructDetector.verbose then 
+		trigger.action.outText("+++oDDet: persistence - processing data", 30)
+	end	
+	
+	for zName, info in pairs (zoneInfo) do 
+		local theZone = cfxObjectDestructDetector.getObjectDetectZoneByName(zName)
+		if theZone then 
+			theZone.isDestroyed = info.isDestroyed
+			cfxZones.setFlagValue(theZone.outDestroyFlag, info.outDestroyVal, theZone)
+			if cfxObjectDestructDetector.verbose or theZone.verbose then 
+				trigger.action.outText("+++oDDet: persistence setting flag <" .. theZone.outDestroyFlag .. "> to <" .. info.outDestroyVal .. ">",30)
+			end
+			local theName = tostring(theZone.ID)
+			if info.isDestroyed then 
+				-- We now get the scenery object in that zone 
+				-- and remove it
+				-- note that dcsCommon methods use DCS zones, not cfx
+				local theObject = dcsCommon.getSceneryObjectInZoneByName(theName, theZone.dcsZone)
+				if theObject then 
+					if cfxObjectDestructDetector.verbose or theZone.verbose then 
+						trigger.action.outText("+++oDDet: persistence removing dead scenery object <" .. theName .. ">",30)
+					end
+					theObject:destroy()
+				else 
+					if cfxObjectDestructDetector.verbose or theZone.verbose then 
+						trigger.action.outText("+++oDDet: persistence - can't find scenery objects <" .. theName .. ">, skipped destruction",30)
+					end
+				end
+			else 
+				if cfxObjectDestructDetector.verbose or theZone.verbose then 
+					trigger.action.outText("+++oDDet: persistence - scenery objects <" .. theName .. "> is healthy",30)
+				end
+			end
+		else 
+			trigger.action.outText("+++oDDet: persistence - can't find detector <" .. zName .. "> on load. skipping", 30)
+		end
+	end
+	if cfxObjectDestructDetector.verbose then 
+		trigger.action.outText("+++oDDet: persistence - processing complete", 30)
+	end	
+end
+
+--
+-- start
+--
 
 function cfxObjectDestructDetector.start()
 	if not dcsCommon.libCheck("cfx Object Destruct Detector", 
@@ -152,19 +246,37 @@ function cfxObjectDestructDetector.start()
 		return false 
 	end
 	
-	-- collect all zones with 'smoke' attribute 
+	-- collect all zones with 'OBJECT id' attribute 
 	-- collect all spawn zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("OBJECT ID")
 	
-	-- now create a spawner for all, add them to the spawner updater, and spawn for all zones that are not
-	-- paused 
+
 	for k, aZone in pairs(attrZones) do 
 		cfxObjectDestructDetector.processObjectDestructZone(aZone) -- process attribute and add to zone properties (extend zone)
-		cfxObjectDestructDetector.addObjectDetectZone(aZone) -- remember it so we can smoke it
+		cfxObjectDestructDetector.addObjectDetectZone(aZone)
 	end
 
 	-- add myself as event handler
 	world.addEventHandler(cfxObjectDestructDetector)
+	
+	-- persistence: see if we have any data to process 
+	-- for all our zones, and sign up for data saving 
+	if persistence and persistence.active then 
+		-- sign up for saves 
+		callbacks = {}
+		callbacks.persistData = cfxObjectDestructDetector.saveData
+		persistence.registerModule("cfxObjectDestructDetector", callbacks)
+		
+		if persistence.hasData then
+			cfxObjectDestructDetector.loadMission()
+		end
+	else 
+		if cfxObjectDestructDetector.verbose then 
+			trigger.action.outText("no persistence for cfxObjectDestructDetector", 30)
+		end
+	end
+	
+	
 	
 	-- say hi
 	trigger.action.outText("cfx Object Destruct Zones v" .. cfxObjectDestructDetector.version .. " started.", 30)

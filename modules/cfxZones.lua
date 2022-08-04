@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.8.4"
+cfxZones.version = "2.8.5"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -89,6 +89,9 @@ cfxZones.version = "2.8.4"
           - changed extractPropertyFromDCS() to also match attributes with blanks like "the Attr" to "theAttr"
 		  - new expandFlagName()
 - 2.8.4   - fixed bug in setFlagValue()
+- 2.8.5   - createGroundUnitsInZoneForCoalition() now always passes back a copy of the group data 
+          - data also contains cty = country and cat = category for easy spawn
+          - getFlagValue additional zone name guards 
 
 --]]--
 cfxZones.verbose = false
@@ -1047,8 +1050,17 @@ function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, 
 	-- first we need to translate the coalition to a legal 
 	-- country. we use UN for neutral, cjtf for red and blue 
 	local theSideCJTF = dcsCommon.coalition2county(theCoalition)
-	return coalition.addGroup(theSideCJTF, Group.Category.GROUND, theGroup)
+	-- store cty and cat for later access. DCS doesn't need it, but we may 
+	
+	theGroup.cty = theSideCJTF
+	theGroup.cat = Group.Category.GROUND
+	
+    -- create a copy of the group data for 
+	-- later reference 
+	local groupDataCopy = dcsCommon.clone(theGroup)
 
+	local newGroup = coalition.addGroup(theSideCJTF, Group.Category.GROUND, theGroup)
+	return newGroup, groupDataCopy
 end
 
 -- parsing zone names. The first part of the name until the first blank " " 
@@ -1311,8 +1323,8 @@ end
 
 function cfxZones.getFlagValue(theFlag, theZone)
 	local zoneName = "<dummy>"
-	if not theZone then 
-		trigger.action.outText("+++Zne: no zone on getFlagValue", 30)
+	if not theZone or not theZone.name then 
+		trigger.action.outText("+++Zne: no zone or zone name on getFlagValue")
 	else 
 		zoneName = theZone.name -- for flag wildcards
 	end

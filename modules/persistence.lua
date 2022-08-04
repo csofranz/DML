@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.0"
+persistence.version = "1.0.1"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -7,7 +7,7 @@ persistence.saveFileName = nil -- "mission data.txt"
 persistence.sharedDir = nil -- not yet implemented
 persistence.missionDir = nil -- set at start 
 persistence.saveDir = nil -- set at start 
-
+persistence.name = "persistence" -- for cfxZones 
 persistence.missionData = {} -- loaded from file 
 persistence.requiredLibs = {
 	"dcsCommon", -- always
@@ -16,6 +16,12 @@ persistence.requiredLibs = {
 --[[--
 	Version History 
 	1.0.0 - initial version
+	1.0.1 - when available, module sets flag "cfxPersistence" to 1
+		  - when data availabe, cfxPersistenceHasData is set to 1
+		  - spelling 
+		  - cfxZones interface
+		  - always output save location
+		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIOBILITY
@@ -42,7 +48,7 @@ function persistence.registerModule(name, callbacks)
 	-- and must be the one given when you retrieve it later
 	persistence.callbacks[name] = callbacks
 	if persistence.verbose then 
-		trigger.action.outText("+++persistence: module <" .. name .. "> registred itself", 30)
+		trigger.action.outText("+++persistence: module <" .. name .. "> registered itself", 30)
 	end
 end
 
@@ -120,7 +126,10 @@ end
 --
 function persistence.saveText(theString, fileName, shared, append)
 	if not persistence.active then return false end 
-	if not fileName then return false end 
+	if not fileName then 
+		trigger.action.outText("+++persistence: saveText without fileName")
+		return false 
+	end 
 	if not shared then shared = flase end 
 	if not theString then theString = "" end 
 	
@@ -140,6 +149,7 @@ function persistence.saveText(theString, fileName, shared, append)
 	end
 
 	if not theFile then 
+		trigger.action.outText("+++persistence: saveText - unable to open " .. path, 30)
 		return false 
 	end
 	
@@ -283,6 +293,7 @@ function persistence.missionStartDataLoad()
 	-- can init from by data 
 	persistence.missionData = theData
 	persistence.hasData = true 
+	trigger.action.setUserFlag("cfxPersistenceHasData", 1)
 	
 	-- init my flags from last save 
 	local theFlags = theData["persistence.flagData"]
@@ -359,9 +370,9 @@ function persistence.doSaveMission()
 		return 
 	end 
 	
-	if persistence.verbose then 
-		trigger.action.outText("+++persistence: mission saved", 30)
-	end
+--	if persistence.verbose then 
+		trigger.action.outText("+++persistence: mission saved to\n" .. persistence.missionDir .. persistence.saveFileName, 30)
+--	end
 end
 
 function persistence.noteCleanRestart()
@@ -546,6 +557,7 @@ function persistence.start()
 	persistence.missionDir = missionDir
 	
 	persistence.active = true -- we can load and save data 
+	trigger.action.setUserFlag("cfxPersistence", 1)
     persistence.hasData = false -- we do not have save data 
 	
 	-- from here on we can read and write files in the missionDir 	

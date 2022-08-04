@@ -1,8 +1,8 @@
 -- theDebugger 
 debugger = {}
-debugger.version = "1.1.1"
+debugger.version = "1.1.2"
 debugDemon = {}
-debugDemon.version = "1.1.1"
+debugDemon.version = "1.1.2"
 
 debugger.verbose = false 
 debugger.ups = 4 -- every 0.25 second  
@@ -22,6 +22,7 @@ debugger.log = ""
 		  - persistence of logs
 		  - save <name>
 	1.1.1 - warning when trying to set a flag to a non-int
+	1.1.2 - remove command 
 		  
  
 --]]--
@@ -478,11 +479,6 @@ if not debugger.start() then
 	debugger = nil 
 end
 
---[[--
-	debug on and off. globally, not per zone 
-	
---]]--
-
 
 --
 -- DEBUG DEMON 
@@ -625,15 +621,6 @@ end
 --
 -- Helpers 
 --
---[[--
-function debugDemon.isObserving(flagName)
-	-- for now, we simply scan out own 
-	for idx, aName in pairs(debugDemon.observer.flagArray) do 
-		if aName == flagName then return true end 
-	end
-	return false 
-end
---]]--
 
 function debugDemon.createObserver(aName)
 	local observer = cfxZones.createSimpleZone(aName)
@@ -667,6 +654,7 @@ debugger.outText("*** debugger: commands are:" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "snap [<observername>] -- create new snapshot of flags" ..
 	"\n  " .. debugDemon.markOfDemon .. "compare -- compare snapshot flag values with current" ..
 	"\n  " .. debugDemon.markOfDemon .. "note <your note> -- add <your note> to the text log" ..
+	"\n\n  " .. debugDemon.markOfDemon .. "remove <group/unit/object name> -- remove named item from mission" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "start -- starts debugger" ..
 	"\n  " .. debugDemon.markOfDemon .. "stop -- stop debugger" ..
 
@@ -1154,6 +1142,40 @@ function debugDemon.processSaveCommand(args, event)
 	debugger.saveLog(aName)
 	return true 
 end
+
+function debugDemon.processRemoveCommand(args, event)
+	-- remove a group, unit or object 
+	-- try group first 
+	local aName = event.remainder
+	if not aName or aName:len() < 1 then 
+		debugger.outText("*** remove: no remove target", 30)
+		return false
+	end
+	
+	aName = dcsCommon.trim(aName)
+	local theGroup = Group.getByName(aName)
+	if theGroup and theGroup:isExist() then 
+		theGroup:destroy()
+		debugger.outText("*** remove: removed group <" .. aName .. ">", 30)
+		return true
+	end
+	
+	local theUnit = Unit.getByName(aName)
+	if theUnit and theUnit:isExist() then 
+		theUnit:destroy()
+		debugger.outText("*** remove: removed unit <" .. aName .. ">", 30)
+		return true
+	end
+	
+	local theStatic = StaticObject.getByName(aName)
+	if theStatic and theStatic:isExist() then 
+		theStatic:destroy()
+		debugger.outText("*** remove: removed static object <" .. aName .. ">", 30)
+		return true
+	end
+	debugger.outText("*** remove: did not find anything called <" .. aName .. "> to remove", 30)
+		return true
+end
 --
 -- init and start
 --
@@ -1223,6 +1245,7 @@ function debugDemon.init()
 	debugDemon.addCommndProcessor("?", debugDemon.processHelpCommand)
 	debugDemon.addCommndProcessor("help", debugDemon.processHelpCommand)
 
+	debugDemon.addCommndProcessor("remove", debugDemon.processRemoveCommand)
 	
 	return true 
 end
@@ -1259,6 +1282,11 @@ end
 	- inspect objects, dumping category, life, if it's tasking, latLon, alt, speed, direction 
 	
 	- exec files. save all commands and then run them from script 
-	- remove units via delete and explode
+
+	- query objects: -q persistence.active returns boolean, true 
+	  -q x.y returns table, 12 elements
+	  -q a.b.x returns number 12
+	  -q d.e.f returns string "asdasda..."
+	  -q sada reuturs <nil>
 	
 --]]--

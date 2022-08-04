@@ -258,7 +258,7 @@ function changer.start()
 	-- read config 
 	changer.readConfigZone()
 	
-	-- process cloner Zones 
+	-- process changer Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("change?")
 	for k, aZone in pairs(attrZones) do 
 		changer.createChangerWithZone(aZone) -- process attributes

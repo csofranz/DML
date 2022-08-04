@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "1.1.0"
+FARPZones.version = "1.2.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -11,6 +11,9 @@ FARPZones.verbose = false
 		- rFormation attribute added 
 		- verbose flag 
 		- verbose cleanup ("FZ: something happened")
+  1.2.0 - persistence 
+        - handles contested state
+  
   
 --]]--
 
@@ -75,7 +78,7 @@ FARPZones.spinUpDelay = 30 -- seconds until FARP becomes operational after captu
 
 
 FARPZones.allFARPZones = {}
-FARPZones.startingUp = false 
+FARPZones.startingUp = false -- not needed / read anywhere
 
 -- FARP ZONE ACCESS
 function FARPZones.addFARPZone(aFARP)
@@ -88,6 +91,15 @@ end
 
 function FARPZones.getFARPForZone(aZone)
 	return FARPZones.allFARPZones[aZone]
+end
+
+function FARPZones.getFARPZoneByName(aName)
+	for aZone, aFarp in pairs(FARPZones.allFARPZones) do
+		if aZone.name == aName then return aFarp end
+		-- we assume zone.name == farp.name 
+	end
+	trigger.action.outText("Unable to find FARP <" .. aName .. ">", 30)
+	return nil 
 end
 
 function FARPZones.getFARPZoneForFARP(aFarp) 
@@ -123,9 +135,9 @@ function FARPZones.createFARPFromZone(aZone)
 	if #mapFarps == 0 then 
 		trigger.action.outText("***Farp Zones: no FARP found for zone " .. aZone.name, 30)
 	else 
-		for idx, aFarp in pairs(mapFarps) do 
+		--for idx, aFarp in pairs(mapFarps) do 
 --			trigger.action.outText("Associated FARP " .. aFarp:getName() .. " with FARP Zone " .. aZone.name, 30)
-		end
+		--end
 		
 		theFarp.mainFarp = theFarp.myFarps[1]
 		theFarp.point = theFarp.mainFarp:getPoint() -- this is FARP, not zone!!!
@@ -317,7 +329,7 @@ function FARPZones.produceVehicles(theFarp)
 	local theCoalition = theFarp.owner 
 	
 	if theTypes ~= "none" then 
-		local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+		local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 			theCoalition, 
 			theFarp.name .. "-D" .. theFarp.count, -- must be unique 
 			theFarp.defZone,
@@ -326,10 +338,11 @@ function FARPZones.produceVehicles(theFarp)
 			theFarp.defHeading)
 		-- we do not add these troops to ground troop management 
 		theFarp.defenders = theGroup -- but we retain a handle just in case
+		theFarp.defenderData = theData 
 	end 
 	
 	unitTypes = FARPZones.resourceTypes
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 			theCoalition, 
 			theFarp.name .. "-R" .. theFarp.count, -- must be unique 
 			theFarp.resZone,
@@ -337,7 +350,7 @@ function FARPZones.produceVehicles(theFarp)
 			"line_v",
 			theFarp.resHeading)
 	theFarp.resources = theGroup 
-			
+	theFarp.resourceData = theData 		
 	-- update unique counter
 	theFarp.count = theFarp.count + 1
 end
@@ -382,6 +395,23 @@ function FARPZones.somethingHappened(event)
 	end 
 
 	local newOwner = aFarp:getCoalition()	
+	-- now, because we can load from file, we may get a notice 
+	-- that a newly loaded state disagrees with new game state
+	-- if so, we simply wink and exit 
+	if newOwner == zonedFarp.owner then 
+		trigger.action.outText("FARP <" .. zonedFarp.name .. "> aligned with persisted data", 30)
+		return
+	end
+	
+	-- let's ignore the owner = 3 (contested). Usually does not
+	-- happen with an event, but let's be prepared 
+	if newOwner == 3 then 
+		if FARPZones.verbose then 
+			trigger.action.outText("FARP <" .. zonedFarp.name .. "> has become contested", 30)
+		end 
+		return 
+	end
+	
 	local blueRed = "Red" 
 	if newOwner == 2 then blueRed = "Blue" end 
 	trigger.action.outText("FARP " .. zonedFarp.zone.name .. " captured by " .. blueRed .."!", 30)
@@ -408,6 +438,80 @@ function FARPZones.somethingHappened(event)
 end
 
 
+--
+-- LOAD / SAVE 
+--
+function FARPZones.saveData()
+	local theData = {}
+	if FARPZones.verbose then 
+		trigger.action.outText("+++frpZ: enter saveData", 30)
+	end
+	
+	local farps = {}
+	-- iterate all farp data and put them into a container each
+	for theZone, theFARP in pairs(FARPZones.allFARPZones) do 
+		fName = theZone.name 
+		trigger.action.outText("frpZ persistence: processing FARP <" .. fName .. ">", 30)
+		local fData = {}
+		fData.owner = theFARP.owner 
+		fData.defenderData = dcsCommon.clone(theFARP.defenderData)
+		fData.resourceData = dcsCommon.clone(theFARP.resourceData)
+		dcsCommon.synchGroupData(fData.defenderData)
+		if fData.defenderData and #fData.defenderData.units<1 then 
+			fData.defenderData = nil 
+		end
+		dcsCommon.synchGroupData(fData.resourceData)
+		if fData.resourceData and #fData.resourceData.units<1 then 
+			fData.resourceData = nil 
+		end
+		farps[fName] = fData 
+	end
+	
+	theData.farps = farps 
+	return theData 
+end
+
+function FARPZones.loadMission()
+	local theData = persistence.getSavedDataForModule("FARPZones")
+	if not theData then 
+		if FARPZones.verbose then 
+			trigger.action.outText("frpZ: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local farps = theData.farps 
+	if farps then 
+		for fName, fData in pairs(farps) do 
+			local theFARP = FARPZones.getFARPZoneByName(fName)
+			if theFARP then 
+				theFARP.owner = fData.owner 
+				theFARP.zone.owner = fData.owner 
+				theFARP.defenderData = dcsCommon.clone(fData.defenderData)
+				local groupData = fData.defenderData
+				if groupData and #groupData.units > 0 then 
+					local cty = groupData.cty 
+					local cat = groupData.cat 
+					theFARP.defenders = coalition.addGroup(cty, cat, groupData)
+				end 
+				
+				groupData = fData.resourceData
+				if groupData and #groupData.units > 0 then 
+					local cty = groupData.cty 
+					local cat = groupData.cat
+					theFARP.resources = coalition.addGroup(cty, cat, groupData)
+				end 
+				FARPZones.drawFARPCircleInMap(theFARP) -- mark in map
+				if (not theFARP.defenders) and (not theFARP.resources) then 
+					-- we instigate a resource and defender drop 
+					FARPZones.produceVehicles(theFARP)
+				end
+			else 
+				trigger.action.outText("frpZ: persistence: FARP <" .. fName .. "> no longer exists in mission, skipping", 30)
+			end
+		end
+	end
+end
 
 --
 -- Start 
@@ -439,7 +543,7 @@ function FARPZones.start()
 		return false 
 	end
 	
-	FARPZones.startingUp = true 
+	FARPZones.startingUp = true -- not needed / read anywhere
 	
 	-- read config zone 
 	FARPZones.readConfig()
@@ -449,19 +553,41 @@ function FARPZones.start()
 							  FARPZones.preProcessor,
 							  FARPZones.postProcessor)
 
+	-- set up persistence BEFORE we read zones, so weh know the 
+	-- score during init phase
+	local hasSaveData = false 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = FARPZones.saveData
+		persistence.registerModule("FARPZones", callbacks)
+		hasSaveData = persistence.hasData
+	end
+	
 	-- collect all FARP Zones
 	local theZones = cfxZones.getZonesWithAttributeNamed("FARP")
 	for k, aZone in pairs(theZones) do 
 		local aFARP = FARPZones.createFARPFromZone(aZone) -- read attributes from DCS
 		FARPZones.addFARPZone(aFARP) -- add to managed zones 
-		FARPZones.drawFARPCircleInMap(aFARP) -- mark in map 
-		FARPZones.produceVehicles(aFARP) -- allocate initial vehicles
+		-- moved FARPZones.drawFARPCircleInMap(aFARP) -- mark in map 
+		-- moved FARPZones.produceVehicles(aFARP) -- allocate initial vehicles
 		if FARPZones.verbose then 
 			trigger.action.outText("processed FARP <" .. aZone.name .. "> now owned by " .. aZone.owner, 30)
 		end 
 	end
 
-	FARPZones.startingUp = false 
+	-- now produce all vehicles - whether from 
+	-- save, or clean from start 
+	if hasSaveData then 
+		FARPZones.loadMission()
+	else 
+		for idx, aFARP in pairs (FARPZones.allFARPZones) do 
+			FARPZones.drawFARPCircleInMap(aFARP) -- mark in map
+			FARPZones.produceVehicles(aFARP) -- allocate initial vehicles
+		end
+	end 
+	
+	FARPZones.startingUp = false -- not needed / read anywhere
 	
 	trigger.action.outText("cf/x FARP Zones v" .. FARPZones.version .. " started", 30)
 	return true 
@@ -479,5 +605,7 @@ Improvements:
   per FARP/Helipad in zone: create resources (i.e. support multi 4-Pad FARPS out of the box
   
   make hidden farps only appear for owning side 
+  
+  make farps repair their service vehicles after a time, or simply refresh them every x minutes, to make the algo simpler 
  
 --]]--

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.6.8"
+dcsCommon.version = "2.7.0"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -85,6 +85,11 @@ dcsCommon.version = "2.6.8"
  2.6.7 - new menu2text()
  2.6.8 - new getMissionName()
        - new flagArrayFromString()
+ 2.6.9 - new getSceneryObjectsInZone()
+       - new getSceneryObjectInZoneByName()
+ 2.7.0 - new synchGroupData()
+         clone, topClone and copyArray now all nil-trap 
+ 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -455,6 +460,7 @@ dcsCommon.version = "2.6.8"
 		local point2 = {x = p2.x, y = 0, z=p2.z}
 		return dcsCommon.dist(point1, point2)
 	end
+	
 	
 	-- distance between points
 	function dcsCommon.dist(point1, point2)	 -- returns distance between two points
@@ -882,6 +888,7 @@ dcsCommon.version = "2.6.8"
 	-- topClone is a shallow clone of orig, only top level is iterated,
 	-- all values are ref-copied
 	function dcsCommon.topClone(orig)
+		if not orig then return nil end 
 		local orig_type = type(orig)
 		local copy
 		if orig_type == 'table' then
@@ -898,6 +905,7 @@ dcsCommon.version = "2.6.8"
 	-- clone is a recursive clone which will also clone
 	-- deeper levels, as used in units 
 	function dcsCommon.clone(orig)
+		if not orig then return nil end 
 		local orig_type = type(orig)
 		local copy
 		if orig_type == 'table' then
@@ -913,6 +921,8 @@ dcsCommon.version = "2.6.8"
 	end
 
 	function dcsCommon.copyArray(inArray)
+		if not inArray then return nil end 
+		
 		-- warning: this is a ref copy!
 		local theCopy = {}
 		for idx, element in pairs(inArray) do 
@@ -1686,7 +1696,29 @@ dcsCommon.version = "2.6.8"
 		end
 
 	end
-	
+
+function dcsCommon.synchGroupData(inGroupData) -- update group data block by 
+-- comparing it to spawned group and update units by x, y, heding and isExist 
+-- modifies inGroupData!
+	if not inGroupData then return end 
+	-- groupdata from game, NOT MX DATA!
+	-- we synch the units and their coords 
+	local livingUnits = {}
+	for idx, unitData in pairs(inGroupData.units) do 
+		local theUnit = Unit.getByName(unitData.name)
+		if theUnit and theUnit:isExist() and theUnit:getLife()>1 then 
+			-- update x and y and heading
+			local pos = theUnit:getPoint()
+			unitData.unitId = theUnit:getID()
+			unitData.x = pos.x 
+			unitData.y = pos.z -- !!!!
+			unitData.heading = dcsCommon.getUnitHeading(gUnit)
+			table.insert(livingUnits, unitData)
+		end
+	end
+	inGroupData.units = livingUnits 
+end
+
 --
 --
 -- M I S C   M E T H O D S 
@@ -2440,6 +2472,42 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 	end 
 	return flags
 end
+
+function dcsCommon.objectHandler(theObject, theCollector)
+	table.insert(theCollector, theObject)
+	return true 
+end
+
+function dcsCommon.getSceneryObjectsInZone(theZone) -- DCS ZONE!!! 
+	local aCat = 5 -- scenery
+	-- WARNING: WE ARE USING DCS ZONES, NOT CFX!!!
+	local p = {x=theZone.x, y=0, z=theZone.y}
+	local lp = {x = p.x, y = p.z}
+	p.y = land.getHeight(lp)
+	local collector = {}
+	
+	-- now build the search argument 
+	local args = {
+			id = world.VolumeType.SPHERE,
+			params = {
+				point = p,
+				radius = theZone.radius
+			}
+		}
+	
+	-- now call search
+	world.searchObjects(aCat, args, dcsCommon.objectHandler, collector)
+	return collector
+end
+
+function dcsCommon.getSceneryObjectInZoneByName(theName, theZone) -- DCS ZONE!!!
+	local allObs = dcsCommon.getSceneryObjectsInZone(theZone)
+	for idx, anObject in pairs(allObs) do 
+		if tostring(anObject:getName()) == theName then return anObject end 
+	end
+	return nil 
+end
+
 --
 --
 -- INIT

@@ -1,7 +1,8 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.1.2"
+cfxOwnedZones.version = "1.2.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
+cfxOwnedZones.name = "cfxOwnedZones" 
 --[[-- VERSION HISTORY
 
 1.0.3 - added getNearestFriendlyZone
@@ -21,7 +22,7 @@ cfxOwnedZones.announcer = true
       - support of 'none' type string to indicate no attackers/defenders 
 	  - updated property access 
 	  - module check 
-	  - cfxOwnedTroop.usesDefenders(aZone)
+	  - cfxOwnedZones.usesDefenders(aZone)
 	  - verifyZone
 1.0.8 - repairDefenders trims types to allow blanks in 
         type separator 
@@ -41,6 +42,9 @@ cfxOwnedZones.announcer = true
       - announcer 		
 1.1.1 - conq+1 flag 
 1.1.2 - corrected type bug in zoneConquered 
+1.2.0 - support for persistence 
+      - conq+1 --> conquered!
+	  - no cfxGroundTroop bug (no delay)
 	  
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -59,6 +63,10 @@ cfxOwnedZones.defendingTime = 100 -- 100 seconds until new defenders are produce
 cfxOwnedZones.attackingTime = 300 -- 300 seconds until new attackers are produced 
 cfxOwnedZones.shockTime = 200 -- 200 -- 'shocked' period of inactivity
 cfxOwnedZones.repairTime = 200 -- 200 -- time until we raplace one lost unit, also repairs all other units to 100%  
+
+-- persistence: all attackers we ever sent out.
+-- is regularly verified and cut to size 
+cfxOwnedZones.spawnedAttackers = {}
 
 -- owned zones is a module that managers 'conquerable' zones and keeps a 
 -- record of who owns the zone
@@ -166,6 +174,12 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 	
 end
 
+function cfxOwnedZones.getOwnedZoneByName(zName)
+	for zKey, theZone in pairs (cfxOwnedZones.zones) do 
+		if theZone.name == zName then return theZone end 
+	end
+	return nil
+end
 
 function cfxOwnedZones.addOwnedZone(aZone)
 	local owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0) -- is already readm read it again
@@ -203,8 +217,9 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	local paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
 	aZone.paused = paused 
 	
+	aZone.conqueredFlag = cfxZones.getStringFromZoneProperty(aZone, "conquered!", "*<cfxnone>")
 	if cfxZones.hasProperty(aZone, "conq+1") then 
-		cfxOwnedZones.conqueredFlag = cfxZones.getNumberFromZoneProperty(theZone, "conq+1", -1)
+		aZone.conqueredFlag = cfxZones.getStringFromZoneProperty(aZone, "conq+1", "*<cfxnone>")
 	end
 	
 	aZone.unbeatable = cfxZones.getBoolFromZoneProperty(aZone, "unbeatable", false)
@@ -218,7 +233,7 @@ end
 function cfxOwnedZones.verifyZone(aZone)
 	-- do some sanity checks
 	if not cfxGroundTroops and (aZone.attackersRED ~= "none" or aZone.attackersBLUE ~= "none") then 
-		trigger.action.outText("+++owdZ: " .. aZone.name .. " attackers need cfxGroundTroops to function")
+		trigger.action.outText("+++owdZ: " .. aZone.name .. " attackers need cfxGroundTroops to function", 30)
 	end
 	
 end
@@ -375,14 +390,14 @@ function cfxOwnedZones.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation
 	
 	local spawnZone = cfxZones.createSimpleZone("attkSpawnZone", spawnPoint, aZone.attackRadius)
 	
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				aCoalition, -- theCountry,							
 				aZone.name .. " (A) " .. dcsCommon.numberUUID(), -- must be unique 
 				spawnZone, 											
 				unitTypes, 													
 				aFormation, -- outward facing
 				0)
-	return theGroup
+	return theGroup, theData
 end
 
 function cfxOwnedZones.spawnDefensiveTroops(theTypes, aZone, aCoalition, aFormation)
@@ -400,13 +415,13 @@ function cfxOwnedZones.spawnDefensiveTroops(theTypes, aZone, aCoalition, aFormat
 	
 	--local theCountry = dcsCommon.coalition2county(aCoalition) 
 	local spawnZone = cfxZones.createSimpleZone("spawnZone", aZone.point, aZone.spawnRadius)
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				aCoalition, --theCountry,				
 				aZone.name .. " (D) " .. dcsCommon.numberUUID(), -- must be unique 
 				spawnZone, 										unitTypes,
 				aFormation, -- outward facing
 				0)
-	return theGroup
+	return theGroup, theData
 end
 --
 -- U P D A T E 
@@ -432,7 +447,13 @@ function cfxOwnedZones.sendOutAttackers(aZone)
 
 	if attackers == "none" then return end 
 
-	local theGroup = cfxOwnedZones.spawnAttackTroops(attackers, aZone, aZone.owner, aZone.attackFormation)
+	local theGroup, theData = cfxOwnedZones.spawnAttackTroops(attackers, aZone, aZone.owner, aZone.attackFormation)
+	
+	local troopData = {}
+	troopData.groupData = theData
+	troopData.orders = "attackOwnedZone" -- lazy coding! 
+	troopData.side = aZone.owner
+	cfxOwnedZones.spawnedAttackers[theData.name] = troopData 
 	
 	-- submit them to ground troops handler as zoneseekers 
 	-- and our groundTroops module will handle the rest 
@@ -496,10 +517,11 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 		end
 	end 
 	-- increase conq flag 
-	if aZone.conqueredFlag then 
-		local lastVal = trigger.misc.getUserFlag(aZone.conqueredFlag)
-		trigger.action.setUserFlag(aZone.conqueredFlag, lastVal + 1)
-	end
+--	if aZone.conqueredFlag then 
+		-- local lastVal = trigger.misc.getUserFlag(aZone.conqueredFlag)
+		-- trigger.action.setUserFlag(aZone.conqueredFlag, lastVal + 1)
+	cfxZones.pollFlag(aZone.conqueredFlag, "inc", aZone) 
+--	end
 	-- invoke callbacks now
 	cfxOwnedZones.invokeConqueredCallbacks(aZone, theSide, formerOwner)
 	
@@ -567,7 +589,7 @@ function cfxOwnedZones.repairDefenders(aZone)
 	-- now livingTypes holds the full array of units we need to spawn 
 	local theCountry = dcsCommon.getACountryForCoalition(aZone.owner) 
 	local spawnZone = cfxZones.createSimpleZone("spawnZone", aZone.point, aZone.spawnRadius)
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				aZone.owner, -- was wrongly: theCountry		
 				aZone.name .. dcsCommon.numberUUID(), -- must be unique 
 				spawnZone, 											
@@ -599,15 +621,17 @@ function cfxOwnedZones.spawnDefenders(aZone)
 	-- if 'none', simply exit
 	if defenders == "none" then return end
 	
-	local theGroup = cfxOwnedZones.spawnDefensiveTroops(defenders, aZone, aZone.owner, aZone.formation)
+	local theGroup, theData = cfxOwnedZones.spawnDefensiveTroops(defenders, aZone, aZone.owner, aZone.formation)
 	-- the troops reamin, so no orders to move, no handing off to ground troop manager
-	aZone.defenders = theGroup;
+	aZone.defenders = theGroup
+	aZone.defenderData = theData -- used for persistence 
 	if theGroup then 
-		aZone.defenderMax = theGroup:getInitialSize() -- so we can determine if some units were destroyed
-		aZone.lastDefenders = aZone.defenderMax -- if this is larger than current number, someone bit the dust  
+		--aZone.defenderMax = theGroup:getInitialSize() -- so we can determine if some units were destroyed
+		aZone.lastDefenders = theGroup:getInitialSize() --- aZone.defenderMax -- if this is larger than current number, someone bit the dust  
 		--trigger.action.outText("+++ spawned defenders for ".. aZone.name, 30)
 	else 
 		trigger.action.outText("+++owdZ: WARNING: spawned no defenders for ".. aZone.name, 30)
+		aZone.defenderData = nil 
 	end 
 end
 
@@ -661,6 +685,10 @@ function cfxOwnedZones.updateZone(aZone)
 		-- we have defenders
 		if aZone.defenders:isExist() then
 			-- isee if group was damaged 
+			if not aZone.lastDefenders then
+				-- fresh group, probably from persistence, needs init 
+				aZone.lastDefenders = -1 
+			end 
 			if aZone.defenders:getSize() < aZone.lastDefenders then 
 				-- yes, at least one unit destroyed
 				aZone.timeStamp = timer.getTime()
@@ -671,6 +699,8 @@ function cfxOwnedZones.updateZone(aZone)
 				aZone.state = "shocked"
 
 				return 
+			else 
+				aZone.lastDefenders = aZone.defenders:getSize()
 			end
 			
 		else 
@@ -725,17 +755,19 @@ function cfxOwnedZones.updateZone(aZone)
 		-- we are currently rebuilding defenders unit by unit 
 		if timer.getTime() > aZone.timeStamp + cfxOwnedZones.repairTime then 
 			aZone.timeStamp = timer.getTime()
+			-- wait's up, repair one defender, then check if full strength
 			cfxOwnedZones.repairDefenders(aZone)
-			if aZone.defenders:getSize() >= aZone.defenderMax then
---				
+			-- see if we are full strenght and if so go to attack, else set timer to reair the next unit
+			if aZone.defenders and aZone.defenders:isExist() and aZone.defenders:getSize() >= aZone.defenders:getInitialSize() then
 				-- we are at max size, time to produce some attackers
+				-- progress to next state 
 				nextState = "attacking"
 				aZone.timeStamp = timer.getTime()
 				if cfxOwnedZones.verbose then 
 					trigger.action.outText("+++owdZ: State " .. aZone.state .. " to " .. nextState .. " for " .. aZone.name, 30)
 				end
 			end
-			-- see if we are full strenght and if so go to attack, else set timer to reair the next unit
+
 		end
 		
 	elseif aZone.state == "shocked" then 
@@ -761,6 +793,20 @@ function cfxOwnedZones.updateZone(aZone)
 		-- unknown zone state 
 	end
 	aZone.state = nextState
+end
+
+function cfxOwnedZones.GC()
+	-- GC run. remove all my dead remembered troops
+	local filteredAttackers = {}
+	for gName, gData in pairs (cfxOwnedZones.spawnedAttackers) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		local gameGroup = Group.getByName(gName)
+		if gameGroup and gameGroup:isExist() and gameGroup:getSize() > 0 then 
+			filteredAttackers[gName] = gData
+		end
+	end
+	cfxOwnedZones.spawnedAttackers = filteredAttackers
 end
 
 function cfxOwnedZones.update()
@@ -792,6 +838,11 @@ function cfxOwnedZones.update()
 	
 end
 
+function cfxOwnedZones.houseKeeping()
+	timer.scheduleFunction(cfxOwnedZones.houseKeeping, {}, timer.getTime() + 5 * 60) -- every 5 minutes 
+	cfxOwnedZones.GC()
+end
+
 function cfxOwnedZones.sideOwnsAll(theSide) 
 	for key, aZone in pairs(cfxOwnedZones.zones) do 
 		if aZone.owner ~= theSide then 
@@ -810,19 +861,150 @@ function cfxOwnedZones.hasOwnedZones()
 	return false 
 end
 
+
+--
+-- load / save data 
+--
+
+function cfxOwnedZones.saveData()
+	-- this is called from persistence when it's time to 
+	-- save data. returns a table with all my data 
+	local theData = {}
+	local allZoneData = {}
+	-- iterate all my zones and create data 
+	for idx, theZone in pairs(cfxOwnedZones.zones) do
+		local zoneData = {}
+		if theZone.defenderData then 
+			zoneData.defenderData = dcsCommon.clone(theZone.defenderData)
+			dcsCommon.synchGroupData(zoneData.defenderData)
+		end 
+		zoneData.conquered = cfxZones.getFlagValue(theZone.conqueredFlag, theZone)
+		zoneData.owner = theZone.owner 
+		zoneData.state = theZone.state -- will prevent immediate spawn
+			-- since new zones are spawned with 'init'
+		allZoneData[theZone.name] = zoneData
+	end
+	
+	-- now iterate all attack groups that we have spawned and that 
+	-- (maybe) are still alive 
+	cfxOwnedZones.GC() -- start with a GC run to remove all dead 
+	local livingAttackers = {}
+	for gName, gData in pairs (cfxOwnedZones.spawnedAttackers) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		-- spawnedAttackers is a [groupName] table with {.groupData, .orders, .side}
+		local gameGroup = Group.getByName(gName)
+		if gameGroup and gameGroup:isExist() then 
+			if gameGroup:getSize() > 0 then 
+				local sData = dcsCommon.clone(gData)
+				dcsCommon.synchGroupData(sData.groupData)
+				livingAttackers[gName] = sData
+			end
+		end
+	end
+	
+	-- now write the info for the flags that we output for #red, etc
+	local flagInfo = {}
+	flagInfo.neutral = cfxZones.getFlagValue(cfxOwnedZones.neutralTriggerFlag, cfxOwnedZones)
+	flagInfo.red = cfxZones.getFlagValue(cfxOwnedZones.redTriggerFlag, cfxOwnedZones)
+	flagInfo.blue = cfxZones.getFlagValue(cfxOwnedZones.blueTriggerFlag, cfxOwnedZones)
+	-- assemble the data 
+	theData.zoneData = allZoneData
+	theData.attackers = livingAttackers
+	theData.flagInfo = flagInfo
+	
+	-- return it 
+	return theData
+end
+
+function cfxOwnedZones.loadData()
+	-- remember to draw in map with new owner 
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cfxOwnedZones")
+	if not theData then 
+		if cfxOwnedZones.verbose then 
+			trigger.action.outText("owdZ: no save date received, skipping.", 30)
+		end
+		return
+	end
+	-- theData contains the following tables:
+	--   zoneData: per-zone data 
+	--   flagInfo: module-global flags 
+	--   attackers: all spawned attackers that we feed to groundTroops
+	local allZoneData = theData.zoneData 
+	for zName, zData in pairs(allZoneData) do 
+		-- access zone 
+		local theZone = cfxOwnedZones.getOwnedZoneByName(zName)
+		if theZone then 
+			if zData.defenderData then 
+				if theZone.defenders and theZone.defenders:isExist() then 
+					-- should not happen, but so be it
+					theZone.defenders:destroy()
+				end
+				local gData = zData.defenderData
+				local cty = gData.cty 
+				local cat = gData.cat 
+				theZone.defenders = coalition.addGroup(cty, cat, gData)
+				theZone.defenderData = zData.defenderData
+			end
+			theZone.owner = zData.owner 
+			theZone.state = zData.state 
+			cfxZones.setFlagValue(theZone.conqueredFlag, zData.conquered, theZone)
+			-- update mark in map 
+			cfxOwnedZones.drawZoneInMap(theZone)
+		else 
+			trigger.action.outText("owdZ: load - data mismatch: cannot find zone <" .. zName .. ">, skipping zone.", 30)
+		end
+	end
+	
+	-- now process all attackers 
+	local allAttackers = theData.attackers
+	for gName, gdTroop in pairs(allAttackers) do 
+		-- table is {.groupData, .orders, .side}
+		local gData = gdTroop.groupData 
+		local orders = gdTroop.orders 
+		local side = gdTroop.side 
+		local cty = gData.cty 
+		local cat = gData.cat 
+		-- add to my own attacker queue so we can save later 
+		local dClone = dcsCommon.clone(gData)
+		cfxOwnedZones.spawnedAttackers[gName] = dClone 
+		local theGroup = coalition.addGroup(cty, cat, gData)
+		if cfxGroundTroops then 
+			local troops = cfxGroundTroops.createGroundTroops(theGroup)
+			troops.orders = orders
+			troops.side = side
+			cfxGroundTroops.addGroundTroopsToPool(troops) -- hand off to ground troops
+		end 
+	end
+	
+	-- now process module global flags 
+	local flagInfo = theData.flagInfo
+	if flagInfo then 
+		cfxZones.setFlagValue(cfxOwnedZones.neutralTriggerFlag, flagInfo.neutral, cfxOwnedZones)
+		cfxZones.setFlagValue(cfxOwnedZones.redTriggerFlag, flagInfo.red, cfxOwnedZones)
+		cfxZones.setFlagValue(cfxOwnedZones.blueTriggerFlag, flagInfo.blue, cfxOwnedZones)
+	end
+end
+
+ 
+--
 function cfxOwnedZones.readConfigZone(theZone)
+	if not theZone then theZone = cfxZones.createSimpleZone("ownedZonesConfig") end 
+	
+	cfxOwnedZones.name = "cfxOwnedZones" -- just in case, so we can access with cfxZones 
 	cfxOwnedZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	cfxOwnedZones.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
 	
-	if cfxZones.hasProperty(theZone, "r!") then 
-		cfxOwnedZones.redTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "r!", "<none>")
-	end
-	if cfxZones.hasProperty(theZone, "b!") then 
-		cfxOwnedZones.blueTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "b!", "<none>")
-	end
-	if cfxZones.hasProperty(theZone, "n!") then 
-		cfxOwnedZones.neutralTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "n!", "<none>")
-	end
+--	if cfxZones.hasProperty(theZone, "r!") then 
+		cfxOwnedZones.redTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "r!", "*<cfxnone>")
+--	end
+--	if cfxZones.hasProperty(theZone, "b!") then 
+		cfxOwnedZones.blueTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "b!", "*<cfxnone>")
+--	end
+--	if cfxZones.hasProperty(theZone, "n!") then 
+		cfxOwnedZones.neutralTriggerFlag = cfxZones.getStringFromZoneProperty(theZone, "n!", "*<cfxnone>")
+--	end
 	cfxOwnedZones.defendingTime = cfxZones.getNumberFromZoneProperty(theZone, "defendingTime", 100)
 	cfxOwnedZones.attackingTime = cfxZones.getNumberFromZoneProperty(theZone, "attackingTime", 300)
 	cfxOwnedZones.shockTime = cfxZones.getNumberFromZoneProperty(theZone, "shockTime", 200)
@@ -838,11 +1020,8 @@ function cfxOwnedZones.init()
 
 	-- read my config zone
 	local theZone = cfxZones.getZoneByName("ownedZonesConfig") 
-	if not theZone then 
-		trigger.action.outText("+++ownZ: no config", 30)
-	else
-		cfxOwnedZones.readConfigZone(theZone)
-	end
+	cfxOwnedZones.readConfigZone(theZone)
+
 	
 	-- collect all owned zones by their 'owner' property 
 	-- start the process
@@ -854,8 +1033,20 @@ function cfxOwnedZones.init()
 		cfxOwnedZones.addOwnedZone(aZone)
 	end
 	
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cfxOwnedZones.saveData
+		persistence.registerModule("cfxOwnedZones", callbacks)
+		-- now load my data 
+		cfxOwnedZones.loadData()
+	end
+	
 	initialized = true 
 	cfxOwnedZones.updateSchedule = timer.scheduleFunction(cfxOwnedZones.update, {}, timer.getTime() + 1/cfxOwnedZones.ups)
+	
+	-- start housekeeping 
+	cfxOwnedZones.houseKeeping()
 	
 	trigger.action.outText("cx/x owned zones v".. cfxOwnedZones.version .. " started", 30)
 	

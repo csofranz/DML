@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.1.0"
+cfxReconMode.version = "2.1.1"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -77,7 +77,9 @@ VERSION HISTORY
  2.1.0 - processZoneMessage uses group's position, not zone
        - silent attribute for priority targets 
 	   - activate / deactivate by flags 
- 
+ 2.1.1 - Lat Lon and MGRS also give Elevation
+       - cfxReconMode.reportTime
+	   
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
  markers for their coalition and some text 
@@ -421,13 +423,14 @@ function cfxReconMode.getLocation(theGroup)
 	local msg = ""
 	local theUnit = theGroup:getUnit(1)
 	local currPoint = theUnit:getPoint()
+	local ele = math.floor(land.getHeight({x = currPoint.x, y = currPoint.z}))
 	if cfxReconMode.mgrs then 
 		local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
-		msg = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+		msg = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing .. " Ele " .. ele .."m"
 	else 
 		local lat, lon, alt = coord.LOtoLL(currPoint)
 		lat, lon = dcsCommon.latLon2Text(lat, lon)
-		msg = "Lat " .. lat .. " Lon " .. lon
+		msg = "Lat " .. lat .. " Lon " .. lon .. " Ele " .. ele .."m"
 	end
 	return msg
 end
@@ -516,7 +519,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	-- say something
 	if not silent and cfxReconMode.announcer then 
 		local msg = cfxReconMode.generateSALT(theScout, theGroup)
-		trigger.action.outTextForCoalition(mySide, msg, 30)
+		trigger.action.outTextForCoalition(mySide, msg, cfxReconMode.reportTime)
 --		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
 		if cfxReconMode.verbose then 
 			trigger.action.outText("+++rcn: announced for side " .. mySide, 30)
@@ -549,7 +552,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 				-- AND EVEN WHEN SILENT!!!
 				local msg = zInfo.prioMessage
 				msg = cfxReconMode.processZoneMessage(msg, zInfo.theZone, theGroup) 
-				trigger.action.outTextForCoalition(mySide, msg, 30)
+				trigger.action.outTextForCoalition(mySide, msg, cfxReconMode.reportTime)
 				if cfxReconMode.verbose or zInfo.theZone.verbose then 
 					trigger.action.outText("+++rcn: prio message sent  for prio target zone <" .. zInfo.theZone.name .. ">",30)
 				end
@@ -965,7 +968,8 @@ function cfxReconMode.readConfigZone()
 	cfxReconMode.greyScouts = cfxZones.getBoolFromZoneProperty(theZone, "greyScouts", false)
 	cfxReconMode.playerOnlyRecon = cfxZones.getBoolFromZoneProperty(theZone, "playerOnlyRecon", false)
 	cfxReconMode.reportNumbers = cfxZones.getBoolFromZoneProperty(theZone, "reportNumbers", true)
-		
+	cfxReconMode.reportTime = cfxZones.getNumberFromZoneProperty(theZone, "reportTime", 30)
+	
 	cfxReconMode.detectionMinRange = cfxZones.getNumberFromZoneProperty(theZone, "detectionMinRange", 3000)
 	cfxReconMode.detectionMaxRange = cfxZones.getNumberFromZoneProperty(theZone, "detectionMaxRange", 12000)
 	cfxReconMode.maxAlt = cfxZones.getNumberFromZoneProperty(theZone, "maxAlt", 9000)

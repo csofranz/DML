@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.0"
+cfxMX.version = "1.2.1"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -16,14 +16,15 @@ cfxMX.verbose = false
    1.2.0 - added group name reference table 
 		 - added group type reference 
 		 - added references for allFixed, allHelo, allGround, allSea, allStatic
-		 
+   1.2.1 - added countryByName
+         - added linkByName 
    
- 
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.groupDataByName = {}
-
+cfxMX.countryByName ={}
+cfxMX.linkByName = {}
 cfxMX.allFixedByName = {}
 cfxMX.allHeloByName = {}
 cfxMX.allGroundByName = {}
@@ -193,11 +194,20 @@ function cfxMX.createCrossReferences()
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
 									for group_num, group_data in pairs(obj_type_data.group) do
+										
 										local aName = group_data.name 
 										local aID = group_data.groupId
+										-- get linkUnit info if it exists
+										local linkUnit = nil 
+										if group_data and group_data.route and group_data.route and group_data.route.points[1] then 
+											linkUnit = group_data.route.points[1].linkUnit
+											cfxMX.linkByName[aName] = linkUnit
+										end 
+										
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
 										cfxMX.groupDataByName[aName] = group_data
+										cfxMX.countryByName[aName] = cntry_id
 										-- now make the type-specific xrefs
 										if obj_type_name == "helicopter" then 
 											cfxMX.allHeloByName[aName] = group_data 

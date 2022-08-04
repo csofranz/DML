@@ -297,6 +297,10 @@ function cfxArtilleryZones.doFireAt(aZone, maxDistFromCenter)
 	cfxArtilleryZones.invokeCallbacksFor('fire', aZone, {})
 end
 
+--
+-- API main entry call for firing at zone
+--     invokes doFireAt()
+--
 function cfxArtilleryZones.simFireAtZone(aZone, aGroup, dist)
 	
 	if not dist then dist = aZone.spotRange end 
