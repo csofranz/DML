@@ -1,5 +1,5 @@
 changer = {}
-changer.version = "1.0.2"
+changer.version = "1.0.3"
 changer.verbose = false 
 changer.ups = 1 
 changer.requiredLibs = {
@@ -12,6 +12,7 @@ changer.changers = {}
 	1.0.0 - Initial version 
 	1.0.1 - Better guards in config to avoid <none> Zone getter warning 
 	1.0.2 - on/off: verbosity 
+	1.0.3 - NOT on/off
 	
 	Transmogrify an incoming signal to an output signal
 	- not 
@@ -111,6 +112,12 @@ function changer.createChangerWithZone(theZone)
 	if cfxZones.hasProperty(theZone, "changeOn/Off?") then 
 		theZone.changerOnOff = cfxZones.getStringFromZoneProperty(theZone, "changeOn/Off?", "*<none>", 1)
 	end
+	if cfxZones.hasProperty(theZone, "NOT On/Off?") then 
+		theZone.changerOnOffINV = cfxZones.getStringFromZoneProperty(theZone, "NOT On/Off?", "*<none>", 1)
+	end
+	if cfxZones.hasProperty(theZone, "NOT changeOn/Off?") then 
+		theZone.changerOnOffINV = cfxZones.getStringFromZoneProperty(theZone, "NOT changeOn/Off?", "*<none>", 1)
+	end
 end
 
 --
@@ -207,6 +214,10 @@ function changer.update()
 		end
 		
 		-- do processing if not paused
+		if aZone.changerOnOff and aZone.changerOnOffINV then 
+			trigger.action.outText("+++chgr: WARNING - zone <" .. aZone.name .. "> has conflicting change On/off inputs, disregating inverted input (NOT changeOn/off?)", 30)
+		end
+		
 		if not aZone.changerPaused then
 			if aZone.changerOnOff then 
 				if cfxZones.getFlagValue(aZone.changerOnOff, aZone) > 0 then
@@ -216,7 +227,15 @@ function changer.update()
 						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed.", 30)
 					end 
 				end
-			else 
+			elseif aZone.changerOnOffINV then 
+				if cfxZones.getFlagValue(aZone.changerOnOffINV, aZone) == 0 then
+					changer.process(aZone)
+				else 
+					if changer.verbose or aZone.verbose then 
+						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed.", 30)
+					end 
+				end
+			else
 				changer.process(aZone)
 			end
 		end 

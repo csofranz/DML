@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.1.3"
+groupTracker.version = "1.1.4"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -20,6 +20,12 @@ groupTracker.trackers = {}
 	1.1.3 - spellings
 		  - addGroupToTrackerNamed bug removed accessing tracker 
 		  - new removeGroupNamedFromTrackerNamed()
+	1.1.4 - destroy? input 
+		  - allGone! output 
+		  - triggerMethod
+		  - method 
+		  - isDead optimization 
+	
 --]]--
 
 function groupTracker.addTracker(theZone)
@@ -87,7 +93,7 @@ function groupTracker.addGroupToTrackerNamed(theGroup, trackerName)
 		return 
 	end
 	
-	if not theGroup:isExist() then 
+	if not Group.isExist(theGroup) then 
 		trigger.action.outText("+++gTrk: group does not exist when adding to tracker <" .. trackerName .. ">", 30)
 		return 
 	end 
@@ -147,6 +153,17 @@ function groupTracker.createTrackerWithZone(theZone)
 	theZone.trackedGroups = {}
 
 
+	theZone.trackerMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	if cfxZones.hasProperty(theZone, "trackerMethod") then 
+		theZone.trackerMethod = cfxZones.getStringFromZoneProperty(theZone, "trackerMethod", "inc")
+	end
+
+	theZone.trackerTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+
+	if cfxZones.hasProperty(theZone, "trackerTriggerMethod") then 
+		theZone.trackerTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "trackerTriggerMethod", "change")
+	end
+
 	if cfxZones.hasProperty(theZone, "numGroups") then 
 		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups", "*<none>") 
 		-- we may need to zero this flag 
@@ -181,6 +198,16 @@ function groupTracker.createTrackerWithZone(theZone)
 		end 
 	end	
 	
+	if cfxZones.hasProperty(theZone, "destroy?") then 
+		theZone.destroyFlag = cfxZones.getStringFromZoneProperty(theZone, "destroy?", "*<none>")
+		theZone.lastDestroyValue = cfxZones.getFlagValue(theZone.destroyFlag, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "allGone!") then 
+		theZone.allGoneFlag = cfxZones.getStringFromZoneProperty(theZone, "allGone!", "<None>") -- note string on number default
+	end
+	theZone.lastGroupCount = 0 
+	
 	if theZone.verbose or groupTracker.verbose then 
 		trigger.action.outText("gTrck: processed <" .. theZone.name .. ">", 30)
 	end 
@@ -189,12 +216,23 @@ end
 --
 -- update
 --
+function groupTracker.destroyAllInZone(theZone) 
+	for idx, theGroup in pairs(theZone.trackedGroups) do 
+		if Group.isExist(theGroup) then 
+			theGroup:destroy()
+		end
+	end
+	-- we keep all groups in trackedGroups so we 
+	-- generate a host of destroy events when we run through 
+	-- checkGroups next 
+end
+
 function groupTracker.checkGroups(theZone)
 	local filteredGroups = {}
 	for idx, theGroup in pairs(theZone.trackedGroups) do 
 		-- see if this group can be transferred
 		local isDead = false 
-		if theGroup:isExist() then 
+--[[		if theGroup.isExist and theGroup:isExist() then 
 			local allUnits = theGroup:getUnits()
 			isDead = true 
 			for idy, aUnit in pairs(allUnits) do 
@@ -203,6 +241,8 @@ function groupTracker.checkGroups(theZone)
 					break
 				end
 			end
+--]]--
+		if Group.isExist(theGroup) and theGroup:getSize() > 0 then
 		else 
 			isDead = true -- no longer exists 
 		end
@@ -238,7 +278,22 @@ function groupTracker.update()
 	timer.scheduleFunction(groupTracker.update, {}, timer.getTime() + 1/groupTracker.ups)
 		
 	for idx, theZone in pairs(groupTracker.trackers) do
+		
+		if theZone.destroyFlag and cfxZones.testZoneFlag(theZone, theZone.destroyFlag, theZone.trackerTriggerMethod, "lastDestroyValue") then 
+			groupTracker.destroyAllInZone(theZone)
+			if groupTracker.verbose or theZone.verbose then 
+				trigger.action.outText("+++gTrk: destroying all groups tracked with <" .. theZone.name .. ">", 30)
+			end 
+		end
+		
 		groupTracker.checkGroups(theZone)
+		
+		-- see if we need to bang on empty!
+		local currCount = #theZone.trackedGroups
+		if theZone.allGoneFlag and currCount == 0 and currCount ~= theZone.lastGroupCount then 
+			cfxZones.pollFlag(aZone.allGoneFlag, aZone.trackerMethod, aZone)
+		end 
+		theZone.lastGroupCount = currCount
 	end
 end
 

@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.3.2"
+rndFlags.version = "1.4.0"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -30,6 +30,8 @@ rndFlags.requiredLibs = {
 		  - added 'rndDone!' flag 
 		  - rndMethod defaults to "inc"
 	1.3.2 - moved flagArrayFromString to dcsCommon
+	      - minor clean-up
+	1.4.0 - persistence 
 
 --]]
 
@@ -39,60 +41,16 @@ function rndFlags.addRNDZone(aZone)
 	table.insert(rndFlags.rndGen, aZone)
 end
 
+function rndFlags.getRNDByName(aName)
+	for idx, theRND in pairs(rndFlags.rndGen) do 
+		if theRND.name == aName then return theRND end 
+	end
+	return nil
+end
+
 function rndFlags.flagArrayFromString(inString)
 	return dcsCommon.flagArrayFromString(inString, rndFlags.verbose)
-	--[[--
-	if string.len(inString) < 1 then 
-		trigger.action.outText("+++RND: empty flags", 30)
-		return {} 
-	end
-	if rndFlags.verbose then 
-		trigger.action.outText("+++RND: processing <" .. inString .. ">", 30)
-	end 
 	
-	local flags = {}
-	local rawElements = dcsCommon.splitString(inString, ",")
-	-- go over all elements 
-	for idx, anElement in pairs(rawElements) do 
-		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
-			-- interpret this as a range
-			local theRange = dcsCommon.splitString(anElement, "-")
-			local lowerBound = theRange[1]
-			lowerBound = tonumber(lowerBound)
-			local upperBound = theRange[2]
-			upperBound = tonumber(upperBound)
-			if lowerBound and upperBound then
-				-- swap if wrong order
-				if lowerBound > upperBound then 
-					local temp = upperBound
-					upperBound = lowerBound
-					lowerBound = temp 
-				end
-				-- now add add numbers to flags
-				for f=lowerBound, upperBound do 
-					table.insert(flags, f)
-
-				end
-			else
-				-- bounds illegal
-				trigger.action.outText("+++RND: ignored range <" .. anElement .. "> (range)", 30)
-			end
-		else
-			-- single number
-			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
-			if f then 
-				table.insert(flags, f)
-
-			else 
-				trigger.action.outText("+++RND: ignored element <" .. anElement .. "> (single)", 30)
-			end
-		end
-	end
-	if rndFlags.verbose then 
-		trigger.action.outText("+++RND: <" .. #flags .. "> flags total", 30)
-	end 
-	return flags
-	--]]--
 end
 
 --
@@ -214,7 +172,6 @@ function rndFlags.fire(theZone)
 		if rndFlags.verbose or theZone.verbose then 
 			trigger.action.outText("+++RND: RND " .. theZone.name .. " ran out of flags. Will fire 'done' instead ", 30)
 		end
-		
 		if theZone.doneFlag then
 			cfxZones.pollFlag(theZone.doneFlag, theZone.rndMethod, theZone)
 		end
@@ -281,15 +238,67 @@ end
 function rndFlags.startCycle()
 	for idx, theZone in pairs(rndFlags.rndGen) do
 		if theZone.onStart then 
-			if rndFlags.verbose or theZone.verbose then 
-				trigger.action.outText("+++RND: starting " .. theZone.name, 30)
+			if theZone.isStarted then 
+				-- suppressed by persistence 
+			else 
+				if rndFlags.verbose or theZone.verbose then 
+					trigger.action.outText("+++RND: starting " .. theZone.name, 30)
+				end 
+				rndFlags.fire(theZone)
 			end 
-			rndFlags.fire(theZone)
 		end
 	end
 end
 
+--
+-- Load / Save data 
+--
+function rndFlags.saveData()
+	local theData = {}
+	local allRND = {}
+	for idx, theRND in pairs(rndFlags.rndGen) do 
+		local theName = theRND.name 
+		local rndData = {}
+		-- save data for this RND 
+		rndData.myFlags = dcsCommon.clone(theRND.myFlags)
+		allRND[theName] = rndData
+	end
+	theData.allRND = allRND
 
+	return theData
+end
+
+function rndFlags.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("rndFlags")
+	if not theData then 
+		if rndFlags.verbose then 
+			trigger.action.outText("+++RND Persistence: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allRND = theData.allRND
+	if not allRND then
+		if rndFlags.verbose then 
+			trigger.action.outText("+++RND Persistence - no data, skipping", 30)
+		end
+		return 
+	end -- no data, no proccing 
+	
+	for theName, rData in pairs(allRND) do 
+		local theRND = rndFlags.getRNDByName(theName)
+		if theRND then 
+			-- get current myFlags 
+			local myFlags = dcsCommon.clone(rData.myFlags)
+			theRND.myFlags = myFlags
+			theRND.isStarted = true -- we are initted, NO ON START 
+		else 
+			trigger.action.outText("+++RND persistecne: can't synch RND <" .. theName .. ">", 30)
+		end
+	end
+end
+	
 --
 -- start module and read config 
 --
@@ -312,7 +321,7 @@ end
 
 function rndFlags.start()
 	-- lib check
-	if not dcsCommon.libCheck then 
+	if not dcsCommon then 
 		trigger.action.outText("RNDFlags requires dcsCommon", 30)
 		return false 
 	end 
@@ -345,6 +354,15 @@ function rndFlags.start()
 		rndFlags.addRNDZone(aZone) -- remember it so we can smoke it
 	end
 	
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = rndFlags.saveData
+		persistence.registerModule("rndFlags", callbacks)
+		-- now load my data 
+		rndFlags.loadData()
+	end
+	
 	-- start cycle 
 	timer.scheduleFunction(rndFlags.startCycle, {}, timer.getTime() + 0.25)
 	
@@ -361,4 +379,3 @@ if not rndFlags.start() then
 	rndFlags = nil 
 end
 
--- TODO: move flags to RND!, rename RND to RND!, deprecate flags!

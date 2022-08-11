@@ -1,5 +1,5 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.4.0"
+limitedAirframes.version = "1.5.0"
 limitedAirframes.verbose = false 
 limitedAirframes.enabled = true -- can be turned off
 limitedAirframes.userCanToggle = true -- F10 menu?
@@ -18,7 +18,7 @@ limitedAirframes.requiredLibs = {
 	             -- pretty stupid to check for this since we 
 				 -- need common to invoke the check, but anyway
 	"cfxZones", -- Zones, of course for safe landings
-	"cfxPlayer", 
+	-- "cfxPlayer", no longer needed
 }
 
 --[[-- VERSION HISTORY
@@ -48,8 +48,9 @@ limitedAirframes.requiredLibs = {
  - 1.4.0 - DML integration, verbosity, clean-up, QoL improvements
 		   redSafe, blueSafe with attribute, backward compatible
 		   currRed 
+ - 1.4.1 - removed dependency to cfxPlayer
+ - 1.5.0 - persistence support 
 		   
- 
 --]]--
 
 -- limitedAirframes manages the number of available player airframes
@@ -123,6 +124,7 @@ function limitedAirframes.readConfigZone()
 	end 
 	-- remember me 
 	limitedAirframes.config = theZone 
+	limitedAirframes.name = "limitedAirframes" -- so we can call cfxZones with ourself as param 
 	
 	limitedAirframes.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	
@@ -131,22 +133,22 @@ function limitedAirframes.readConfigZone()
 	end
 	
 	-- ok, for each property, load it if it exists
-	if cfxZones.hasProperty(theZone, "enabled")  then 
+--	if cfxZones.hasProperty(theZone, "enabled")  then 
 		limitedAirframes.enabled = cfxZones.getBoolFromZoneProperty(theZone, "enabled", true)
-	end
+--	end
 	
-	if cfxZones.hasProperty(theZone, "userCanToggle")  then 
+--	if cfxZones.hasProperty(theZone, "userCanToggle")  then 
 		limitedAirframes.userCanToggle = cfxZones.getBoolFromZoneProperty(theZone, "userCanToggle", true)
-	end
+--	end
 	
 	
-	if cfxZones.hasProperty(theZone, "maxRed")  then 
+--	if cfxZones.hasProperty(theZone, "maxRed")  then 
 		limitedAirframes.maxRed = cfxZones.getNumberFromZoneProperty(theZone, "maxRed", -1)
-	end
+--	end
 	
-	if cfxZones.hasProperty(theZone, "maxBlue")  then 
+--	if cfxZones.hasProperty(theZone, "maxBlue")  then 
 		limitedAirframes.maxBlue = cfxZones.getNumberFromZoneProperty(theZone, "maxBlue", -1)
-	end
+--	end
 	
 	limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "#red", "*none")
 	limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "#blue", "*none")
@@ -318,7 +320,7 @@ function limitedAirframes.preProcessor(event)
 	end
 	
 	
-	if not cfxPlayer.isPlayerUnit(theUnit) then 
+	if not dcsCommon.isPlayerUnit(theUnit) then 
 		-- not a player unit. Events 5 and 6 have been
 		-- handled before, so we can safely ignore
 		return false 
@@ -829,6 +831,37 @@ function limitedAirframes.pilotsRescued(theCoalition, success, numRescued, notes
 end
 
 --
+-- Load / Save
+--
+function limitedAirframes.saveData()
+	local theData = {}
+	theData.currRed = limitedAirframes.currRed
+	theData.currBlue = limitedAirframes.currBlue
+	return theData
+end
+
+function limitedAirframes.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("limitedAirframes")
+	if not theData then 
+		if limitedAirframes.verbose then 
+			trigger.action.outText("+++limA: no save date received, skipping.", 30)
+		end
+		return
+	end
+
+	if theData.currRed then 
+		limitedAirframes.currRed = theData.currRed
+	end
+
+	if theData.currBlue then 
+		limitedAirframes.currBlue = theData.currBlue
+	end
+	
+end
+
+
+--
 -- START 
 --
 
@@ -885,7 +918,7 @@ function limitedAirframes.start()
 	limitedAirframes.currBlue = limitedAirframes.maxBlue
 	
 	-- collect active player unit names 
-	local allPlayerUnits = cfxPlayer.getAllExistingPlayerUnitsRaw()
+	local allPlayerUnits = dcsCommon.getAllExistingPlayerUnitsRaw()
 	for i=1, #allPlayerUnits do 
 		local aUnit = allPlayerUnits[i]
 		limitedAirframes.addPlayerUnit(aUnit)
@@ -904,6 +937,16 @@ function limitedAirframes.start()
 		trigger.action.outText("+++limA: connected to csar manager", 30)
 	else 
 		trigger.action.outText("+++limA: NO CSAR integration", 30)
+	end
+
+	-- persistence: load states 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = limitedAirframes.saveData
+		persistence.registerModule("limitedAirframes", callbacks)
+		-- now load my data 
+		limitedAirframes.loadData()
 	end
 	
 	-- say hi

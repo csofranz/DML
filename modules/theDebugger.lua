@@ -1289,4 +1289,5 @@ end
 	  -q d.e.f returns string "asdasda..."
 	  -q sada reuturs <nil>
 	
+	- xref: which zones/attributes reference a flag, g.g. '-xref go'
 --]]--

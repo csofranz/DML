@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.1"
+persistence.version = "1.0.2"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -21,6 +21,7 @@ persistence.requiredLibs = {
 		  - spelling 
 		  - cfxZones interface
 		  - always output save location
+	1.0.2 - QoL when verbosity is on 
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
@@ -304,9 +305,9 @@ function persistence.missionStartDataLoad()
 	-- we are done for now. modules check in 
 	-- after persistence and load their own data 
 	-- when they detect that there is data to load 
-	if persistence.verbose then 
-		trigger.action.outText("+++persistence: basic import complete.", 30)
-	end
+
+	trigger.action.outText("+++persistence: successfully read mission save data", 30)
+
 end
 
 --
@@ -344,6 +345,10 @@ function persistence.saveMissionData()
 			myData[moduleName] = moduleData
 			if persistence.verbose then 
 				trigger.action.outText("+++persistence: gathered data from <" .. moduleName .. ">", 30)
+			end
+		else 
+			if persistence.verbose then 
+				trigger.action.outText("+++persistence: NO DATA gathered data from <" .. moduleName .. ">, module returned NIL", 30)
 			end
 		end 
 	end

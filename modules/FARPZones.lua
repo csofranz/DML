@@ -451,7 +451,7 @@ function FARPZones.saveData()
 	-- iterate all farp data and put them into a container each
 	for theZone, theFARP in pairs(FARPZones.allFARPZones) do 
 		fName = theZone.name 
-		trigger.action.outText("frpZ persistence: processing FARP <" .. fName .. ">", 30)
+		--trigger.action.outText("frpZ persistence: processing FARP <" .. fName .. ">", 30)
 		local fData = {}
 		fData.owner = theFARP.owner 
 		fData.defenderData = dcsCommon.clone(theFARP.defenderData)

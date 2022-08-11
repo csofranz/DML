@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.1"
+cfxMX.version = "1.2.2"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -18,7 +18,9 @@ cfxMX.verbose = false
 		 - added references for allFixed, allHelo, allGround, allSea, allStatic
    1.2.1 - added countryByName
          - added linkByName 
-   
+   1.2.2 - fixed ctry bug in countryByName
+         - playerGroupByName
+		 - playerUnitByName
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
@@ -29,7 +31,10 @@ cfxMX.allFixedByName = {}
 cfxMX.allHeloByName = {}
 cfxMX.allGroundByName = {}
 cfxMX.allSeaByName = {}
-cfxMX.allStaticByName ={}
+cfxMX.allStaticByName = {}
+
+cfxMX.playerGroupByName = {} -- returns data only if a player is in group 
+cfxMX.playerUnitByName = {} -- returns data only if this is a player unit 
 
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -145,14 +150,11 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 														theStatic.groupId = group_data.groupId  
 														-- copy linked unit data 
 														theStatic.linkUnit = linkUnit
-														
 													end
 													return theStatic, category, countryID, groupName  
-												
 												end -- if name match
 											end -- for all units 
 										end -- has groups 
-									
 									end -- is a static 
 								end --if has category data 
 							end --if plane, helo etc... category
@@ -207,7 +209,8 @@ function cfxMX.createCrossReferences()
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
 										cfxMX.groupDataByName[aName] = group_data
-										cfxMX.countryByName[aName] = cntry_id
+										cfxMX.countryByName[aName] = countryID -- !!! was cntry_id
+
 										-- now make the type-specific xrefs
 										if obj_type_name == "helicopter" then 
 											cfxMX.allHeloByName[aName] = group_data 
@@ -223,7 +226,18 @@ function cfxMX.createCrossReferences()
 											-- should be impossible, but still
 											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)
 										end
-									end
+										-- now iterate all units in this group 
+										-- for player into 
+										for unit_num, unit_data in pairs(group_data.units) do
+											if unit_data.skill then 
+												if unit_data.skill == "Client" or  unit_data.skill == "Player" then
+													-- player unit 
+													cfxMX.playerUnitByName[unit_data.name] = unit_data
+													cfxMX.playerGroupByName[aName] = group_data -- inefficient, but works
+												end -- if unit skill client
+											end -- if has skill
+										end -- for all units
+									end -- for all groups 
 								end --if has category data 
 							end --if plane, helo etc... category
 						end --for all objects in country 

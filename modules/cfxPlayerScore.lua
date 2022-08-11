@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "1.3.1"
+cfxPlayerScore.version = "1.4.0"
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
 cfxPlayerScore.announcer = true 
@@ -23,12 +23,15 @@ cfxPlayerScore.announcer = true
 		    number that is given under OBJECT ID when 
 			using assign as...
 	1.3.1 - isStaticObject() to better detect buildings after Match 22 patch
+	1.3.2 - corrected ground default score 
+	      - removed dependency to cfxPlayer 
+	1.4.0 - persistence support 
+	      - better unit-->static switch support for generic type kill
 	
 		  
 --]]--
 cfxPlayerScore.requiredLibs = {
 	"dcsCommon", -- this is doing score keeping
-	"cfxPlayer", -- player events, comms 
 	"cfxZones", -- zones for config 
 }
 cfxPlayerScore.playerScore = {} -- init to empty
@@ -46,14 +49,15 @@ cfxPlayerScore.typeScore = {}
 --
 cfxPlayerScore.aircraft = 50 
 cfxPlayerScore.helo = 40 
-cfxPlayer.ground = 10
+cfxPlayerScore.ground = 10
 cfxPlayerScore.ship = 80 
 cfxPlayerScore.train = 5 
+
 
 function cfxPlayerScore.cat2BaseScore(inCat)
 	if inCat == 0 then return cfxPlayerScore.aircraft end -- airplane
 	if inCat == 1 then return cfxPlayerScore.helo end -- helo 
-	if inCat == 2 then return cfxPlayer.ground end -- ground 
+	if inCat == 2 then return cfxPlayerScore.ground end -- ground 
 	if inCat == 3 then return cfxPlayerScore.ship end -- ship 
 	if inCat == 4 then return cfxPlayerScore.train end -- train 
 	
@@ -69,7 +73,10 @@ function cfxPlayerScore.object2score(inVictim) -- does not have group
 	if type(inName) == "number" then 
 		inName = tostring(inName)
 	end
-		
+	
+	-- now, since 2.7x DCS turns units into static objects for 
+	-- cooking off, so first thing we need to do is do a name check 
+	
 	local objectScore = cfxPlayerScore.typeScore[inName]
 	if not objectScore then 
 		-- try the type desc 
@@ -80,6 +87,20 @@ function cfxPlayerScore.object2score(inVictim) -- does not have group
 	if type(objectScore) == "string" then 
 		objectScore = tonumber(objectScore)
 	end
+	
+	if objectScore then return objectScore end
+	
+	-- we now try and get the general type of the killed object
+	local desc = inVictim:getDesc() -- Object.getDesc(inVictim)
+	local attributes = desc.attributes 
+	if attributes then 
+		if attributes["Vehicles"] or attributes["Ground vehicles"] or attributes["Ground Units"] then return cfxPlayerScore.ground end 
+		if attributes["Helicopters"] then return cfxPlayerScore.helo end
+		if attributes["Planes"] then return cfxPlayerScore.aircraft end 
+		if attributes["Ships"] then return cfxPlayerScore.ship end 
+		-- trains can't be detected
+	end 
+	
 	if not objectScore then return 0 end 
 	return objectScore 
 end
@@ -224,7 +245,7 @@ function cfxPlayerScore.preProcessor(theEvent)
 			return false 
 		end 
 		
-		local wasPlayer = cfxPlayer.isPlayerUnit(killer)
+		local wasPlayer = dcsCommon.isPlayerUnit(killer)
 		return wasPlayer
 	end
 	return false 
@@ -245,7 +266,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- we are only getting called when and if 
 	-- a kill occured and killer was a player 
 	-- and target exists
-	
+--	trigger.action.outText("KILL EVENT", 30)
 	local killer = theEvent.initiator
 	local killerName = killer:getPlayerName()
 	if not killerName then killerName = "<nil>" end
@@ -255,13 +276,14 @@ function cfxPlayerScore.killDetected(theEvent)
 	local victim = theEvent.target
 
 	-- was it a player kill?
-	local pk = cfxPlayer.isPlayerUnit(victim)
+	local pk = dcsCommon.isPlayerUnit(victim)
 
 	-- was it a scenery object? 
 	local wasBuilding = dcsCommon.isSceneryObject(victim)
 	if wasBuilding then 
 		-- these objects have no coalition; we simply award the score if 
 		-- it exists in look-up table. 
+		--trigger.action.outText("KILL SCENERY", 30)
 		local staticScore = cfxPlayerScore.object2score(victim)
 		if staticScore > 0 then 
 			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
@@ -282,10 +304,11 @@ function cfxPlayerScore.killDetected(theEvent)
 	--if not victim.getGroup then
 	if isStO then 
 		-- static objects have no group 
-
+		
 		local staticName = victim:getName() -- on statics, this returns 
 		                                    -- name as entered in TOP LINE
 		local staticScore = cfxPlayerScore.object2score(victim)
+--		trigger.action.outText("KILL STATIC with score " .. staticScore, 30)
 		if staticScore > 0 then 
 			-- this was a named static, return the score - unless our own
 			if fraternicide then 
@@ -295,6 +318,7 @@ function cfxPlayerScore.killDetected(theEvent)
 				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
 			end
 			staticScore = scoreMod * staticScore
+			cfxPlayerScore.logKillForPlayer(killerName, victim)
 			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
 		else 
 			-- no score, no mentions
@@ -368,7 +392,7 @@ function cfxPlayerScore.readConfigZone(theZone)
 	-- default scores 
 	cfxPlayerScore.aircraft = cfxZones.getNumberFromZoneProperty(theZone, "aircraft", 50) 
 	cfxPlayerScore.helo = cfxZones.getNumberFromZoneProperty(theZone, "helo", 40)  
-	cfxPlayer.ground = cfxZones.getNumberFromZoneProperty(theZone, "ground", 10)  
+	cfxPlayerScore.ground = cfxZones.getNumberFromZoneProperty(theZone, "ground", 10)  
 	cfxPlayerScore.ship = cfxZones.getNumberFromZoneProperty(theZone, "ship", 80)   
 	cfxPlayerScore.train = cfxZones.getNumberFromZoneProperty(theZone, "train", 5)
 	
@@ -381,6 +405,36 @@ function cfxPlayerScore.readConfigZone(theZone)
 		cfxReconMode.scoreSound = cfxZones.getStringFromZoneProperty(theZone, "scoreSound", "<nosound>")
 	end
 end
+
+--
+-- load / save 
+--
+function cfxPlayerScore.saveData()
+	local theData = {}
+	local theScore = dcsCommon.clone(cfxPlayerScore.playerScore)
+	theData.theScore = theScore
+	return theData
+end
+
+function cfxPlayerScore.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cfxPlayerScore")
+	if not theData then 
+		if cfxPlayerScore.verbose then 
+			trigger.action.outText("+++playerscore: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local theScore = theData.theScore
+	cfxPlayerScore.playerScore = theScore 
+	
+end
+
+
+--
+-- start
+--
 
 function cfxPlayerScore.start()
 	if not dcsCommon.libCheck("cfx Player Score", 
@@ -413,6 +467,18 @@ function cfxPlayerScore.start()
 	dcsCommon.addEventHandler(cfxPlayerScore.killDetected,
 							  cfxPlayerScore.preProcessor,
 							  cfxPlayerScore.postProcessor)
+							  
+	-- now load all save data and populate map with troops that
+	-- we deployed last save. 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cfxPlayerScore.saveData
+		persistence.registerModule("cfxPlayerScore", callbacks)
+		-- now load my data 
+		cfxPlayerScore.loadData()
+	end
+							  
 	trigger.action.outText("cfxPlayerScore v" .. cfxPlayerScore.version .. " started", 30)
 	return true 
 end

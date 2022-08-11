@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.2.0"
+cfxOwnedZones.version = "1.2.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -45,6 +45,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 1.2.0 - support for persistence 
       - conq+1 --> conquered!
 	  - no cfxGroundTroop bug (no delay)
+1.2.1 - fix in load to correctly re-establish all attackers for subsequent save 
 	  
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -797,6 +798,7 @@ end
 
 function cfxOwnedZones.GC()
 	-- GC run. remove all my dead remembered troops
+	local before = #cfxOwnedZones.spawnedAttackers
 	local filteredAttackers = {}
 	for gName, gData in pairs (cfxOwnedZones.spawnedAttackers) do 
 		-- all we need to do is get the group of that name
@@ -807,6 +809,9 @@ function cfxOwnedZones.GC()
 		end
 	end
 	cfxOwnedZones.spawnedAttackers = filteredAttackers
+	if cfxOwnedZones.verbose then 
+		trigger.action.outText("owned zones GC ran: before <" .. before .. ">, after <" .. #cfxOwnedZones.spawnedAttackers .. ">", 30)
+	end
 end
 
 function cfxOwnedZones.update()
@@ -967,7 +972,7 @@ function cfxOwnedZones.loadData()
 		local cty = gData.cty 
 		local cat = gData.cat 
 		-- add to my own attacker queue so we can save later 
-		local dClone = dcsCommon.clone(gData)
+		local dClone = dcsCommon.clone(gdTroop)
 		cfxOwnedZones.spawnedAttackers[gName] = dClone 
 		local theGroup = coalition.addGroup(cty, cat, gData)
 		if cfxGroundTroops then 

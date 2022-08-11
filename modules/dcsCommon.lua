@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.0"
+dcsCommon.version = "2.7.1"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -89,6 +89,9 @@ dcsCommon.version = "2.7.0"
        - new getSceneryObjectInZoneByName()
  2.7.0 - new synchGroupData()
          clone, topClone and copyArray now all nil-trap 
+ 2.7.1 - new isPlayerUnit() -- moved from cfxPlayer
+         new getAllExistingPlayerUnitsRaw - from cfxPlayer
+		 new typeIsInfantry()
  
 --]]--
 
@@ -103,7 +106,8 @@ dcsCommon.version = "2.7.0"
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
 	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50 and Gazelle can't carry troops
-
+	dcsCommon.coalitionSides = {0, 1, 2}
+	
 	-- verify that a module is loaded. obviously not required
 	-- for dcsCommon, but all higher-order modules
 	function dcsCommon.libCheck(testingFor, requiredLibs)
@@ -2248,6 +2252,28 @@ function dcsCommon.isTroopCarrier(theUnit)
 	return false
 end
 
+function dcsCommon.isPlayerUnit(theUnit)
+	-- new patch. simply check if getPlayerName returns something
+	if not theUnit then return false end 
+	if not theUnit.getPlayerName then return false end -- map/static object 
+	local pName = theUnit:getPlayerName()
+	if pName then return true end 
+	return false 
+end
+
+function dcsCommon.getAllExistingPlayerUnitsRaw()
+	local apu = {}
+	for idx, theSide in pairs(dcsCommon.coalitionSides) do
+		local thePlayers = coalition.getPlayers(theSide) 
+		for idy, theUnit in pairs (thePlayers) do 
+			if theUnit and theUnit:isExist() then 
+				table.insert(apu, theUnit)
+			end
+		end
+	end
+	return apu 
+end
+
 function dcsCommon.getUnitAlt(theUnit)
 	if not theUnit then return 0 end
 	if not theUnit:isExist() then return 0 end 
@@ -2335,10 +2361,7 @@ function dcsCommon.getUnitHeadingDegrees(theUnit)
 	return heading * 57.2958 -- 180 / math.pi 
 end
 
-function dcsCommon.unitIsInfantry(theUnit)
-	if not theUnit then return false end 
-	if not theUnit:isExist() then return end
-	local theType = theUnit:getTypeName()
+function dcsCommon.typeIsInfantry(theType)
 	local isInfantry =  
 				dcsCommon.containsString(theType, "infantry", false) or 
 				dcsCommon.containsString(theType, "paratrooper", false) or
@@ -2347,6 +2370,23 @@ function dcsCommon.unitIsInfantry(theUnit)
 				dcsCommon.containsString(theType, "soldier", false) or 
 				dcsCommon.containsString(theType, "SA-18 Igla", false)
 	return isInfantry
+end
+
+function dcsCommon.unitIsInfantry(theUnit)
+	if not theUnit then return false end 
+	if not theUnit:isExist() then return end
+	local theType = theUnit:getTypeName()
+--[[--
+	local isInfantry =  
+				dcsCommon.containsString(theType, "infantry", false) or 
+				dcsCommon.containsString(theType, "paratrooper", false) or
+				dcsCommon.containsString(theType, "stinger", false) or
+				dcsCommon.containsString(theType, "manpad", false) or
+				dcsCommon.containsString(theType, "soldier", false) or 
+				dcsCommon.containsString(theType, "SA-18 Igla", false)
+	return isInfantry
+--]]--
+	return dcsCommon.typeIsInfantry(theType)
 end
 
 function dcsCommon.coalition2county(inCoalition)

@@ -88,44 +88,7 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	if theZone.menuVisible then 
 		radioMenu.installMenu(theZone)
 	end
-	--[[--
-	-- now do the two options
-	local menuA = cfxZones.getStringFromZoneProperty(theZone, "itemA", "<no A submenu>")
-	if theZone.coalition == 0 then 
-		theZone.menuA = missionCommands.addCommand(menuA, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "A"})
-	else 
-		theZone.menuA = missionCommands.addCommandForCoalition(theZone.coalition, menuA, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "A"})
-	end 
-	
-	if cfxZones.hasProperty(theZone, "itemB") then 
-		local menuB = cfxZones.getStringFromZoneProperty(theZone, "itemB", "<no B submenu>")
-		if theZone.coalition == 0 then 
-			theZone.menuB = missionCommands.addCommand(menuB, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "B"})
-		else 
-			theZone.menuB = missionCommands.addCommandForCoalition(theZone.coalition, menuB, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "B"})
-		end
-	end
 
-	if cfxZones.hasProperty(theZone, "itemC") then 
-		local menuC = cfxZones.getStringFromZoneProperty(theZone, "itemC", "<no C submenu>")
-		if theZone.coalition == 0 then 
-			theZone.menuC = missionCommands.addCommand(menuC, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "C"})
-		else 
-			theZone.menuC = missionCommands.addCommandForCoalition(theZone.coalition, menuC, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "C"})
-		end
-	end
-	
-	if cfxZones.hasProperty(theZone, "itemD") then 
-		local menuD = cfxZones.getStringFromZoneProperty(theZone, "itemD", "<no D submenu>")
-		if theZone.coalition == 0 then 
-			theZone.menuD = missionCommands.addCommand(menuD, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "D"})
-		else 
-			theZone.menuD = missionCommands.addCommandForCoalition(theZone.coalition, menuD, theZone.rootMenu, radioMenu.redirectMenuX, {theZone, "D"})
-		end
-	end
-	
-	--]]--
-	
 	-- get the triggers & methods here 
 	theZone.radioMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	if cfxZones.hasProperty(theZone, "radioMethod") then 

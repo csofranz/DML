@@ -146,8 +146,6 @@ end
 
 function cfxGroups.start()
 	cfxGroups.fetchAllGroupsFromDCS() -- read all groups from mission. 
---	cfxGroups.showAllGroups()
-	
 	trigger.action.outText("cfxGroups version " .. cfxGroups.version .. " started", 30)
 	return true 
 	

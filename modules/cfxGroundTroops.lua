@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "1.7.6"
+cfxGroundTroops.version = "1.7.7"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -61,6 +61,7 @@ cfxGroundTroops.deployedTroops = {}
 --   1.7.4 - verbose flag, warnings suppressed 
 --   1.7.5 - some troop.group hardening with isExist()
 --   1.7.6 - fixed switchToOffroad 
+--   1.7.7 - no longer case sensitive for orders 
 
 
 -- an entry into the deployed troop has the following attributes
@@ -580,17 +581,17 @@ function cfxGroundTroops.updateTroops(troop)
 		-- their order is removed, and the 'real' orders 
 		-- are revealed. For now, do nothing
 		cfxGroundTroops.updateWait(troop)
-	
+	--REMEMBER: LOWER CASE ONLY!
 	elseif troop.orders == "guard" then 
 		cfxGroundTroops.updateGuards(troop)
 	
-	elseif troop.orders == "attackOwnedZone" then 
+	elseif troop.orders == "attackownedzone" then 
 		cfxGroundTroops.updateZoneAttackers(troop)
 
 	elseif troop.orders == "laze" then 
 		cfxGroundTroops.updateLaze(troop)
 	
-	elseif troop.orders == "attackZone" then 
+	elseif troop.orders == "attackzone" then 
 		cfxGroundTroops.updateAttackers(troop)
 		
 	else 
@@ -752,7 +753,7 @@ function cfxGroundTroops.updateSingleScheduled(params)
 	
 	-- check max speed of group. if < 0.1 then note and increase 
 	-- speedWarning. if not, reset speed warning 
-	if troops.orders == "attackOwnedZone" and dcsCommon.getGroupMaxSpeed(troops.group) < 0.1 then 
+	if troops.orders == "attackownedzone" and dcsCommon.getGroupMaxSpeed(troops.group) < 0.1 then 
 		if not troops.speedWarning then troops.speedWarning = 0 end
 		troops.speedWarning = troops.speedWarning + 1
 	else
@@ -918,7 +919,7 @@ function cfxGroundTroops.getTroopReport(theSide, ignoreInfantry)
 		if troop.side == theSide and troop.group:isExist() then 
 			local unitNum = troop.group:getSize()
 			report = report .. "\n" .. troop.name .. " (".. unitNum .."): <" .. troop.orders .. ">" 
-			if troop.orders == "attackOwnedZone" then 
+			if troop.orders == "attackownedzone" then 
 				if troop.destination then 	
 					report = report .. " move towards " .. troop.destination.name 
 				else 
@@ -944,19 +945,16 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders)
 	local newTroops = {}
 	if not orders then 
 		orders = "guard" 
-		--trigger.action.outText("+++ adding ground troops <".. inGroup:getName() ..">with default orders", 30)
-	else 
-		--trigger.action.outText("+++ adding ground troops <".. inGroup:getName() ..">with orders " .. orders, 30)
 	end
 	if orders:lower() == "lase" then 
-		orders = "laze" -- we use WRONG spelling here, cause we're cool
+		orders = "laze" -- we use WRONG spelling here, cause we're cool. yeah, right.
 	end
 	newTroops.insideDestination = false
 	newTroops.unscheduleCount = 0 -- will count up as we aren't scheduled
 	newTroops.speedWarning = 0
 	newTroops.isOffroad = false -- if true, we switched to direct orders, not roads, after standstill
 	newTroops.group = inGroup
-	newTroops.orders = orders
+	newTroops.orders = orders:lower()
 	newTroops.coalition = inGroup:getCoalition()
 	newTroops.side = newTroops.coalition -- because we'e been using both.
 	newTroops.name = inGroup:getName()
@@ -972,7 +970,8 @@ function cfxGroundTroops.addGroundTroopsToPool(troops) -- troops MUST be a table
 		trigger.action.outText("+++ adding ground troops with unsupported troop signature", 30)
 		return 
 	end
-	
+	if not troops.orders then troops.orders = "guard" end 
+	troops.orders = troops.orders:lower()
 	troops.reschedule = true -- in case we use scheduled update 
 	-- we now add to internal array. this is worked on by all 
 	-- update meths, on scheduled upadtes, it is only used to 

@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "2.1.0"
+cfxHeloTroops.version = "2.2.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -18,6 +18,10 @@ cfxHeloTroops.pickupRange = 100 -- meters
 --       -- check spawner legality by types  
 --       -- updated types to include 2.7.6 additions to infantry
 --       -- updated types to include stinger/manpads 
+-- 2.2.0 -- minor maintenance (dcsCommon)
+--       -- (re?) connected readConfigZone (wtf?)
+--       -- persistence support
+--       -- made legalTroops entrirely optional and defer to dcsComon else
 
 --
 -- cfxHeloTroops -- a module to pick up and drop infantry. Can be used with any helo,
@@ -40,9 +44,14 @@ cfxHeloTroops.requiredLibs = {
 
 cfxHeloTroops.unitConfigs = {} -- all configs are stored by unit's name 
 cfxHeloTroops.myEvents = {3, 4, 5} --  3- takeoff, 4 - land, 5 - crash 
-cfxHeloTroops.legalTroops = {"Soldier AK", "Infantry AK", "Infantry AK ver2", "Infantry AK ver3", "Infantry AK Ins", "Soldier M249", "Soldier M4 GRG", "Soldier M4", "Soldier RPG", "Paratrooper AKS-74", "Paratrooper RPG-16", "Stinger comm dsr", "Stinger comm", "Soldier stinger", "SA-18 Igla-S comm", "SA-18 Igla-S manpad", "Igla manpad INS", "SA-18 Igla comm", "SA-18 Igla manpad",}
+
+-- legalTroops now optional, else check against dcsCommon.typeIsInfantry
+--cfxHeloTroops.legalTroops = {"Soldier AK", "Infantry AK", "Infantry AK ver2", "Infantry AK ver3", "Infantry AK Ins", "Soldier M249", "Soldier M4 GRG", "Soldier M4", "Soldier RPG", "Paratrooper AKS-74", "Paratrooper RPG-16", "Stinger comm dsr", "Stinger comm", "Soldier stinger", "SA-18 Igla-S comm", "SA-18 Igla-S manpad", "Igla manpad INS", "SA-18 Igla comm", "SA-18 Igla manpad",}
 
 cfxHeloTroops.troopWeight = 100 -- kg average weight per trooper 
+
+-- persistence support 
+cfxHeloTroops.deployedTroops = {}
 
 function cfxHeloTroops.resetConfig(conf)
 	conf.autoDrop = cfxHeloTroops.autoDrop --if true, will drop troops on-board upon touchdown
@@ -113,7 +122,7 @@ function cfxHeloTroops.preProcessor(event)
 	-- make sure it has an initiator
 	if not event.initiator then return false end -- no initiator 
 	local theUnit = event.initiator
-	if not cfxPlayer.isPlayerUnit(theUnit) then return false end -- not a player unit 
+	if not dcsCommon.isPlayerUnit(theUnit) then return false end -- not a player unit 
 	local cat = theUnit:getCategory()
 	if cat ~= Group.Category.HELICOPTER then return false end
 
@@ -414,9 +423,16 @@ function cfxHeloTroops.addGroundMenu(conf)
 			local typeArray = dcsCommon.splitString(theTypes, ',')
 			typeArray = dcsCommon.trimArray(typeArray)
 			local allLegal = true 
+			-- check agianst default (dcsCommon) or own definition (if exists)
 			for idy, aType in pairs(typeArray) do 
-				if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, aType) then 
-					allLegal = false 
+				if cfxHeloTroops.legalTroops then 
+					if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, aType) then 
+						allLegal = false 
+					end
+				else 
+					if not dcsCommon.typeIsInfantry(aType) then 
+						allLegal = false 
+					end
 				end
 			end
 			if allLegal then 
@@ -503,9 +519,16 @@ function cfxHeloTroops.filterTroopsByType(unitsToLoad)
 			local pass = true 
 			for iT, sT in pairs(aT) do 
 				-- check if this is a valid type 
-				if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, sT) then 
-					pass = false
-					break 
+				if cfxHeloTroops.legalTroops then 
+					if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, sT) then 
+						pass = false
+						break 
+					end
+				else 
+					if not dcsCommon.typeIsInfantry(sT) then 
+						pass = false
+						break 
+					end
 				end
 			end 
 			if pass then 
@@ -604,13 +627,21 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m ratius around choppa
 	--local theCoalition = theUnit:getCountry() -- make it choppers country
 	local theCoalition = theUnit:getGroup():getCoalition() -- make it choppers COALITION
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 												
 				conf.troopsOnBoard.name, -- dcsCommon.uuid("Assault"), -- maybe use config name as loaded from the group 
 				chopperZone, 											
 				unitTypes, 													
 				conf.dropFormation,
 				90)
+	-- persistence management 
+	local troopData = {}
+	troopData.groupData = theData
+	troopData.orders = orders -- always set  
+	troopData.side = theCoalition
+	troopData.range = range
+	cfxHeloTroops.deployedTroops[theData.name] = troopData 
+	
 	local troop = cfxGroundTroops.createGroundTroops(theGroup, range, orders) -- use default range and orders
 	-- instead of scheduling tasking in one second, we add to 
 	-- ground troops pool, and the troop pool manager will assign some enemies
@@ -663,8 +694,13 @@ function cfxHeloTroops.doLoadGroup(args)
 	-- TODO: ensure compatibility with CSAR module 
 	group:destroy()
 	
+	-- now immediately run a GC so this group is removed 
+	-- from any save data
+	cfxHeloTroops.GC()
+	
 	-- say so 
 	trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' aboard, ready to go!", 30)
+
 	-- reset menu 
 	cfxHeloTroops.removeComms(conf.unit)
 	cfxHeloTroops.setCommsMenu(conf.unit)
@@ -748,6 +784,32 @@ function cfxHeloTroops.playerChangeEvent(evType, description, player, data)
 	
 end
 
+--
+-- Regular GC and housekeeping
+--
+function cfxHeloTroops.GC()
+	-- GC run. remove all my dead remembered troops
+	local filteredAttackers = {}
+	local before = #cfxHeloTroops.deployedTroops
+	for gName, gData in pairs (cfxHeloTroops.deployedTroops) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		local gameGroup = Group.getByName(gName)
+		if gameGroup and gameGroup:isExist() and gameGroup:getSize() > 0 then 
+			filteredAttackers[gName] = gData
+		end
+	end
+	cfxHeloTroops.deployedTroops = filteredAttackers
+
+	if cfxHeloTroops.verbose then 
+		trigger.action.outText("helo troops GC ran: before <" .. before .. ">, after <" .. #cfxHeloTroops.deployedTroops .. ">", 30)
+	end 
+end
+
+function cfxHeloTroops.houseKeeping()
+	timer.scheduleFunction(cfxHeloTroops.houseKeeping, {}, timer.getTime() + 5 * 60) -- every 5 minutes 
+	cfxHeloTroops.GC()
+end
 
 --
 -- read config zone
@@ -757,7 +819,7 @@ function cfxHeloTroops.readConfigZone()
 	local theZone = cfxZones.getZoneByName("heloTroopsConfig") 
 	if not theZone then 
 		trigger.action.outText("+++heloT: no config zone!", 30) 
-		return 
+		theZone = cfxZones.createSimpleZone("heloTroopsConfig")
 	end 
 
 	cfxHeloTroops.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
@@ -782,6 +844,60 @@ function cfxHeloTroops.readConfigZone()
 end
 
 --
+-- Load / Save data 
+--
+function cfxHeloTroops.saveData()
+	local theData = {}
+	local allTroopData = {}
+	-- run a GC pre-emptively 
+	cfxHeloTroops.GC()
+	-- now simply iterate and save all deployed troops 
+	for gName, gData in pairs(cfxHeloTroops.deployedTroops) do 
+		local sData = dcsCommon.clone(gData)
+		dcsCommon.synchGroupData(sData.groupData)
+		allTroopData[gName] = sData
+	end
+	theData.troops = allTroopData
+	return theData
+end
+
+function cfxHeloTroops.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cfxHeloTroops")
+	if not theData then 
+		if cfxHeloTroops.verbose then 
+			trigger.action.outText("+++heloT: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	-- simply spawn all troops that we have carried around and 
+	-- were still alive when we saved. Troops that were picked 
+	-- up by helos never made it to the save file 
+	local allTroopData = theData.troops
+	for gName, gdTroop in pairs (allTroopData) do 
+		local gData = gdTroop.groupData 
+		local orders = gdTroop.orders 
+		local side = gdTroop.side 
+		local range = gdTroop.range
+		local cty = gData.cty 
+		local cat = gData.cat  
+		
+		-- now spawn, but first 
+		-- add to my own deployed queue so we can save later 
+		local gdClone = dcsCommon.clone(gdTroop)
+		cfxHeloTroops.deployedTroops[gName] = gdClone 
+		local theGroup = coalition.addGroup(cty, cat, gData)
+		-- post-proccing for cfxGroundTroops
+
+		-- add to groundTroops 
+		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+		cfxGroundTroops.addGroundTroopsToPool(newTroops)
+	end
+end
+
+
+--
 -- Start 
 --
 function cfxHeloTroops.start()
@@ -791,7 +907,11 @@ function cfxHeloTroops.start()
 		return false 
 	end
 	
-	-- read config zone 
+	-- read config zone
+	cfxHeloTroops.readConfigZone()
+	
+	-- start housekeeping 
+	cfxHeloTroops.houseKeeping()
 	
 	-- install callbacks for helo-relevant events
 	dcsCommon.addEventHandler(cfxHeloTroops.somethingHappened, cfxHeloTroops.preProcessor, cfxHeloTroops.postProcessor)
@@ -807,6 +927,18 @@ function cfxHeloTroops.start()
 	
 	cfxPlayer.addMonitor(cfxHeloTroops.playerChangeEvent)
 	trigger.action.outText("cf/x Helo Troops v" .. cfxHeloTroops.version .. " started", 30)
+	
+	-- now load all save data and populate map with troops that
+	-- we deployed last save. 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cfxHeloTroops.saveData
+		persistence.registerModule("cfxHeloTroops", callbacks)
+		-- now load my data 
+		cfxHeloTroops.loadData()
+	end
+	
 	return true 
 end
 

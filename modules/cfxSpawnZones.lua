@@ -1,15 +1,21 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.6.0"
+cfxSpawnZones.version = "1.7.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
 				 -- need common to invoke the check, but anyway
 	"cfxZones", -- Zones, of course 
 	"cfxCommander", -- to make troops do stuff
-	"cfxGroundTroops", -- generic data module for weight 
+	"cfxGroundTroops", -- for ordering then around 
 }
 cfxSpawnZones.ups = 1
 cfxSpawnZones.verbose = false 
+
+-- persistence: all groups we ever spawned. 
+-- is regularly GC'd
+
+cfxSpawnZones.spawnedGroups = {}
+
 --
 -- Zones that conform with this requirements spawn toops automatically
 --   *** DOES NOT EXTEND ZONES *** LINKED OWNER via masterOwner ***
@@ -54,6 +60,7 @@ cfxSpawnZones.verbose = false
 --   1.5.2 - activate?, pause? flag 
 --   1.5.3 - spawn?, spawnUnits? flags 
 --   1.6.0 - trackwith interface for group tracker
+--   1.7.0 - persistence support 
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -203,12 +210,14 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.formation = "circle_out"
 	theSpawner.formation = cfxZones.getStringFromZoneProperty(inZone, "formation", "circle_out")
 	theSpawner.paused = cfxZones.getBoolFromZoneProperty(inZone, "paused", false)
-	theSpawner.orders = cfxZones.getStringFromZoneProperty(inZone, "orders", "guard")
+	theSpawner.orders = cfxZones.getStringFromZoneProperty(inZone, "orders", "guard"):lower() 
 	--theSpawner.orders = cfxZones.getZoneProperty(inZone, "orders")
 	-- used to assign special orders, default is 'guard', use "laze" to make them laze targets. can be 'wait-' which may auto-convert to 'guard' after pick-up by helo, to be handled outside.
 	-- use "train" to tell them to HOLD WEAPONS, don't move and don't participate in loop, so we have in effect target dummies
 	-- can also use order 'dummy' or 'dummies' to switch to train
 	if theSpawner.orders:lower() == "dummy" or theSpawner.orders:lower() == "dummies" then theSpawner.orders = "train" end 
+	if theSpawner.orders:lower() == "training" then theSpawner.orders = "train" end 
+	
 	
 	theSpawner.range = cfxZones.getNumberFromZoneProperty(inZone, "range", 300) -- if we have a range, for example enemy detection for Lasing or engage range
 	theSpawner.maxSpawns = cfxZones.getNumberFromZoneProperty(inZone, "maxSpawns", -1) -- if there is a limit on how many troops can spawn. -1 = endless spawns
@@ -238,6 +247,7 @@ end
 
 function cfxSpawnZones.getSpawnerForZoneNamed(aName)
 	local aZone = cfxZones.getZoneByName(aName) 
+	if not aZone then return nil end 
 	return cfxSpawnZones.getSpawnerForZone(aZone)
 end
 
@@ -331,7 +341,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	local theCoalition = coalition.getCountryCoalition(theCountry)
 --	trigger.action.outText("+++ spawn: coal <" .. theCoalition .. "> from country <" .. theCountry .. ">", 30)
 	
-	local theGroup = cfxZones.createGroundUnitsInZoneForCoalition (
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 
 				aSpawner.baseName .. "-" .. aSpawner.count, -- must be unique 
 				aSpawner.zone, 											
@@ -340,15 +350,26 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 				aSpawner.heading)
 	aSpawner.theSpawn = theGroup
 	aSpawner.count = aSpawner.count + 1 
-	-- we may also want to add this to auto ground troops pool 
-	-- we not only want to, we absolutely need to in order 
-	-- to make this work. 
+
+	-- isnert into collector for persistence
+	local troopData = {}
+	troopData.groupData = theData
+	troopData.orders = aSpawner.orders -- always set  
+	troopData.side = theCoalition
+	troopData.target = aSpawner.target -- can be nil!
+	troopData.tracker = theZone.trackWith -- taken from ZONE!!, can be nil
+	troopData.range = aSpawner.range
+	cfxSpawnZones.spawnedGroups[theData.name] = troopData 
 	
 	if aSpawner.orders and (
 	   aSpawner.orders:lower() == "training" or 
 	   aSpawner.orders:lower() == "train" )
 	then 
 		-- make them ROE "HOLD"
+		-- remember to do this in persistence as well!
+		-- they aren't fed to cfxGroundTroops.
+		-- we should update groundTroops to simply 
+		-- drop those with 'train' or 'training'
 		cfxCommander.scheduleOptionForGroup(
 			theGroup, 
 			AI.Option.Ground.id.ROE, 
@@ -434,6 +455,23 @@ end
 --
 -- U P D A T E 
 --
+function cfxSpawnZones.GC()
+	-- GC run. remove all my dead remembered troops
+	local filteredAttackers = {}
+	local before = #cfxSpawnZones.spawnedGroups
+	for gName, gData in pairs (cfxSpawnZones.spawnedGroups) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		local gameGroup = Group.getByName(gName)
+		if gameGroup and gameGroup:isExist() and gameGroup:getSize() > 0 then 
+			filteredAttackers[gName] = gData
+		end
+	end
+	cfxSpawnZones.spawnedGroups = filteredAttackers
+	if cfxSpawnZones.verbose then 
+		trigger.action.outText("spawn zones GC ran: before <" .. before .. ">, after <" .. #cfxSpawnZones.spawnedGroups .. ">", 30)
+	end
+end
 
 function cfxSpawnZones.update()
 	cfxSpawnZones.updateSchedule = timer.scheduleFunction(cfxSpawnZones.update, {}, timer.getTime() + 1/cfxSpawnZones.ups)
@@ -445,9 +483,9 @@ function cfxSpawnZones.update()
 			local group = spawner.theSpawn
 			if group:isExist() then 
 				-- see how many members of this group are still alive
-				local liveUnits = dcsCommon.getLiveGroupUnits(group)
+				local liveUnits = group:getSize() --dcsCommon.getLiveGroupUnits(group)
 				-- spawn is still alive, will not spawn
-				if #liveUnits > 1 then 
+				if liveUnits > 1 then 
 					-- we may want to check if this member is still inside
 					-- of spawn location. currently we don't do that
 					needsSpawn = false 
@@ -526,6 +564,158 @@ function cfxSpawnZones.update()
 	end
 end
 
+function cfxSpawnZones.houseKeeping()
+	timer.scheduleFunction(cfxSpawnZones.houseKeeping, {}, timer.getTime() + 5 * 60) -- every 5 minutes 
+	cfxSpawnZones.GC()
+end
+
+--
+-- LOAD/SAVE
+--
+function cfxSpawnZones.saveData()
+	local theData = {}
+	local allSpawnerData = {}
+	-- now iterate all spawners and collect their data
+	for theZone, theSpawner in pairs(cfxSpawnZones.allSpawners) do 
+		local zName = theZone.name 
+		local spawnData = {}
+		if theSpawner.spawn and theSpawner.spawn:isExist() then 
+			spawnData.spawn = theSpawner.spawn:getName()
+		end
+		spawnData.count = theSpawner.count
+		spawnData.paused = theSpawner.paused 
+		spawnData.cdStarted = theSpawner.cdStarted
+		spawnData.cdTimer = theSpawner.cdTimer - timer.getTime() -- what remains of the cooldown time 
+		
+		allSpawnerData[zName] = spawnData
+	end
+	
+	-- run a GC
+	cfxSpawnZones.GC()
+	-- now collect all living groups
+	-- no longer required to check if group is lively
+	local allLivingTroopData = {}
+	for gName, gData in pairs(cfxSpawnZones.spawnedGroups) do 
+		local sData = dcsCommon.clone(gData)
+		dcsCommon.synchGroupData(sData.groupData)
+		allLivingTroopData[gName] = sData
+	end
+	
+	theData.spawnerData = allSpawnerData
+	theData.troopData = allLivingTroopData
+	return theData
+end
+
+function cfxSpawnZones.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cfxSpawnZones")
+	if not theData then 
+		if cfxSpawnZones.verbose then 
+			trigger.action.outText("+++spwn: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	-- we begin by re-spawning all spawned groups so that the 
+	-- spwners can then later link to them 
+	local allTroopData = theData.troopData
+	for gName, gdTroop in pairs (allTroopData) do 
+		local gData = gdTroop.groupData 
+		local orders = gdTroop.orders 
+		local target = gdTroop.target
+		local tracker = gdTroop.tracker 
+		local side = gdTroop.side 
+		local range = gdTroop.range
+		local cty = gData.cty 
+		local cat = gData.cat  
+		
+		-- now spawn, but first 
+		-- add to my own attacker queue so we can save later 
+		local gdClone = dcsCommon.clone(gdTroop)
+		cfxSpawnZones.spawnedGroups[gName] = gdClone 
+		local theGroup = coalition.addGroup(cty, cat, gData)
+		-- post-proccing for 'train' orders
+		if orders and (orders == "train" ) then 
+			-- make them ROE "HOLD"
+			cfxCommander.scheduleOptionForGroup(
+				theGroup, 
+				AI.Option.Ground.id.ROE, 
+				AI.Option.Ground.val.ROE.WEAPON_HOLD, 
+				1.0)
+		else 
+			-- add to groundTroops 
+			local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+			cfxGroundTroops.addGroundTroopsToPool(newTroops)
+			-- engage a target zone 
+			if target then 
+				local destZone = cfxZones.getZoneByName(target)
+				if destZone then
+					newTroops.destination = destZone
+					cfxGroundTroops.makeTroopsEngageZone(newTroops)
+				end 
+			end
+		end 
+				
+		-- post-proccing for trackwith [may not be needed when we]
+		-- have persistence in the tracking module. that module 
+		-- simply schedules re-connecting after one second 
+	end
+	
+	-- now set up all spawners with save data 
+	local allSpawnerData = theData.spawnerData
+	for zName, sData in pairs (allSpawnerData) do 
+		local theZone = cfxZones.getZoneByName(zName)
+		if theZone then 
+			local theSpawner = cfxSpawnZones.getSpawnerForZone(theZone)
+			if theSpawner then 
+				theSpawner.inited = true -- inited by persistence
+				theSpawner.count = sData.count 
+				theSpawner.paused = sData.paused
+				theSpawner.cdStarted = sData.cdStarted
+				if theSpawner.cdStarted then 
+					theSpawner.cdTimer = timer.getTime() + sData.cdTimer
+				else 
+					theSpawner.cdTimer = -1
+				end
+				if sData.spawn then 
+					local theGroup = Group.getByName(sData.spawn)
+					if theGroup then 
+						theSpawner.spawn = theGroup
+					else 
+						trigger.action.outText("+++spwn (persistence): can't re-connect spawner <" .. zName .. "> with group <" .. sData.spawn .. ">, skipping", 30)
+					end
+				end
+			else 
+				trigger.action.outText("+++spwn (persistence): can't find spawner for zone <" .. zName .. ">, skipping", 30)
+			end
+		else 
+			trigger.action.outText("+++spwn (persistence): can't find zone <" .. zName .. "> for spawner, skipping", 30)
+		end
+	end
+	
+end
+
+--
+-- START 
+--
+function cfxSpawnZones.initialSpawnCheck(aSpawner)
+	if not aSpawner.paused 
+	and cfxSpawnZones.verifySpawnOwnership(aSpawner) 
+	and aSpawner.maxSpawns ~= 0 
+	and not aSpawner.inited 
+	then 
+		cfxSpawnZones.spawnWithSpawner(aSpawner)
+		-- update spawn count and make sure we haven't spawned the one and only 
+		if aSpawner.maxSpawns > 0 then 
+			aSpawner.maxSpawns = aSpawner.maxSpawns - 1
+		end
+		if aSpawner.maxSpawns == 0 then 
+			aSpawner.paused = true 
+			trigger.action.outText("+++ maxspawn -- turning off  zone " .. aSpawner.zone.name, 30)
+		end
+	end
+end
+
 function cfxSpawnZones.start()
 	if not dcsCommon.libCheck("cfx Spawn Zones", 
 		cfxSpawnZones.requiredLibs) then
@@ -540,21 +730,28 @@ function cfxSpawnZones.start()
 	for k, aZone in pairs(attrZones) do 
 		local aSpawner = cfxSpawnZones.createSpawner(aZone)
 		cfxSpawnZones.addSpawner(aSpawner)
-		if not aSpawner.paused and cfxSpawnZones.verifySpawnOwnership(aSpawner) and aSpawner.maxSpawns ~= 0 then 
-			cfxSpawnZones.spawnWithSpawner(aSpawner)
-			-- update spawn count and make sure we haven't spawned the one and only 
-			if aSpawner.maxSpawns > 0 then 
-				aSpawner.maxSpawns = aSpawner.maxSpawns - 1
-			end
-			if aSpawner.maxSpawns == 0 then 
-				aSpawner.paused = true 
-				trigger.action.outText("+++ maxspawn -- turning off  zone " .. aSpawner.zone.name, 30)
-			end
-		end
+	end
+	
+	-- we now do persistence
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cfxSpawnZones.saveData
+		persistence.registerModule("cfxSpawnZones", callbacks)
+		-- now load my data 
+		cfxSpawnZones.loadData()
+	end
+	
+	-- we now spawn if not taken care of by load / save 
+	for theZone, aSpawner in pairs(cfxSpawnZones.allSpawners) do
+		cfxSpawnZones.initialSpawnCheck(aSpawner)
 	end
 	
 	-- and start the regular update calls
 	cfxSpawnZones.update()
+	
+	-- start housekeeping 
+	cfxSpawnZones.houseKeeping()
 	
 	trigger.action.outText("cfx Spawn Zones v" .. cfxSpawnZones.version .. " started.", 30)
 	return true

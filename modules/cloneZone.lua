@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.4.9"
+cloneZones.version = "1.5.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -17,6 +17,9 @@ cloneZones.callbacks = {}
 cloneZones.unitXlate = {}
 cloneZones.groupXlate = {} -- used to translate original groupID to cloned. only holds last spawned group id 
 cloneZones.uniqueCounter = 9200000 -- we start group numbering here 
+
+cloneZones.allClones = {} -- all clones spawned, regularly GC'd 
+cloneZones.allCObjects = {} -- all clones objects
 --[[--
 	Clones Groups from ME mission data
 	Copyright (c) 2022 by Christian Franz and cf/x AG
@@ -53,6 +56,7 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 	1.4.8 - added 'wipe?' synonym 
 	1.4.9 - onRoad option 
 	      - rndHeading option 
+	1.5.0 - persistence 
 	
 	
 --]]--
@@ -289,7 +293,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
 	
 	if theZone.rndLoc and theZone.verbose then 
-		trigger.action.outText("+++ rndloc on for " .. theZone.name, 30)
+		--trigger.action.outText("+++ rndloc on for " .. theZone.name, 30)
 	end 
 	
 	-- we end with clear plate 
@@ -767,6 +771,12 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	-- now spawn all raw data 
 	for idx, rawData in pairs (dataToSpawn) do 
 		-- now spawn and save to clones
+		-- first norm and clone data for later save
+		rawData.cty = rawData.CZctry 
+		rawData.cat = rawData.CZtheCat
+		local theData = dcsCommon.clone(rawData)
+		cloneZones.allClones[rawData.name] = theData 
+		
 		local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
 		
@@ -888,20 +898,25 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end
 		
 		local isCargo = rawData.canCargo 
+		rawData.cty = ctry 
+		-- save for persistence 
+		local theData = dcsCommon.clone(rawData)
+		cfxZones.allCObjects[rawData.name] = theData 
+		
 		local theStatic = coalition.addStaticObject(ctry, rawData)
 		local newStaticID = tonumber(theStatic:getID()) 
 		table.insert(spawnedStatics, theStatic)
 		-- we don't mix groups with units, so no lookup tables for 
 		-- statics 
 		if newStaticID == rawData.CZTargetID then 
---			trigger.action.outText("Static ID OK: " .. newStaticID  .. " for " .. rawData.name, 30)
+
 		else 
 			trigger.action.outText("Static ID mismatch: " .. newStaticID .. " vs (target) " .. rawData.CZTargetID .. " for " .. rawData.name, 30)
 		end
 		cloneZones.unitXlate[origID] = newStaticID -- same as units 
 		
 		cloneZones.invokeCallbacks(theZone, "did spawn static", theStatic)
-		--]]--
+		
 		if cloneZones.verbose or spawnZone.verbose then 
 			trigger.action.outText("Static spawn: spawned " .. aStaticName, 30)
 		end 
@@ -1058,7 +1073,7 @@ function cloneZones.update()
 		if aZone.deSpawnFlag then 
 			local currTriggerVal = cfxZones.getFlagValue(aZone.deSpawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.deSpawnFlag)
 			if currTriggerVal ~= aZone.lastDeSpawnValue then 
-				if cloneZones.verbose then 
+				if cloneZones.verbose or aZone.verbose then 
 					trigger.action.outText("+++clnZ: DEspawn triggered for <" .. aZone.name .. ">", 30)
 				end 
 				cloneZones.despawnAll(aZone)
@@ -1103,13 +1118,247 @@ function cloneZones.onStart()
 	--trigger.action.outText("+++clnZ: Enter atStart", 30)
 	for idx, theZone in pairs(cloneZones.cloners) do 
 		if theZone.onStart then 
-			if cloneZones.verbose then 
-				trigger.action.outText("+++clnZ: atStart will spawn for <"..theZone.name .. ">", 30)
+			if theZone.isStarted then 
+				if cloneZones.verbose or theZone.verbose then 
+					trigger.action.outText("+++clnz: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)
+				end
+			else 
+				if cloneZones.verbose or theZone.verbose then 
+					trigger.action.outText("+++clnZ: onStart spawing for <"..theZone.name .. ">", 30)
+				end
+				cloneZones.spawnWithCloner(theZone) 
 			end
-			cloneZones.spawnWithCloner(theZone) 
-			
 		end 
 	end
+end
+
+--
+-- Regular GC and housekeeping
+--
+function cloneZones.GC()
+	-- GC run. remove all my dead remembered troops
+	local filteredAttackers = {}
+	for gName, gData in pairs (cloneZones.allClones) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		local gameGroup = Group.getByName(gName)
+		if gameGroup and gameGroup:isExist() and gameGroup:getSize() > 0 then 
+			-- we now filter for categories. we currently only let 
+			-- ground units pass 
+			-- better make this configurabele by option later 
+			if gData.cat == 0 and false then -- block aircraft  
+			elseif gData.cat == 1 and false then -- block helos
+			elseif gData.cat == 2 and false then -- block ground
+			elseif gData.cat == 3 and false then -- block ship
+			elseif gData.cat == 4 and false then -- block trains
+			else
+				-- not filtered, persist 
+				filteredAttackers[gName] = gData
+			end 
+		end
+	end
+	cloneZones.allClones = filteredAttackers
+	
+	filteredAttackers = {}
+	for gName, gData in pairs (cloneZones.allCObjects) do 
+		-- all we need to do is get the group of that name
+		-- and if it still returns units we are fine 
+		local theObject = StaticObject.getByName(gName)
+		if theObject and theObject:isExist() then 
+			filteredAttackers[gName] = gData
+			if theObject:getLife() < 1 then 
+				gData.dead = true 
+			end 
+		end
+	end
+	cloneZones.allCObjects = filteredAttackers
+end
+
+function cloneZones.houseKeeping()
+	timer.scheduleFunction(cloneZones.houseKeeping, {}, timer.getTime() + 5 * 60) -- every 5 minutes 
+	cloneZones.GC()
+end
+
+
+--
+-- LOAD / SAVE 
+--
+function cloneZones.synchGroupMXData(theData)
+	-- we iterate the group's units one by one and update them 
+	local newUnits = {}
+	local allUnits = theData.units 
+	for idx, unitData in pairs(allUnits) do 
+		local uName = unitData.name 
+		local gUnit = Unit.getByName(uName)
+		if gUnit and gUnit:isExist() then 
+			unitData.heading = dcsCommon.getUnitHeading(gUnit)
+			pos = gUnit:getPoint()
+			unitData.x = pos.x
+			unitData.y = pos.z -- (!!)
+			-- add aircraft handling here (alt, speed etc)
+			-- perhaps even curtail route 
+			table.insert(newUnits, unitData)
+		end
+	end
+	theData.units = newUnits 
+end
+
+function cloneZones.synchMXObjData(theData)
+	local oName = theData.name 
+	local theObject = StaticObject.getByName(oName)
+	theData.heading = dcsCommon.getUnitHeading(theObject)
+	pos = theObject:getPoint()
+	theData.x = pos.x
+	theData.y = pos.z -- (!!)
+	theData.isDead = theObject:getLife() < 1
+	theData.dead = theData.isDead
+end
+
+function cloneZones.saveData()
+	local theData = {}
+	local allCloneData = {}
+	local allSOData = {}
+	-- run a GC pre-emptively 
+	cloneZones.GC()
+	
+	-- now simply iterate and save all deployed clones 
+	for gName, gData in pairs(cloneZones.allClones) do 
+		local sData = dcsCommon.clone(gData)
+		cloneZones.synchGroupMXData(sData)
+		allCloneData[gName] = sData
+	end
+
+	-- now simply iterate and save all deployed clones 
+	for gName, gData in pairs(cloneZones.allCObjects) do 
+		local sData = dcsCommon.clone(gData)
+		cloneZones.synchMXObjData(sData)
+		allSOData[gName] = sData
+	end
+	
+	-- now save all cloner stati 
+	local cloners = {}
+	for idx, theCloner in pairs(cloneZones.cloners) do 
+		local cData = {}
+		local cName = theCloner.name 
+		-- mySpawns: all groups i'm curently observing for empty!
+		-- myStatics: dto for objects 
+		local mySpawns = {}
+		for idx, aGroup in pairs(theCloner.mySpawns) do 
+			if aGroup and aGroup:isExist() and aGroup:getSize() > 0 then 
+				table.insert(mySpawns, aGroup:getName())
+			end
+		end
+		cData.mySpawns = mySpawns
+		local myStatics = {}
+		for idx, aStatic in pairs(theCloner.myStatics) do 
+			table.insert(myStatics, aStatic:getName())
+		end
+		cData.myStatics = myStatics
+		cData.isStarted = theCloner.isStarted -- to prevent onStart 
+		cloners[cName] = cData
+	end 
+
+
+	-- save globals 
+	theData.cuid = cloneZones.uniqueCounter -- replace whatever is larger 
+    theData.uuid = dcsCommon.simpleUUID -- replace whatever is larger 
+	
+	-- save to struct and pass back 
+	theData.clones = allCloneData	
+	theData.objects = allSOData
+	theData.cloneZones = cloners 
+	return theData
+end
+
+function cloneZones.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cloneZones")
+	if not theData then 
+		if cloneZones.verbose then 
+			trigger.action.outText("+++clnZ: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	-- spawn all units 
+	local allClones = theData.clones
+	for gName, gData in pairs (allClones) do 
+		local cty = gData.cty 
+		local cat = gData.cat  
+		
+		-- now spawn, but first 
+		-- add to my own deployed queue so we can save later 
+		local gdClone = dcsCommon.clone(gData)
+		cloneZones.allClones[gName] = gdClone 
+		local theGroup = coalition.addGroup(cty, cat, gData)
+	end
+	
+	-- spawn all static objects 
+	local allObjects = theData.objects 
+	for oName, oData in pairs(allObjects) do 
+		local newStatic = dcsCommon.clone(oData)
+		-- add link info if it exists
+		newStatic.linkUnit = cfxMX.linkByName[oName]
+		if newStatic.linkUnit and unitPersistence.verbose then 
+				trigger.action.outText("+++unitPersistence: linked static <" .. oName .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
+		end
+		local cty = staticData.cty 
+--		local cat = staticData.cat
+		-- spawn new one, replacing same.named old, dead if required 
+		gStatic =  coalition.addStaticObject(cty, newStatic)
+		
+		-- processing for cargoManager 
+		if oData.canCargo then 
+			if cfxCargoManager then 
+				cfxCargoManager.addCargo(gStatic)
+			end
+		end
+		
+		-- add the original data block to be remembered
+		-- for next save 
+		cloneZones.allCObjects[oName] = oData 
+	end
+	
+	-- now update all spawners and reconnect them with their spawns
+	local allCloners = theData.cloneZones
+	for cName, cData in pairs(allCloners) do 
+		local theCloner = cloneZones.getCloneZoneByName(cName)
+		if theCloner then 
+			theCloner.isStarted = true -- ALWAYS TRUE WHEN WE COME HERE! cData.isStarted
+			local mySpawns = {}
+			for idx, aName in pairs(cData.mySpawns) do 
+				local theGroup = Group.getByName(aName)
+				if theGroup then 
+					table.insert(mySpawns, theGroup)
+				else
+					trigger.action.outText("+++clnZ - persistence: can't reconnect cloner <" .. cName .. "> with clone group <".. aName .. ">", 30)
+				end
+			end
+			theCloner.mySpawns = mySpawns
+			
+			local myStatics = {}
+			for idx, aName in pairs(cData.myStatics) do 
+				local theStatic = StaticObject.getByName(aName)
+				if theStatic then 
+					table.insert(myStatics, theStatic)
+				else
+					trigger.action.outText("+++clnZ - persistence: can't reconnect cloner <" .. cName .. "> with static <".. aName .. ">", 30)
+				end
+			end
+			theCloner.myStatics = myStatics
+		else 
+			trigger.action.outText("+++clnZ - persistence: cannot synch cloner <" .. cName .. ">, does not exist", 30)
+		end
+	end
+	
+	-- finally, synch uid and uuid 
+	if theData.cuid and theData.cuid > cloneZones.uniqueCounter then 
+		cloneZones.uniqueCounter = theData.cuid
+	end
+	if theData.uuiD and theData.uuid > dcsCommon.simpleUUID  then 
+		dcsCommon.simpleUUID  = theData.uuid 
+	end
+	
 end
 
 --
@@ -1155,15 +1404,27 @@ function cloneZones.start()
 		cloneZones.addCloneZone(aZone) -- remember it so we can smoke it
 	end
 	
-	-- run through onStart, but leave at least a few
-	-- cycles to go through object removal so statics
-	-- can spawn on ground. onStart is being deprecated, the
-	-- raiseFlag module covers this since the first time 
-	-- raiseFlag is run is t0 + 0.5s
+	-- update all cloners and spawned clones from file 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cloneZones.saveData
+		persistence.registerModule("cloneZones", callbacks)
+		-- now load my data 
+		cloneZones.loadData()
+	end
+	
+	-- schedule onStart, and leave at least a few
+	-- cycles to go through object removal
+	-- persistencey has loaded isStarted if a cloner was 
+	-- already started 
 	timer.scheduleFunction(cloneZones.onStart, {}, timer.getTime() + 0.1)
 	
 	-- start update 
 	cloneZones.update()
+	
+	-- start housekeeping 
+	cloneZones.houseKeeping()
 	
 	trigger.action.outText("cfx Clone Zones v" .. cloneZones.version .. " started.", 30)
 	return true 

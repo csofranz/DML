@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "2.0.3"
+cfxSSBClient.version = "2.1.0"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -40,6 +40,9 @@ Version History
 		- added verbosity
   2.0.3 - getPlayerName nil-trap on cloned player planes guard 
           in onEvent
+  2.1.0 - slotState
+        - persistence 
+		
 	
 WHAT IT IS
 SSB Client is a small script that forms the client-side counterpart to
@@ -88,6 +91,7 @@ cfxSSBClient.playerGroups = {}
 cfxSSBClient.closedAirfields = {} -- list that closes airfields for any aircrafts
 cfxSSBClient.playerPlanes = {} -- names of units that a player is flying
 cfxSSBClient.crashedGroups = {} -- names of groups to block after crash of their player-flown plane 
+cfxSSBClient.slotState = {} -- keeps a record of which slot has which value. For persistence and debugging 
 
 
 function cfxSSBClient.closeAirfieldNamed(name)
@@ -191,6 +195,7 @@ function cfxSSBClient.setSlotAccessForGroup(theGroup)
 		end 
 		-- set the ssb flag for this group so the server can see it
 		trigger.action.setUserFlag(theName, blockState)
+		cfxSSBClient.slotState[theName] = blockState
 		if cfxSSBClient.verbose then 
 			trigger.action.outText("+++SSB: group ".. theName .. ": " .. comment, 30)
 		end 
@@ -312,7 +317,7 @@ function cfxSSBClient:onEvent(event)
 		
 		-- block this slot. 
 		trigger.action.setUserFlag(gName, cfxSSBClient.disabledFlagValue)
-		
+		cfxSSBClient.slotState[gName] = cfxSSBClient.disabledFlagValue
 		-- remember this plane to not re-enable if 
 		-- airfield changes hands later 
 		cfxSSBClient.crashedGroups[gName] = thePilot -- set to crash pilot 
@@ -426,6 +431,48 @@ function cfxSSBClient.readConfigZone()
 end
 
 --
+-- load / save 
+--
+function cfxSSBClient.saveData()
+	local theData = {}
+	local states = dcsCommon.clone(cfxSSBClient.slotState)
+	local crashed = dcsCommon.clone(cfxSSBClient.crashedGroups)
+	theData.states = states
+	theData.crashed = crashed 
+	return theData
+end
+
+function cfxSSBClient.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("cfxSSBClient")
+	if not theData then 
+		if cfxSSBClient.verbose then 
+			trigger.action.outText("+++cfxSSB: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	cfxSSBClient.slotState = theData.states
+	if not cfxSSBClient.slotState then
+		trigger.action.outText("SSBClient: nil slot state on load", 30)
+		cfxSSBClient.slotState = {} 
+	end
+	for slot, state in pairs (cfxSSBClient.slotState) do 
+		trigger.action.setUserFlag(slot, state)
+		if state > 0 and cfxSSBClient.verbose then 
+			trigger.action.outText("SSB: blocked <" .. slot .. "> on load", 30)
+		end
+	end
+	
+	cfxSSBClient.crashedGroups = theData.crashed 
+	if not cfxSSBClient.crashedGroups then 
+		cfxSSBClient.crashedGroups = {} 		
+		trigger.action.outText("SSBClient: nil crashers on load", 30)
+	end 
+	
+end
+
+--
 -- start
 --
 function cfxSSBClient.start()
@@ -454,6 +501,16 @@ function cfxSSBClient.start()
 	 
 	-- now turn on ssb 
 	trigger.action.setUserFlag("SSB",100)
+	
+	-- persistence: load states 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = cfxSSBClient.saveData
+		persistence.registerModule("cfxSSBClient", callbacks)
+		-- now load my data 
+		cfxSSBClient.loadData()
+	end
 	
 	-- say hi!
 	trigger.action.outText("cfxSSBClient v".. cfxSSBClient.version .. " running, SBB enabled", 30)
