@@ -85,7 +85,7 @@ function cfxmon.start ()
 	
 	-- own config
 	cfxmon.delay = cfxZones.getNumberFromZoneProperty(theZone, "delay", 30)
-	trigger.action.outText("!!!mon: Delay is set to: " .. cfxmon.delay .. seconds, 50)
+	trigger.action.outText("!!!mon: Delay is set to: " .. cfxmon.delay .. "seconds", 50)
 	
 	-- dcsCommon
 	if cfxZones.getBoolFromZoneProperty(theZone, "dcsCommon", true) then 
