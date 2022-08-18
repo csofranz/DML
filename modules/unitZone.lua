@@ -14,7 +14,7 @@ unitZone.requiredLibs = {
 	1.2.0 - uzOn?, uzOff?, triggerMethod
 	1.2.1 - uzDirect
 	1.2.2 - uzDirectInv 
-	1.2.3 - better guards for enterZone!, exitZone!, chsngeZone!
+	1.2.3 - better guards for enterZone!, exitZone!, changeZone!
 		  - better guards for uzOn? and uzOff?
 		  
 --]]--

@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.2.3"
+pulseFlags.version = "1.3.0"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -35,6 +35,7 @@ pulseFlags.requiredLibs = {
 	- 1.2.2 outputMethod synonym
 	- 1.2.3 deprecated paused/pulsePaused 
 	        returned onStart, defaulting to true
+	- 1.3.0 persistence
 	
 --]]--
 
@@ -44,6 +45,12 @@ function pulseFlags.addPulse(aZone)
 	table.insert(pulseFlags.pulses, aZone)
 end
 
+function pulseFlags.getPulseByName(theName)
+	for idx, theZone in pairs (pulseFlags.pulses) do 
+		if theZone.name == theName then return theZone end 
+	end
+	return nil 
+end
 --
 -- create a pulse 
 --
@@ -207,7 +214,9 @@ function pulseFlags.doPulse(args)
 	
 	
 	-- schedule in delay time 
-	theZone.timerID = timer.scheduleFunction(pulseFlags.doPulse, args, timer.getTime() + delay)
+	theZone.scheduledTime = timer.getTime() + delay
+	theZone.timerID = timer.scheduleFunction(pulseFlags.doPulse, args, theZone.scheduledTime)
+
 	if pulseFlags.verbose or theZone.verbose then 
 		trigger.action.outText("+++pulF: pulse <" .. theZone.name .. "> rescheduled in " .. delay, 30)
 	end 
@@ -290,6 +299,71 @@ function pulseFlags.readConfigZone()
 	end 
 end
 
+--
+-- LOAD / SAVE 
+--
+function pulseFlags.saveData()
+	local theData = {}
+	local allPulses = {}
+	local now = timer.getTime()
+	for idx, thePulse in pairs(pulseFlags.pulses) do 
+		local theName = thePulse.name 
+		local pulseData = {}
+ 		pulseData.pulsePaused = thePulse.pulsePaused
+		pulseData.pulsesLeft = thePulse.pulsesLeft
+		pulseData.pulsing = thePulse.pulsing 
+		pulseData.scheduledTime = thePulse.scheduledTime - now 
+		pulseData.hasPulsed = thePulse.hasPulsed
+		
+		allPulses[theName] = pulseData 
+	end
+	theData.allPulses = allPulses
+	return theData
+end
+
+function pulseFlags.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("pulseFlags")
+	if not theData then 
+		if pulseFlags.verbose then 
+			trigger.action.outText("+++pulF Persistence: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allPulses = theData.allPulses
+	if not allPulses then 
+		if pulseFlags.verbose then 
+			trigger.action.outText("+++pulF Persistence: no timer data, skipping", 30)
+		end		
+		return
+	end
+	
+	local now = timer.getTime()
+	for theName, theData in pairs(allPulses) do 
+		local thePulse = pulseFlags.getPulseByName(theName)
+		if thePulse then 
+			thePulse.pulsePaused = theData.pulsePaused
+			thePulse.pulsesLeft = theData.pulsesLeft
+			thePulse.scheduledTime = now + theData.scheduledTime
+			thePulse.hasPulsed = theData.hasPulsed
+			if thePulse.scheduledTime < now then thePulse.scheduledTime = now + 0.1 end
+			
+			thePulse.pulsing = theData.pulsing 
+			if thePulse.pulsing then 
+				local args = {thePulse}
+				thePulse.timerID = timer.scheduleFunction(pulseFlags.doPulse, args, thePulse.scheduledTime)
+			end 
+		else 
+			trigger.action.outText("+++pulF: persistence: cannot synch pulse <" .. theName .. ">, skipping", 40)
+		end
+	end
+end
+
+--
+-- START
+--
+
 function pulseFlags.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
@@ -323,6 +397,16 @@ function pulseFlags.start()
 	for k, aZone in pairs(attrZones) do 
 		pulseFlags.createPulseWithZone(aZone) -- process attribute and add to zone
 		pulseFlags.addPulse(aZone) -- remember it so we can pulse it
+	end
+	
+	-- load any saved data 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = pulseFlags.saveData
+		persistence.registerModule("pulseFlags", callbacks)
+		-- now load my data 
+		pulseFlags.loadData()
 	end
 	
 	-- start update in 1 second 

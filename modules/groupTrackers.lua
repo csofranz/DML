@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.1.4"
+groupTracker.version = "1.2.0"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -25,6 +25,9 @@ groupTracker.trackers = {}
 		  - triggerMethod
 		  - method 
 		  - isDead optimization 
+	1.2.0 - double detection
+		  - numUnits output 
+		  - persistence 
 	
 --]]--
 
@@ -68,12 +71,25 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 	end 
 	
 	-- we have the tracker, add the group 
-	if not theTracker.trackedGroups then theTracker.trackedGroups = {} end 
-	table.insert(theTracker.trackedGroups, theGroup)
+	if not theTracker.trackedGroups then theTracker.trackedGroups = {} end
 
-	-- now bang/invoke addGroup!
-	if theTracker.tAddGroup then 
-		cfxZones.pollFlag(theTracker.tAddGroup, "inc", theTracker)
+	local exists = false 
+	local theName = theGroup:getName()
+	
+	for idx, aGroup in pairs(theTracker.trackedGroups) do 
+		if Group.isExist(aGroup) then 
+			gName = aGroup:getName()
+			if gName == theName then exists = true end 
+		end
+	end
+	
+	if not exists then 
+		table.insert(theTracker.trackedGroups, theGroup) 
+
+		-- now bang/invoke addGroup!
+		if theTracker.tAddGroup then 
+			cfxZones.pollFlag(theTracker.tAddGroup, "inc", theTracker)
+		end
 	end
 	
 	-- now set numGroups
@@ -81,6 +97,18 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 		cfxZones.setFlagValue(theTracker.tNumGroups, #theTracker.trackedGroups, theTracker)
 	end
 	
+	-- count all units
+	local totalUnits = 0 	
+	for idx, aGroup in pairs(theTracker.trackedGroups) do 
+		if Group.isExist(aGroup) then 
+			totalUnits = totalUnits + aGroup:getSize()
+		end
+	end
+	
+	-- update unit count 
+	if theTracker.tNumUnits then 
+		cfxZones.setFlagValue(theTracker.tNumUnits, totalUnits, theTracker)
+	end
 	-- invoke callbacks
 end
 
@@ -114,12 +142,17 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 	
 	local filteredGroups = {}
 	local foundOne = false 
+	local totalUnits = 0
+	if not theTracker.trackedGroups then theTracker.trackedGroups = {} end 
 	for idx, aGroup in pairs(theTracker.trackedGroups) do 
 		if aGroup:getName() == gName then 
 			-- skip and remember 
 			foundOne = true 
 		else 
 			table.insert(filteredGroups, aGroup)
+			if Group.isExist(aGroup) then 
+				totalUnits = totalUnits + aGroup:getSize()
+			end
 		end
 	end
 	if (not foundOne) and (theTracker.verbose or groupTracker.verbose) then 
@@ -129,6 +162,10 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 	-- remember the new, cleanded set
 	theTracker.trackedGroups = filteredGroups
 	
+	-- update number of tracked units. do it in any case 
+	if theTracker.tNumUnits then 
+		cfxZones.setFlagValue(theTracker.tNumUnits, totalUnits, theTracker)
+	end
 	
 	if foundOne then 
 		if theTracker.verbose or groupTracker.verbose then 
@@ -171,7 +208,11 @@ function groupTracker.createTrackerWithZone(theZone)
 		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups!", "*<none>") 
 		-- we may need to zero this flag 
 	end 
-		
+
+	if cfxZones.hasProperty(theZone, "numUnits") then 
+		theZone.tNumUnits = cfxZones.getStringFromZoneProperty(theZone, "numUnits", "*<none>") 
+	end
+	
 	if cfxZones.hasProperty(theZone, "addGroup") then 
 		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup", "*<none>") 
 		-- we may need to zero this flag 
@@ -229,20 +270,14 @@ end
 
 function groupTracker.checkGroups(theZone)
 	local filteredGroups = {}
+	local totalUnits = 0
+	if not theZone.trackedGroups then theZone.trackedGroups = {} end
 	for idx, theGroup in pairs(theZone.trackedGroups) do 
 		-- see if this group can be transferred
 		local isDead = false 
---[[		if theGroup.isExist and theGroup:isExist() then 
-			local allUnits = theGroup:getUnits()
-			isDead = true 
-			for idy, aUnit in pairs(allUnits) do 
-				if aUnit:getLife() > 1 then 
-					isDead = false -- at least one living unit
-					break
-				end
-			end
---]]--
+
 		if Group.isExist(theGroup) and theGroup:getSize() > 0 then
+			totalUnits = totalUnits + theGroup:getSize()
 		else 
 			isDead = true -- no longer exists 
 		end
@@ -271,6 +306,11 @@ function groupTracker.checkGroups(theZone)
 	if theZone.tNumGroups then 
 		cfxZones.setFlagValue(theZone.tNumGroups, #filteredGroups, theZone)
 	end
+	
+	-- and update unit count if defined 
+	if theZone.tNumUnits then 
+		cfxZones.setFlagValue(theZone.tNumUnits, totalUnits, theZone)
+	end
 end
  
 function groupTracker.update()
@@ -278,6 +318,37 @@ function groupTracker.update()
 	timer.scheduleFunction(groupTracker.update, {}, timer.getTime() + 1/groupTracker.ups)
 		
 	for idx, theZone in pairs(groupTracker.trackers) do
+		-- first see if any groups need to be silently 
+		-- added by name ("late bind"). Used by Persistence, can be used
+		-- by anyone to silently (no add event) add groups
+		if not theZone.trackedGroups then theZone.trackedGroups = {} end
+		if theZone.silentAdd then 
+			for idx, gName in pairs (theZone.silentAdd) do 
+				local theGroup = Group.getByName(gName)
+				if theGroup and Group.isExist(theGroup) then
+					-- make sure that we don't accidentally 
+					-- add the same group twice 
+					local isPresent = false 
+					for idy, aGroup in pairs(theZone.trackedGroups) do 
+						if Group.isExit(aGroup) and aGroup:getName(aGroup) == gName then 
+							isPresent = true 
+						end
+					end
+					if not isPresent then 
+						table.insert(theZone.trackedGroups, theGroup)
+					else
+						if groupTracker.verbose or theZone.verbose then 
+							trigger.action.outText("+++gTrk: late bind: group <" .. gName .. "> succesful during update", 30)
+						end
+					end
+				else 
+					if groupTracker.verbose or theZone.verbose then 
+						trigger.action.outText("+++gTrk: silent add: Group <" .. gName .. "> not found or dead", 30)
+					end
+				end
+			end
+			theZone.silentAdd = nil
+		end
 		
 		if theZone.destroyFlag and cfxZones.testZoneFlag(theZone, theZone.destroyFlag, theZone.trackerTriggerMethod, "lastDestroyValue") then 
 			groupTracker.destroyAllInZone(theZone)
@@ -298,8 +369,60 @@ function groupTracker.update()
 end
 
 --
+-- Load and Save 
+--
+function groupTracker.saveData()
+	local theData = {}
+	local allTrackerData = {}
+	for idx, aTracker in pairs(groupTracker.trackers) do 
+		local theName = aTracker.name 
+		local trackerData = {}
+		local trackedGroups = {}
+		for idx, aGroup in pairs (aTracker.trackedGroups) do 
+			if Group.isExist(aGroup) and aGroup:getSize() > 0 then 
+				local gName = aGroup:getName()
+				table.insert(trackedGroups, gName)
+			end
+		end
+		trackerData.trackedGroups = trackedGroups
+		-- we may also want to save flag values butz it 
+		-- would be better to have this done externally, globally
+		allTrackerData[theName] = trackerData
+	end
+	
+	theData.trackerData = allTrackerData
+	return theData
+end
+
+function groupTracker.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("groupTracker")
+	if not theData then 
+		if groupTracker.verbose then 
+			trigger.action.outText("+++gTrk: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allTrackerData = theData.trackerData
+	for tName, tData in pairs (allTrackerData) do 
+		local theTracker = groupTracker.getTrackerByName(tName)
+		if theTracker then 
+			-- pass to silentAdd, will be added during next update
+			-- we do this for a late bind, one second down the road
+			-- to give all modules time to load and spawn the 
+			-- groups
+			theTracker.silentAdd = tData.trackedGroups
+		else 
+			trigger.action.outText("+++gTrk - persistence: unable to synch tracker <" .. tName .. ">: not found", 30)
+		end
+	end
+end
+
+--
 -- Config & Start
 --
+
 function groupTracker.trackGroupsInZone(theZone)
 
 	local trackerName = cfxZones.getStringFromZoneProperty(theZone, "addToTracker:", "<none>")
@@ -378,9 +501,22 @@ function groupTracker.start()
 		groupTracker.trackGroupsInZone(aZone) -- process attributes
 	end
 	
-	-- start update 
-	groupTracker.update()
-	
+	-- update all cloners and spawned clones from file 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = groupTracker.saveData
+		persistence.registerModule("groupTracker", callbacks)
+		-- now load my data 
+		groupTracker.loadData() -- add to late link
+		-- update in one second so all can load 
+		-- before we link late 
+		timer.scheduleFunction(groupTracker.update, {}, timer.getTime() + 1/groupTracker.ups)
+	else 
+		-- start update immediately
+		groupTracker.update()
+	end
+
 	trigger.action.outText("cfx Group Tracker v" .. groupTracker.version .. " started.", 30)
 	return true 
 end

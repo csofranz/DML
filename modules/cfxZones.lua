@@ -1311,7 +1311,7 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	
 	-- some QoL: detect "<none>"
 	if dcsCommon.containsString(theFlag, "<none>") then 
-		trigger.action.outText("+++Zone: warning - setFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30)
+		trigger.action.outText("+++Zone: warning - setFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30) -- if error, intended break
 	end
 	
 	-- now do wildcard processing. we have alphanumeric

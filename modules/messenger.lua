@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.3.2"
+messenger.version = "1.3.3"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -25,6 +25,8 @@ messenger.messengers = {}
 	1.3.2 - message interprets <t> as time in HH:MM:SS of current time 
 		  - can interpret <lat>, <lon>, <mgrs>
 		  - zone-local verbosity
+	1.3.3 - mute/messageMute option to start messenger in mute 
+	
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -90,9 +92,10 @@ function messenger.createMessengerWithZone(theZone)
 
 	theZone.clearScreen = cfxZones.getBoolFromZoneProperty(theZone, "clearScreen", false)
 	
-	-- alternate version: messages: list of messages, need string parser first
-	
 	theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "duration", 30)
+	if cfxZones.hasProperty(theZone, "messageDuration") then 
+		theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "messageDuration", 30)
+	end 
 	
 	-- msgTriggerMethod
 	theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
@@ -129,7 +132,11 @@ function messenger.createMessengerWithZone(theZone)
 	theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- save last value	
 --	end
 
-	theZone.messageOff = false 
+	theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "mute", false) --false 
+	if cfxZones.hasProperty(theZone, "messageOff?") then
+		theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "messageMute", false)
+	end
+	
 	if cfxZones.hasProperty(theZone, "messageOff?") then 
 		theZone.messageOffFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOff?", "*none")
 		theZone.lastMessageOff = cfxZones.getFlagValue(theZone.messageOffFlag, theZone)
@@ -219,7 +226,7 @@ function messenger.update()
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
-		if cfxZones.testZoneFlag(aZone, 				aZone.triggerMessagerFlag, aZone.msgTriggerMethod, 			"lastMessageTriggerValue") then 
+		if cfxZones.testZoneFlag(aZone, aZone.triggerMessagerFlag, aZone.msgTriggerMethod, 			"lastMessageTriggerValue") then 
 			if messenger.verbose or aZone.verbose then 
 					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end

@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.5.0"
+cloneZones.version = "1.5.2"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -57,6 +57,9 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.4.9 - onRoad option 
 	      - rndHeading option 
 	1.5.0 - persistence 
+	1.5.1 - fixed static data cloning bug (load & save)
+	1.5.2 - fixed bug in trackWith: referencing wrong cloner 
+	
 	
 	
 --]]--
@@ -281,6 +284,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	-- interface to groupTracker 
 	if cfxZones.hasProperty(theZone, "trackWith:") then 
 		theZone.trackWith = cfxZones.getStringFromZoneProperty(theZone, "trackWith:", "<None>")
+		--trigger.action.outText("trackwith: " .. theZone.trackWith, 30)
 	end
 
 	-- randomized locations on spawn 
@@ -815,10 +819,10 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			trigger.action.outText("clnZ: MISMATCH " .. rawData.name .. " target ID " .. rawData.CZTargetID .. " does not match " .. newGroupID, 30)
 		end 
 
-		cloneZones.invokeCallbacks(theZone, "did spawn group", theGroup)
+		cloneZones.invokeCallbacks(spawnZone, "did spawn group", theGroup)
 		-- interface to groupTracker 
-		if theZone.trackWith then 
-			cloneZones.handoffTracking(theGroup, theZone) 
+		if spawnZone.trackWith then 
+			cloneZones.handoffTracking(theGroup, spawnZone) 
 		end
 	end
 
@@ -901,7 +905,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		rawData.cty = ctry 
 		-- save for persistence 
 		local theData = dcsCommon.clone(rawData)
-		cfxZones.allCObjects[rawData.name] = theData 
+		cloneZones.allCObjects[rawData.name] = theData 
 		
 		local theStatic = coalition.addStaticObject(ctry, rawData)
 		local newStaticID = tonumber(theStatic:getID()) 
@@ -1302,7 +1306,7 @@ function cloneZones.loadData()
 		if newStatic.linkUnit and unitPersistence.verbose then 
 				trigger.action.outText("+++unitPersistence: linked static <" .. oName .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
 		end
-		local cty = staticData.cty 
+		local cty = newStatic.cty 
 --		local cat = staticData.cat
 		-- spawn new one, replacing same.named old, dead if required 
 		gStatic =  coalition.addStaticObject(cty, newStatic)

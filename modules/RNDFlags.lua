@@ -253,6 +253,7 @@ end
 --
 -- Load / Save data 
 --
+
 function rndFlags.saveData()
 	local theData = {}
 	local allRND = {}
@@ -354,6 +355,7 @@ function rndFlags.start()
 		rndFlags.addRNDZone(aZone) -- remember it so we can smoke it
 	end
 	
+	-- persistence
 	if persistence then 
 		-- sign up for persistence 
 		callbacks = {}

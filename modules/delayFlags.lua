@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.2.2"
+delayFlag.version = "1.3.0"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -34,6 +34,10 @@ delayFlag.flags = {}
 	1.2.2 - delayMethod defaults to inc 
 		  - zone-local verbosity
 		  - code clean-up 
+	1.2.3 - pauseDelay
+	      - continueDelay 
+		  - delayLeft
+	1.3.0 - persistence
 	
 --]]--
 
@@ -111,10 +115,28 @@ function delayFlag.createTimerWithZone(theZone)
 		theZone.lastTriggerStopValue = cfxZones.getFlagValue(theZone.triggerStopDelay, theZone)
 	end
 	
+	-- pause and continue
+	if cfxZones.hasProperty(theZone, "pauseDelay?") then 
+		theZone.triggerPauseDelay = cfxZones.getStringFromZoneProperty(theZone, "pauseDelay?", "none")
+		theZone.lastTriggerPauseValue = cfxZones.getFlagValue(theZone.triggerPauseDelay, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "continueDelay?") then 
+		theZone.triggerContinueDelay = cfxZones.getStringFromZoneProperty(theZone, "continueDelay?", "none")
+		theZone.lastTriggerContinueValue = cfxZones.getFlagValue(theZone.triggerContinueDelay, theZone)
+	end
+	
+	-- timeInfo 
+	theZone.delayTimeLeft = cfxZones.getStringFromZoneProperty(theZone, "delayLeft", "*cfxIgnored")
+
 	-- init 
 	theZone.delayRunning = false 
-	theZone.timeLimit = -1 
+	theZone.delayPaused = false 
+	theZone.timeLimit = -1 -- current trigger time as calculated relative to getTime()
+	theZone.timeLeft = -1 -- in seconds, always kept up to date 
+	                      -- but not really used 
 
+	cfxZones.setFlagValue(theZone.delayTimeLeft, -1, theZone)
 end
 
 
@@ -145,6 +167,19 @@ function delayFlag.startDelay(theZone)
 	end
 	
 	theZone.timeLimit = timer.getTime() + delay 
+	cfxZones.setFlagValue(theZone.delayTimeLeft, delay, theZone)
+end
+
+function delayFlag.pauseDelay(theZone)
+	-- we stop delay now, and calculate remaining time for 
+	-- continue 
+	theZone.remainingTime = theZone.timeLimit - timer.getTime()
+	theZone.delayPaused = true 
+end
+
+function delayFlag.continueDelay(theZone)
+	theZone.timeLimit = timer.getTime() + theZone.remainingTime
+	theZone.delayPaused = false 
 end
 
 function delayFlag.update()
@@ -154,12 +189,16 @@ function delayFlag.update()
 	local now = timer.getTime() 
 	
 	for idx, aZone in pairs(delayFlag.flags) do
+		-- calculate remaining time on the timer 
+		local remaining = aZone.timeLimit - now
+		if remaining < 0 then remaining = -1 end 
+		
 		-- see if we need to stop 
 		if cfxZones.testZoneFlag(aZone, aZone.triggerStopDelay, aZone.delayTriggerMethod, "lastTriggerStopValue") then
 			aZone.delayRunning = false -- simply stop.
-				if delayFlag.verbose or aZone.verbose then 
-					trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
-				end 
+			if delayFlag.verbose or aZone.verbose then 
+				trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
+			end 
 		end
 
 		
@@ -168,30 +207,105 @@ function delayFlag.update()
 				if aZone.delayRunning then 
 					trigger.action.outText("+++dlyF: re-starting timer " .. aZone.name, 30)	
 				else 
-					trigger.action.outText("+++dlyF: init timer for " .. aZone.name, 30)
+					trigger.action.outText("+++dlyF: start timer for " .. aZone.name, 30)
 				end
 			end 
 			delayFlag.startDelay(aZone) -- we restart even if running 
+			remaining = aZone.timeLimit - now -- recalc remaining
 		end
 
-		
-		if aZone.delayRunning then 
-			-- check expiry 
-			if now > aZone.timeLimit then 
-				-- end timer 
-				aZone.delayRunning = false 
-				-- poll flag 
+		if not aZone.delayPaused then 
+
+			if aZone.delayRunning and cfxZones.testZoneFlag(aZone, aZone.triggerPauseDelay, aZone.delayTriggerMethod, "lastTriggerPauseValue") then
 				if delayFlag.verbose or aZone.verbose then 
-					trigger.action.outText("+++dlyF: banging on " .. aZone.delayDoneFlag, 30)
+					trigger.action.outText("+++dlyF: pausing timer <" .. aZone.name .. "> with <" .. remaining .. "> remaining", 30)	
+				end 
+				delayFlag.pauseDelay(aZone)
+			end
+			
+			if aZone.delayRunning then 
+				-- check expiry 
+				if remaining < 0 then --now > aZone.timeLimit then 
+					-- end timer 
+					aZone.delayRunning = false 
+					-- poll flag 
+					if delayFlag.verbose or aZone.verbose then 
+						trigger.action.outText("+++dlyF: banging on " .. aZone.delayDoneFlag, 30)
+					end
+					cfxZones.pollFlag(aZone.delayDoneFlag, aZone.delayMethod, aZone)
 				end
-				cfxZones.pollFlag(aZone.delayDoneFlag, aZone.delayMethod, aZone)
- 
+			end
+			
+			cfxZones.setFlagValue(aZone.delayTimeLeft, remaining, aZone)
+		else 
+			-- we are paused. Check for 'continue'
+			if aZone.delayRunning and cfxZones.testZoneFlag(aZone, aZone.triggerContinueDelay, aZone.delayTriggerMethod, "lastTriggerContinueValue") then
+				if delayFlag.verbose or aZone.verbose then 
+					trigger.action.outText("+++dlyF: continuing timer <" .. aZone.name .. "> with <" .. aZone.remainingTime .. "> seconds remaining", 30)	
+				end 
+				delayFlag.continueDelay(aZone)
 			end
 		end
 		
 	end
 end
 
+
+--
+-- LOAD / SAVE
+--
+function delayFlag.saveData()
+	local theData = {}
+	local allTimers = {}
+	local now = timer.getTime()
+	for idx, theDelay in pairs(delayFlag.flags) do 
+		local theName = theDelay.name 
+		local timerData = {}
+		timerData.delayRunning = theDelay.delayRunning
+		timerData.delayPaused = theDelay.delayPaused 
+		timerData.delayRemaining = theDelay.timeLimit - now
+		if timerData.delayRemaining < 0 then timerData.delayRemaining = -1 end  		
+		allTimers[theName] = timerData 
+	end
+	theData.allTimers = allTimers
+
+	return theData
+end
+
+function delayFlag.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("delayFlag")
+	if not theData then 
+		if delayFlag.verbose then 
+			trigger.action.outText("+++dlyF Persistence: no save date received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allTimers = theData.allTimers
+	if not allTimers then 
+		if delayFlag.verbose then 
+			trigger.action.outText("+++dlyF Persistence: no timer data, skipping", 30)
+		end		
+		return
+	end
+	
+	local now = timer.getTime()
+	for theName, theData in pairs(allTimers) do 
+		local theTimer = delayFlag.getDelayZoneByName(theName)
+		if theTimer then 
+			theTimer.delayRunning = theData.delayRunning
+			theTimer.delayPaused = theData.delayPaused
+			theTimer.timeLimit = now + theData.delayRemaining
+			theTimer.timeLeft = theData.delayRemaining
+			if theTimer.verbose then 
+				trigger.action.outText("+++dlyF loading: timer <" .. theName .. "> has time left <" .. theData.delayRemaining .. ">s, is running <" .. dcsCommon.bool2Text(theData.delayRunning)  .. ">, is paused <" .. dcsCommon.bool2Text(theData.delayPaused)  .. ">.", 30)
+			end
+		else 
+			trigger.action.outText("+++dlyF: persistence: cannot synch delay <" .. theName .. ">, skipping", 40)
+		end
+	end
+end
 --
 -- START 
 --
@@ -234,8 +348,15 @@ function delayFlag.start()
 		delayFlag.addDelayZone(aZone) -- add to list
 	end
 	
-	-- kick onStart
-	--delayFlag.onStart()
+	-- load any saved data 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = delayFlag.saveData
+		persistence.registerModule("delayFlag", callbacks)
+		-- now load my data 
+		delayFlag.loadData()
+	end
 	
 	-- start update 
 	delayFlag.update()

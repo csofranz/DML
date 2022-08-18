@@ -627,11 +627,11 @@ function cfxPlayer.stop()
 end
 
 function cfxPlayer.init()
-	trigger.action.outText("cf/x player v".. cfxPlayer.version .. ": loaded", 10)
+	--trigger.action.outText("cf/x player v".. cfxPlayer.version .. ": loaded", 10)
 	-- when verbose, we also add a monitor to display player event
 	if cfxPlayer.verbose then 
 		cfxPlayer.addMonitor(cfxPlayer.defaultMonitor, {})
-		trigger.action.outText("cf/x player isd verbose", 10)
+		trigger.action.outText("cf/x player is verbose", 10)
 	end
 	
 	cfxPlayer.start()
