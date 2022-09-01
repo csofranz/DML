@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "1.3.3"
+messenger.version = "2.0.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -26,6 +26,22 @@ messenger.messengers = {}
 		  - can interpret <lat>, <lon>, <mgrs>
 		  - zone-local verbosity
 	1.3.3 - mute/messageMute option to start messenger in mute 
+	2.0.0 - re-engineered message wildcards
+		  - corrected dynamic content for time and latlon (classic)
+	      - new timeFormat attribute 
+		  - <v: flagname>
+		  - <t: flagname>
+		  - added <ele> 
+		  - added imperial 
+		  - <lat: unit/zone>
+		  - <lon: unit/zone>
+		  - <ele: unit/zone>
+		  - <mgrs: unit/zone>
+		  - <latlon: unit/zone>
+		  - <lle: unit/zone>
+		  - messageError 
+		  - unit 
+		  - group 
 	
 --]]--
 
@@ -48,6 +64,7 @@ end
 -- read attributes
 --
 function messenger.preProcMessage(inMsg, theZone)
+	-- Replace STATIC bits of message like CR and zone name 
 	if not inMsg then return "<nil inMsg>" end
 	local formerType = type(inMsg)
 	if formerType ~= "string" then inMsg = tostring(inMsg) end  
@@ -58,26 +75,171 @@ function messenger.preProcMessage(inMsg, theZone)
 	if theZone then 
 		outMsg = outMsg:gsub("<z>", theZone.name)
 	end
+	return outMsg 
+end
+
+-- Old-school processing to replace wildcards
+-- repalce <t> with current time 
+-- replace <lat> with zone's current lonlat
+-- replace <mgrs> with zone's current mgrs 
+function messenger.dynamicProcessClassic(inMsg, theZone)
+
+	if not inMsg then return "<nil inMsg>" end
 	-- replace <t> with current mission time HMS
 	local absSecs = timer.getAbsTime()-- + env.mission.start_time
 	while absSecs > 86400 do 
 		absSecs = absSecs - 86400 -- subtract out all days 
 	end
-	local timeString  = dcsCommon.processHMS("<:h>:<:m>:<:s>", absSecs)
-	outMsg = outMsg:gsub("<t>", timeString)
+	local timeString  = dcsCommon.processHMS(theZone.msgTimeFormat, absSecs)
+	local outMsg = inMsg:gsub("<t>", timeString)
 	
 	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
 	-- and <mgrs> with mgrs coords of zone point 
 	local currPoint = cfxZones.getPoint(theZone)
-	local lat, lon, alt = coord.LOtoLL(currPoint)
+	local lat, lon = coord.LOtoLL(currPoint)
 	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	local alt = land.getHeight({x = currPoint.x, y = currPoint.z})
+	if theZone.imperialUnits then 
+		alt = math.floor(alt * 3.28084) -- feet 
+	else 
+		alt = math.floor(alt) -- meters 
+	end 
 	outMsg = outMsg:gsub("<lat>", lat)
 	outMsg = outMsg:gsub("<lon>", lon)
+	outMsg = outMsg:gsub("<ele>", alt)
 	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
 	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
 	outMsg = outMsg:gsub("<mgrs>", mgrs)
 	return outMsg
 end 
+
+--
+-- new dynamic flag processing 
+-- 
+function messenger.processDynamicValues(inMsg, theZone)
+	-- replace all occurences of <v: flagName> with their values 
+	local pattern = "<v:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+	local outMsg = inMsg
+	repeat -- iterate all patterns one by one 
+		local startLoc, endLoc = string.find(outMsg, pattern)
+		if startLoc then 
+			local theValParam = string.sub(outMsg, startLoc, endLoc)
+			-- strip lead and trailer 
+			local param = string.gsub(theValParam, "<v:%s*", "")
+			param = string.gsub(param, ">","")
+			-- param = dcsCommon.trim(param) -- trim is called anyway
+			-- access flag
+			local val = cfxZones.getFlagValue(param, theZone)
+			val = tostring(val)
+			if not val then val = "NULL" end 
+			-- replace pattern in original with new val 
+			outMsg = string.gsub(outMsg, pattern, val, 1) -- only one sub!
+		end
+	until not startLoc
+	return outMsg
+end
+
+function messenger.processDynamicTime(inMsg, theZone)
+	-- replace all occurences of <v: flagName> with their values 
+	local pattern = "<t:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+	local outMsg = inMsg
+	repeat -- iterate all patterns one by one 
+		local startLoc, endLoc = string.find(outMsg, pattern)
+		if startLoc then 
+			local theValParam = string.sub(outMsg, startLoc, endLoc)
+			-- strip lead and trailer 
+			local param = string.gsub(theValParam, "<t:%s*", "")
+			param = string.gsub(param, ">","")
+			-- access flag
+			local val = cfxZones.getFlagValue(param, theZone)
+			-- use this to process as time value 
+			--trigger.action.outText("time: accessing <" .. param .. "> and received <" .. val .. ">", 30)
+			local timeString  = dcsCommon.processHMS(theZone.msgTimeFormat, val)
+			
+			if not timeString then timeString = "NULL" end 
+			-- replace pattern in original with new val 
+			outMsg = string.gsub(outMsg, pattern, timeString, 1) -- only one sub!
+		end
+	until not startLoc
+	return outMsg
+end
+
+function messenger.processDynamicLoc(inMsg, theZone)
+	-- replace all occurences of <lat/lon/ele/mgrs: flagName> with their values 
+	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon"}
+	local outMsg = inMsg
+	for idx, aLocale in pairs(locales) do 
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "")
+				param = string.gsub(param, ">","")
+				-- find zone or unit
+				param = dcsCommon.trim(param)
+				local thePoint = nil 
+				local tZone = cfxZones.getZoneByName(param)
+				local tUnit = Unit.getByName(param)
+				if tZone then 
+					thePoint = cfxZones.getPoint(tZone)
+					-- since zones always have elevation of 0, 
+					-- now get the elevation from the map 
+					thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z})
+				elseif tUnit then 
+					if Unit.isExist(tUnit) then 
+						thePoint = tUnit:getPoint()
+					end
+				else 
+					-- nothing to do, remove me.
+				end
+
+				local locString = theZone.errString
+				if thePoint then 
+					-- now that we have a point, we can do locale-specific
+					-- processing. return result in locString
+					local lat, lon, alt = coord.LOtoLL(thePoint)
+					lat, lon = dcsCommon.latLon2Text(lat, lon)
+					if theZone.imperialUnits then 
+						alt = math.floor(alt * 3.28084) -- feet 
+					else 
+						alt = math.floor(alt) -- meters 
+					end 
+					if aLocale == "lat" then locString = lat 
+					elseif aLocale == "lon" then locString = lon 
+					elseif aLocale == "ele" then locString = tostring(alt)
+					elseif aLocale == "lle" then locString = lat .. " " .. lon .. " ele " .. tostring(alt) 
+					elseif aLocale == "latlon" then locString = lat .. " " .. lon 
+					else 
+						-- we have mgrs
+						local grid = coord.LLtoMGRS(coord.LOtoLL(thePoint))
+						locString = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+					end
+				end
+				-- replace pattern in original with new val 
+				outMsg = string.gsub(outMsg, pattern, locString, 1) -- only one sub!
+			end -- if startloc
+		until not startLoc
+	end -- for all locales 
+	return outMsg
+end
+
+function messenger.dynamicFlagProcessing(inMsg, theZone)
+	if not inMsg then return "No in message" end 
+	if not theZone then return "Nil zone" end 
+	
+	-- process <v: xxx> 
+	local msg = messenger.processDynamicValues(inMsg, theZone)
+	
+	-- process <t: xxx>
+	msg = messenger.processDynamicTime(msg, theZone)
+	
+	-- process lat / lon / ele / mgrs
+	msg = messenger.processDynamicLoc(msg, theZone)
+	
+	return msg 
+end
 
 function messenger.createMessengerWithZone(theZone)
 	-- start val - a range
@@ -147,6 +309,7 @@ function messenger.createMessengerWithZone(theZone)
 		theZone.lastMessageOn = cfxZones.getFlagValue(theZone.messageOnFlag, theZone)
 	end
 	
+	-- reveiver: coalition, group, unit 
 	if cfxZones.hasProperty(theZone, "coalition") then 
 		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
 	end 
@@ -155,9 +318,43 @@ function messenger.createMessengerWithZone(theZone)
 		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "msgCoalition", 0)
 	end 
 	
-	-- flag whose value can be read 
+	if cfxZones.hasProperty(theZone, "group") then 
+		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "group", "<none>")
+	end
+	if cfxZones.hasProperty(theZone, "msgGroup") then 
+		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "msgGroup", "<none>")
+	end
+	
+	if cfxZones.hasProperty(theZone, "unit") then 
+		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "unit", "<none>")
+	end
+	if cfxZones.hasProperty(theZone, "msgUnit") then 
+		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "msgUnit", "<none>")
+	end
+	
+	if (theZone.msgGroup and theZone.msgUnit) or 
+	   (theZone.msgGroup and theZone.msgCoalition) or
+	   (theZone.msgUnit and theZone.msgCoalition)
+	then 
+		trigger.action.outText("+++msg: WARNING - messenger in <" .. theZone.name .. "> has conflicting coalition, group and unit, use only one.", 30)
+	end
+	
+	-- flag whose value can be read: to be deprecated
 	if cfxZones.hasProperty(theZone, "messageValue?") then 
 		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
+	end
+	
+	-- time format for new <t: flagname>
+	theZone.msgTimeFormat = cfxZones.getStringFromZoneProperty(theZone, "timeFormat", "<:h>:<:m>:<:s>")
+	
+	theZone.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperial", false)
+	if cfxZones.hasProperty(theZone, "imperialUnits") then 
+		theZone.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperialUnits", false)
+	end
+	
+	theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "error", "")
+	if cfxZones.hasProperty(theZone, "messageError") then 
+		theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "messageError", "")
 	end
 	
 	if messenger.verbose or theZone.verbose then 
@@ -182,12 +379,22 @@ function messenger.getMessage(theZone)
 	
 	
 	-- replace *zone and *value wildcards 
-	msg = string.gsub(msg, "*name", zName)
-	msg = string.gsub(msg, "*value", zVal)
+	--msg = string.gsub(msg, "*name", zName)-- deprecated
+	--msg = string.gsub(msg, "*value", zVal) -- deprecated
+	-- old-school <v> to provide value from messageValue
 	msg = string.gsub(msg, "<v>", zVal) 
 	local z = tonumber(zVal)
 	if not z then z = 0 end  
 	msg = dcsCommon.processHMS(msg, z)
+	
+	-- process <t> [classic format], <latlon> and <mrgs>
+	msg = messenger.dynamicProcessClassic(msg, theZone)
+	
+	-- now add new processing of <x: flagname> access
+	msg = messenger.dynamicFlagProcessing(msg, theZone)
+	
+	-- now add new processinf of <lat: flagname> 
+	-- also handles <lon:x>, <ele:x>, <mgrs:x>
 	return msg 
 end
 
@@ -212,6 +419,20 @@ function messenger.isTriggered(theZone)
 	if theZone.msgCoalition then 
 		trigger.action.outTextForCoalition(theZone.msgCoalition, msg, theZone.duration, theZone.clearScreen)
 		trigger.action.outSoundForCoalition(theZone.msgCoalition, fileName)
+	elseif theZone.msgGroup then 
+		local theGroup = Group.getByName(theZone.msgGroup)
+		if theGroup and Group.isExist(theGroup) then 
+			local ID = theGroup:getID()
+			trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
+			trigger.action.outSoundForGroup(ID, fileName)
+		end
+	elseif theZone.msgUnit then 
+		local theUnit = Unit.getByName(theZone.msgUnit)
+		if theUnit and Unit.isExist(theUnit) then 
+			local ID = theUnit:getID()
+			trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
+			trigger.action.outSoundForUnit(ID, fileName)
+		end
 	else 
 		-- out to all 
 		trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
@@ -312,5 +533,10 @@ end
 
 --[[--
 Wildcard extension: 
-  messageValue supports multiple flags like 1-3, *hi ther, *bingo and then *value[name] returns that value 	
+ - general flag access <v flag name>
+ - <t: flag name>
+ - <lat: unit/zone name>
+ - <mrgs: unit/zone name>
+ 
+  
 --]]--

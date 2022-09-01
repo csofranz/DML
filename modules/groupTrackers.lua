@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.2.0"
+groupTracker.version = "1.2.1"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -24,10 +24,11 @@ groupTracker.trackers = {}
 		  - allGone! output 
 		  - triggerMethod
 		  - method 
-		  - isDead optimization 
+		  - isDead optimiz ation 
 	1.2.0 - double detection
 		  - numUnits output 
 		  - persistence 
+	1.2.1 - allGone! bug removed 
 	
 --]]--
 
@@ -362,7 +363,7 @@ function groupTracker.update()
 		-- see if we need to bang on empty!
 		local currCount = #theZone.trackedGroups
 		if theZone.allGoneFlag and currCount == 0 and currCount ~= theZone.lastGroupCount then 
-			cfxZones.pollFlag(aZone.allGoneFlag, aZone.trackerMethod, aZone)
+			cfxZones.pollFlag(theZone.allGoneFlag, theZone.trackerMethod, theZone)
 		end 
 		theZone.lastGroupCount = currCount
 	end

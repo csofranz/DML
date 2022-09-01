@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.5.2"
+cloneZones.version = "1.5.4"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -59,6 +59,8 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.5.0 - persistence 
 	1.5.1 - fixed static data cloning bug (load & save)
 	1.5.2 - fixed bug in trackWith: referencing wrong cloner 
+	1.5.3 - centerOnly/wholeGroups attribute for rndLoc, rndHeading and onRoad
+	1.5.4 - parking for aircraft processing when cloning from template 
 	
 	
 	
@@ -148,7 +150,7 @@ function cloneZones.allGroupsInZoneByData(theZone)
 end
 
 function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
-	if cloneZones.verbose then 
+	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: new cloner " .. theZone.name, 30)
 	end
 
@@ -292,6 +294,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if cfxZones.hasProperty(theZone, "rndLoc") then 
 		theZone.rndLoc = cfxZones.getBoolFromZoneProperty(theZone, "rndLoc", false)
 	end 
+	theZone.centerOnly = cfxZones.getBoolFromZoneProperty(theZone, "centerOnly", false)
+	if cfxZones.hasProperty(theZone, "wholeGroups") then 
+		theZone.centerOnly = cfxZones.getBoolFromZoneProperty(theZone, "wholeGroups", false)
+	end
+	
 	theZone.rndHeading = cfxZones.getBoolFromZoneProperty(theZone, "rndHeading", false)
 	
 	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
@@ -308,13 +315,16 @@ end
 --
 
 function cloneZones.despawnAll(theZone) 
-	if cloneZones.verbose then 
-		trigger.action.outText("wiping <" .. theZone.name .. ">", 30)
+	if cloneZones.verbose or theZone.verbose then 
+		trigger.action.outText("+++clnZ: despawn all - wiping zone <" .. theZone.name .. ">", 30)
 	end 
 	for idx, aGroup in pairs(theZone.mySpawns) do 
 		--trigger.action.outText("++clnZ: despawn all " .. aGroup.name, 30)
 		
 		if aGroup:isExist() then 
+			if theZone.verbose then 
+				trigger.action.outText("+++clnZ: will destroy <" .. aGroup:getName() .. ">", 30)
+			end
 			cloneZones.invokeCallbacks(theZone, "will despawn group", aGroup)
 			Group.destroy(aGroup)
 		end 
@@ -323,7 +333,7 @@ function cloneZones.despawnAll(theZone)
 		-- warning! may be mismatch because we are looking at groups
 		-- not objects. let's see
 		if aStatic:isExist() then 
-			if cloneZones.verbose then 
+			if cloneZones.verbose or theZone.verbose then 
 				trigger.action.outText("Destroying static <" .. aStatic:getName() .. ">", 30)
 			end 
 			cloneZones.invokeCallbacks(theZone, "will despawn static", aStatic)
@@ -334,12 +344,47 @@ function cloneZones.despawnAll(theZone)
 	theZone.myStatics = {}
 end
 
-function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints)
+function cloneZones.assignClosestParking(theData)
+	-- on enter: theData has units with updated x, y 
+	-- and waypoint 1 action is From Parking 
+	-- and it has at least one unit 
 	
+	-- let's get the airbase 
+	local theRoute = theData.route  -- we know it exists
+	local thePoints = theRoute.points 
+	local firstPoint = thePoints[1]
+	local loc = {}
+	loc.x = firstPoint.x
+	loc.y = 0
+	loc.z = firstPoint.y 
+	local theAirbase = dcsCommon.getClosestAirbaseTo(loc)
+	-- now let's assign free slots closest to unit 
+	local slotsTaken = {}
+	local units = theData.units
+	local cat = cfxMX.groupTypeByName[theData.name] 
+	for idx, theUnit in pairs(units) do 
+		local newSlot = dcsCommon.getClosestFreeSlotForCatInAirbaseTo(cat, theUnit.x, theUnit.y, theAirbase, slotsTaken)
+		if newSlot then 
+			local slotNo = newSlot.Term_Index
+			--trigger.action.outText("unit <" .. theUnit.name .. "> old slot <" .. theUnit.parking .. "> to new slot <" .. slotNo .. ">", 30)
+			theUnit.parking_id = nil -- !! or you b screwed
+			theUnit.parking = slotNo -- !! screw parking_ID, they don't match
+			theUnit.x = newSlot.vTerminalPos.x 
+			theUnit.y = newSlot.vTerminalPos.z -- !!!
+			table.insert(slotsTaken, slotNo)
+		end
+	end
+end
+
+function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints)
+	-- enter with theData being group's data block 
 	-- remember that zoneDelta's [z] modifies theData's y!!
 	theData.x = theData.x + zoneDelta.x 
 	theData.y = theData.y + zoneDelta.z -- !!!
 	local units = theData.units 
+	local departFromAerodrome = false 
+	--local departingAerodrome 
+	local fromParking = false 
 	for idx, aUnit in pairs(units) do 
 		aUnit.x = aUnit.x + zoneDelta.x 
 		aUnit.y = aUnit.y + zoneDelta.z -- again!!!!
@@ -373,8 +418,11 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 				loc.y = 0
 				loc.z = firstPoint.y 
 				local bestAirbase = dcsCommon.getClosestAirbaseTo(loc)
+				--departingAerodrome = bestAirbase
 				firstPoint.airdromeId = bestAirbase:getID()
 --					trigger.action.outText("first: adjusted to " .. firstPoint.airdromeId, 30)
+				departFromAerodrome = true  
+				fromParking = dcsCommon.stringStartsWith(firstPoint.action, "From Parking")
 			end
 			
 			-- adjust last point (landing)
@@ -393,8 +441,20 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 			
 			end
 		end
+	end -- if theRoute 
+	
+	-- now process departing slot if given 
+	if departFromAerodrome then 
+		-- we may need alt from land to add here, maybe later 
+	
+		-- now process parking slots, and choose closest slot 
+		-- per unit's location 
+		if fromParking then 
+			cloneZones.assignClosestParking(theData)
+		end
 	end
 end
+
 function cloneZones.uniqueID()
 	local uid = cloneZones.uniqueCounter
 	cloneZones.uniqueCounter = cloneZones.uniqueCounter + 1
@@ -670,6 +730,9 @@ function cloneZones.handoffTracking(theGroup, theZone)
 end
 
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
+	if cloneZones.verbose or spawnZone.verbose then 
+		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
+	end
 	-- theZone is the cloner with the template
 	-- spawnZone is the spawner with settings 
 	-- if not spawnZone then spawnZone = theZone end 
@@ -697,17 +760,34 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theCat = cfxMX.catText2ID(cat)
 		rawData.CZtheCat = theCat -- save cat 
 		
-		-- update their position if not spawning to exact same location 
+		-- update their position if not spawning to exact same location
+		if cloneZones.verbose or theZone.verbose then 	
+			trigger.action.outText("+++clnZ: tmpl delta x = <" .. math.floor(zoneDelta.x) .. ">, y = <" .. math.floor(zoneDelta.z) .. "> for tmpl <" .. theZone.name  .. "> to cloner <" .. spawnZone.name .. ">", 30)
+		end
 		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute)
 		
 		-- apply randomizer if selected 
+
 		if spawnZone.rndLoc then 
+			--trigger.action.outText("rndloc for <" .. spawnZone.name .. ">", 30)
+			-- calculate the entire group's displacement
 			local units = rawData.units
+			local r = math.random() * spawnZone.radius
+			local phi = 6.2831 * math.random() -- that's 2Pi, folx 
+			local dx = r * math.cos(phi)
+			local dy = r * math.sin(phi)
+				
 			for idx, aUnit in pairs(units) do 
-				local r = math.random() * spawnZone.radius
-				local phi = 6.2831 * math.random() -- that's 2Pi, folx 
-				local dx = r * math.cos(phi)
-				local dy = r * math.sin(phi)
+				if not spawnZone.centerOnly then 
+					-- *every unit's displacement is randomized
+					r = math.random() * spawnZone.radius
+					phi = 6.2831 * math.random() -- that's 2Pi, folx 
+					dx = r * math.cos(phi)
+					dy = r * math.sin(phi)
+				end
+				if spawnZone.verbose or cloneZones.verbose then 
+					trigger.action.outText("+++clnZ: <" .. spawnZone.name .. "> R = " .. spawnZone.radius .. ":G<" .. rawData.name .. "/" .. aUnit.name .. "> - rndLoc: r = " .. r .. ", dx = " .. dx .. ", dy= " .. dy .. ".", 30)
+				end
 				aUnit.x = aUnit.x + dx
 				aUnit.y = aUnit.y + dy 
 			end
@@ -715,44 +795,71 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		if spawnZone.rndHeading then 
 			local units = rawData.units
-			for idx, aUnit in pairs(units) do 
-				local phi = 6.2831 * math.random() -- that's 2Pi, folx 
-				aUnit.heading = phi
+			if spawnZone.centerOnly and units and units[1] then 
+				-- rotate entire group around unit 1
+				local cx = units[1].x 
+				local cy = units[1].y 
+				local degrees = 360 * math.random() -- rotateGroupData uses degrees
+				dcsCommon.rotateGroupData(rawData, degrees, cx, cy)
+			else
+				for idx, aUnit in pairs(units) do 
+					local phi = 6.2831 * math.random() -- that's 2Pi, folx 
+					aUnit.heading = phi
+				end
 			end
 		end
 
 		-- apply onRoad option if selected 			
 		if spawnZone.onRoad then 
 			local units = rawData.units
-			local iterCount = 0
-			local otherLocs = {} -- resolved locs
-			for idx, aUnit in pairs(units) do 
-				local cx = aUnit.x
-				local cy = aUnit.y 
-				-- we now iterate until there is enough separation or too many iters
-				local tooClose
-				local np, nx, ny					
-				repeat 
-					nx, ny =  land.getClosestPointOnRoads("roads", cx, cy)
-					-- compare this with all other locs
-					np = {x=nx, y=ny}
-					tooClose = false
-					for idc, op in pairs(otherLocs) do 
-						local d = dcsCommon.dist(np, op)
-						if d < cloneZones.minSep then 
-							tooClose = true 
-							cx = cx + cloneZones.minSep
-							cy = cy + cloneZones.minSep
-							iterCount = iterCount + 1
-							-- trigger.action.outText("d fail for <" .. aUnit.name.. ">: d= <" .. d .. ">, iters = <" .. iterCount .. ">", 30)
-						end
-					end						
-				until (iterCount > cloneZones.maxIter) or (not tooClose)
-				-- trigger.action.outText("separation iters for <" .. aUnit.name.. ">:<" .. iterCount .. ">", 30)
-				table.insert(otherLocs, np)
-				aUnit.x = nx
-				aUnit.y = ny 
-			end
+			if spawnZone.centerOnly then 
+				-- only place the first unit in group on roads
+				-- and displace all other with the same offset 
+				local hasOffset = false 
+				local dx, dy, cx, cy
+				for idx, aUnit in pairs(units) do 
+					cx = aUnit.x
+					cy = aUnit.y 
+					if not hasOffset then 
+						local nx, ny =  land.getClosestPointOnRoads("roads", cx, cy)
+						dx = nx - cx 
+						dy = ny - cy
+						hasOffset = true
+					end
+					aUnit.x = cx + dx 
+					aUnit.y = cy + dy
+				end
+			else
+				local iterCount = 0
+				local otherLocs = {} -- resolved locs
+				for idx, aUnit in pairs(units) do 
+					local cx = aUnit.x
+					local cy = aUnit.y 
+					-- we now iterate until there is enough separation or too many iters
+					local tooClose
+					local np, nx, ny					
+					repeat 
+						nx, ny =  land.getClosestPointOnRoads("roads", cx, cy)
+						-- compare this with all other locs
+						np = {x=nx, y=ny}
+						tooClose = false
+						for idc, op in pairs(otherLocs) do 
+							local d = dcsCommon.dist(np, op)
+							if d < cloneZones.minSep then 
+								tooClose = true 
+								cx = cx + cloneZones.minSep
+								cy = cy + cloneZones.minSep
+								iterCount = iterCount + 1
+								-- trigger.action.outText("d fail for <" .. aUnit.name.. ">: d= <" .. d .. ">, iters = <" .. iterCount .. ">", 30)
+							end
+						end						
+					until (iterCount > cloneZones.maxIter) or (not tooClose)
+					-- trigger.action.outText("separation iters for <" .. aUnit.name.. ">:<" .. iterCount .. ">", 30)
+					table.insert(otherLocs, np)
+					aUnit.x = nx
+					aUnit.y = ny 
+				end
+			end -- else centerOnly
 		end
 		
 		
@@ -946,6 +1053,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 end
 
 function cloneZones.spawnWithCloner(theZone) 
+	trigger.action.outText("+++clnZ: enter spawnWithCloner for <" .. theZone.name .. ">", 30)
 	if not theZone then 
 		trigger.action.outText("+++clnZ: nil zone on spawnWithCloner", 30)
 		return 
@@ -966,14 +1074,17 @@ function cloneZones.spawnWithCloner(theZone)
 			local templates = dcsCommon.splitString(templateName, ",")
 			templateName = dcsCommon.pickRandom(templates)
 			templateName = dcsCommon.trim(templateName) 
-			if cloneZones.verbose then 
+			if cloneZones.verbose or theZone.verbose then 
 				trigger.action.outText("+++clnZ: picked random template <" .. templateName .."> for from <" .. allNames .. "> for cloner " .. theZone.name, 30)
 			end 
+		end
+		if cloneZones.verbose or theZone.verbose then 
+			trigger.action.outText("+++clnZ: spawning - picked <" .. templateName .. "> as template", 30)
 		end
 		
 		local newTemplate = cloneZones.getCloneZoneByName(templateName)
 		if not newTemplate then 
-			if cloneZones.verbose then 
+			if cloneZones.verbose or theZone.verbose then 
 				trigger.action.outText("+++clnZ: no clone source with name <" .. templateName .."> for cloner " .. theZone.name, 30)
 			end  
 			return 
@@ -1118,10 +1229,10 @@ function cloneZones.update()
 	end
 end
 
-function cloneZones.onStart()
-	--trigger.action.outText("+++clnZ: Enter atStart", 30)
+function cloneZones.doOnStart()
 	for idx, theZone in pairs(cloneZones.cloners) do 
 		if theZone.onStart then 
+			trigger.action.outText("+++clnZ: onStart true for <" .. theZone.name .. ">", 30)
 			if theZone.isStarted then 
 				if cloneZones.verbose or theZone.verbose then 
 					trigger.action.outText("+++clnz: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)
@@ -1422,7 +1533,7 @@ function cloneZones.start()
 	-- cycles to go through object removal
 	-- persistencey has loaded isStarted if a cloner was 
 	-- already started 
-	timer.scheduleFunction(cloneZones.onStart, {}, timer.getTime() + 0.1)
+	timer.scheduleFunction(cloneZones.doOnStart, {}, timer.getTime() + 1.0)
 	
 	-- start update 
 	cloneZones.update()

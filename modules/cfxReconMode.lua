@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.1.1"
+cfxReconMode.version = "2.1.2"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -79,6 +79,9 @@ VERSION HISTORY
 	   - activate / deactivate by flags 
  2.1.1 - Lat Lon and MGRS also give Elevation
        - cfxReconMode.reportTime
+ 2.1.2 - imperialUnits for elevation
+       - <ele> wildcard in message format 
+	   - fix for mgrs bug in message (zone coords, not unit)
 	   
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -424,13 +427,21 @@ function cfxReconMode.getLocation(theGroup)
 	local theUnit = theGroup:getUnit(1)
 	local currPoint = theUnit:getPoint()
 	local ele = math.floor(land.getHeight({x = currPoint.x, y = currPoint.z}))
+	local units = "m"
+	if cfxReconMode.imperialUnits then 
+		ele = math.floor(ele * 3.28084) -- feet 
+		units = "ft"
+	else 
+		ele = math.floor(ele) -- meters 
+	end 
+	
 	if cfxReconMode.mgrs then 
 		local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
-		msg = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing .. " Ele " .. ele .."m"
+		msg = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing .. " Ele " .. ele .. units
 	else 
 		local lat, lon, alt = coord.LOtoLL(currPoint)
 		lat, lon = dcsCommon.latLon2Text(lat, lon)
-		msg = "Lat " .. lat .. " Lon " .. lon .. " Ele " .. ele .."m"
+		msg = "Lat " .. lat .. " Lon " .. lon .. " Ele " .. ele ..units
 	end
 	return msg
 end
@@ -483,12 +494,21 @@ function cfxReconMode.processZoneMessage(inMsg, theZone, theGroup)
 		local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
 		currPoint = theUnit:getPoint()
 	end
+	local ele = math.floor(land.getHeight({x = currPoint.x, y = currPoint.z}))
+	local units = "m"
+	if cfxReconMode.imperialUnits then 
+		ele = math.floor(ele * 3.28084) -- feet 
+		units = "ft"
+	else 
+		ele = math.floor(ele) -- meters 
+	end 
 	
 	local lat, lon, alt = coord.LOtoLL(currPoint)
 	lat, lon = dcsCommon.latLon2Text(lat, lon)
 	outMsg = outMsg:gsub("<lat>", lat)
 	outMsg = outMsg:gsub("<lon>", lon)
-	currPoint = cfxZones.getPoint(theZone)
+	outMsg = outMsg:gsub("<ele>", ele..units)
+	--currPoint = cfxZones.getPoint(theZone)
 	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
 	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
 	outMsg = outMsg:gsub("<mgrs>", mgrs)
@@ -1019,6 +1039,10 @@ function cfxReconMode.readConfigZone()
 		cfxReconMode.lastDeActivate = cfxZones.getFlagValue(cfxReconMode.deactivate, theZone)
 	end
 	
+	cfxReconMode.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperial", false)
+	if cfxZones.hasProperty(theZone, "imperialUnits") then 
+		cfxReconMode.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperialUnits", false)
+	end
 	
 	cfxReconMode.theZone = theZone -- save this zone 
 end

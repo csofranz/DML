@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.1"
+dcsCommon.version = "2.7.2"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -52,7 +52,7 @@ dcsCommon.version = "2.7.1"
        - dcsCommon.trimArray(
 	   - createStaticObjectData uses trim for type 
 	   - getEnemyCoalitionFor understands strings, still returns number
-       - coalition2county also undertsands 'red' and 'blue'
+       - coalition2county also understands 'red' and 'blue'
  2.5.0 - "Line" formation with one unit places unit at center 	
  2.5.1 - vNorm(a)  
  2.5.1 - added SA-18 Igla manpad to unitIsInfantry()
@@ -92,6 +92,12 @@ dcsCommon.version = "2.7.1"
  2.7.1 - new isPlayerUnit() -- moved from cfxPlayer
          new getAllExistingPlayerUnitsRaw - from cfxPlayer
 		 new typeIsInfantry()
+ 2.7.2 - new rangeArrayFromString()
+         fixed leading blank bug in flagArrayFromString
+		 new incFlag()
+		 new decFlag()
+		 nil trap in stringStartsWith()
+		 new getClosestFreeSlotForCatInAirbaseTo()
  
 --]]--
 
@@ -386,6 +392,64 @@ dcsCommon.version = "2.7.1"
 			end
 		end
 		return closestBase, delta 
+	end
+
+	function dcsCommon.getClosestFreeSlotForCatInAirbaseTo(cat, x, y, theAirbase, ignore)
+		if not theAirbase then return nil end 
+		if not ignore then ignore = {} end 
+		if not cat then return nil end 
+		if (not cat == "helicopter") and (not cat == "plane") then 
+			trigger.action.outText("+++common-getslotforcat: wrong cat <" .. cat .. ">", 30)
+			return nil 
+		end
+		local allFree = theAirbase:getParking(true) --  only free slots
+		local filterFreeByType = {}
+		for idx, aSlot in pairs(allFree) do 
+			local termT = aSlot.Term_Type
+			if termT == 104 or 
+			(termT == 72 and cat == "plane") or 
+			(termT == 68 and cat == "plane") or 
+			(termT == 40 and cat == "helicopter") then 
+				table.insert(filterFreeByType, aSlot)
+			else 
+				-- we skip this slot, not good for type 
+			end
+		end
+		
+		if #filterFreeByType == 0 then 
+			return nil
+		end 
+		
+		local reallyFree = {}
+		for idx, aSlot in pairs(filterFreeByType) do 
+			local slotNum = aSlot.Term_Index
+			isTaken = false 
+			for idy, taken in pairs(ignore) do 
+				if taken == slotNum then isTaken = true end 
+			end
+			if not isTaken then 
+				table.insert(reallyFree, aSlot)
+			end
+		end
+		
+		if #reallyFree < 1 then 
+			reallyFree = filterFreeByType
+		end
+		
+		local closestDist = math.huge 
+		local closestSlot = nil 
+		local p = {x = x, y = 0, z = y} -- !!
+		for idx, aSlot in pairs(reallyFree) do 
+			local sp = {x = aSlot.vTerminalPos.x, y = 0, z = aSlot.vTerminalPos.z}
+			local currDist = dcsCommon.distFlat(p, sp)
+			--trigger.action.outText("slot <" .. aSlot.Term_Index .. "> has dist " .. math.floor(currDist) .. " and _0 of <" .. aSlot.Term_Index_0 .. ">", 30)
+			if currDist < closestDist then 
+				closestSlot = aSlot 
+				closestDist = currDist 
+			end
+		end
+		--trigger.action.outText("slot <" .. closestSlot.Term_Index .. "> has closest dist <" .. math.floor(closestDist) .. ">", 30)
+		return closestSlot
 	end
 
 -- 
@@ -1823,6 +1887,7 @@ end
 	end
 	
 	function dcsCommon.stringStartsWith(theString, thePrefix)
+		if not theString then return false end 
 		return theString:find(thePrefix) == 1
 	end
 	
@@ -2473,6 +2538,7 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 	local rawElements = dcsCommon.splitString(inString, ",")
 	-- go over all elements 
 	for idx, anElement in pairs(rawElements) do 
+		anElement = dcsCommon.trim(anElement)
 		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
 			-- interpret this as a range
 			local theRange = dcsCommon.splitString(anElement, "-")
@@ -2498,7 +2564,7 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 			end
 		else
 			-- single number
-			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
+			local f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
 			if f then 
 				table.insert(flags, f)
 
@@ -2511,6 +2577,81 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 		trigger.action.outText("+++flagArray: <" .. #flags .. "> flags total", 30)
 	end 
 	return flags
+end
+
+function dcsCommon.rangeArrayFromString(inString, verbose)
+	if not verbose then verbose = false end 
+	
+	if verbose then 
+		trigger.action.outText("+++rangeArray: processing <" .. inString .. ">", 30)
+	end 
+
+	if string.len(inString) < 1 then 
+		trigger.action.outText("+++rangeArray: empty ranges", 30)
+		return {} 
+	end
+	
+	local ranges = {}
+	local rawElements = dcsCommon.splitString(inString, ",")
+	-- go over all elements 
+	for idx, anElement in pairs(rawElements) do 
+		anElement = dcsCommon.trim(anElement)
+		local outRange = {}
+		if dcsCommon.stringStartsWithDigit(anElement) and  dcsCommon.containsString(anElement, "-") then 
+			-- interpret this as a range
+			local theRange = dcsCommon.splitString(anElement, "-")
+			local lowerBound = theRange[1]
+			lowerBound = tonumber(lowerBound)
+			local upperBound = theRange[2]
+			upperBound = tonumber(upperBound)
+			if lowerBound and upperBound then
+				-- swap if wrong order
+				if lowerBound > upperBound then 
+					local temp = upperBound
+					upperBound = lowerBound
+					lowerBound = temp 
+				end
+				-- now add to ranges
+				outRange[1] = lowerBound
+				outRange[2] = upperBound
+				table.insert(ranges, outRange)
+				if verbose then 
+					trigger.action.outText("+++rangeArray: new range <" .. lowerBound .. "> to <" .. upperBound .. ">", 30)
+				end
+			else
+				-- bounds illegal
+				trigger.action.outText("+++rangeArray: ignored range <" .. anElement .. "> (range)", 30)
+			end
+		else
+			-- single number
+			local f = dcsCommon.trim(anElement) 
+			f = tonumber(f)
+			if f then 
+				outRange[1] = f
+				outRange[2] = f
+				table.insert(ranges, outRange)
+				if verbose then 
+					trigger.action.outText("+++rangeArray: new (single-val) range <" .. f .. "> to <" .. f .. ">", 30)
+				end
+			else 
+				trigger.action.outText("+++rangeArray: ignored element <" .. anElement .. "> (single)", 30)
+			end
+		end
+	end
+	if verbose then 
+		trigger.action.outText("+++rangeArray: <" .. #ranges .. "> ranges total", 30)
+	end 
+	return ranges
+end
+
+function dcsCommon.incFlag(flagName)
+	local v = trigger.misc.getUserFlag(flagName)
+	trigger.action.setUserFlag(flagName, v + 1)
+end
+
+function dcsCommon.decFlag(flagName)
+	local v = trigger.misc.getUserFlag(flagName)
+	trigger.action.setUserFlag(flagName, v - 1)
 end
 
 function dcsCommon.objectHandler(theObject, theCollector)

@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.2"
+cfxMX.version = "1.2.3"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -21,10 +21,15 @@ cfxMX.verbose = false
    1.2.2 - fixed ctry bug in countryByName
          - playerGroupByName
 		 - playerUnitByName
+   1.2.3 - groupTypeByName
+		 - groupCoalitionByName
+		 
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.groupDataByName = {}
+cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
+cfxMX.groupCoalitionByName = {}
 cfxMX.countryByName ={}
 cfxMX.linkByName = {}
 cfxMX.allFixedByName = {}
@@ -205,11 +210,12 @@ function cfxMX.createCrossReferences()
 											linkUnit = group_data.route.points[1].linkUnit
 											cfxMX.linkByName[aName] = linkUnit
 										end 
-										
+										cfxMX.groupTypeByName[aName] = category
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
 										cfxMX.groupDataByName[aName] = group_data
 										cfxMX.countryByName[aName] = countryID -- !!! was cntry_id
+										cfxMX.groupCoalitionByName[aName] = coaNum
 
 										-- now make the type-specific xrefs
 										if obj_type_name == "helicopter" then 

@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.4.0"
+rndFlags.version = "1.4.1"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -32,6 +32,7 @@ rndFlags.requiredLibs = {
 	1.3.2 - moved flagArrayFromString to dcsCommon
 	      - minor clean-up
 	1.4.0 - persistence 
+	1.4.1 - a little less verbosity 
 
 --]]
 
@@ -336,8 +337,10 @@ function rndFlags.start()
 	
 	-- process RND Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("RND!")
-	a = dcsCommon.getSizeOfTable(attrZones)
-	trigger.action.outText("RND! zones: " .. a, 30)
+	if rndFlags.verbose then 
+		local a = dcsCommon.getSizeOfTable(attrZones)
+		trigger.action.outText("RND! zones: " .. a, 30)
+	end 
 	
 	-- now create an rnd gen for each one and add them
 	-- to our watchlist 
