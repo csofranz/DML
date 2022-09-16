@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.2"
+persistence.version = "1.0.3"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -22,6 +22,8 @@ persistence.requiredLibs = {
 		  - cfxZones interface
 		  - always output save location
 	1.0.2 - QoL when verbosity is on 
+	1.0.3 - no longer always tells " mission saved to"
+		    new 'saveNotification" can be off 
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
@@ -375,9 +377,9 @@ function persistence.doSaveMission()
 		return 
 	end 
 	
---	if persistence.verbose then 
+	if persistence.saveNotification then 
 		trigger.action.outText("+++persistence: mission saved to\n" .. persistence.missionDir .. persistence.saveFileName, 30)
---	end
+	end
 end
 
 function persistence.noteCleanRestart()
@@ -469,6 +471,8 @@ function persistence.readConfigZone()
 	end
 	
 	persistence.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	
+	persistence.saveNotification = cfxZones.getBoolFromZoneProperty(theZone, "saveNotification", true)
 	
 	if persistence.verbose then 
 		trigger.action.outText("+++persistence: read config", 30)

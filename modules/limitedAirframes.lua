@@ -1,5 +1,5 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.5.0"
+limitedAirframes.version = "1.5.1"
 limitedAirframes.verbose = false 
 limitedAirframes.enabled = true -- can be turned off
 limitedAirframes.userCanToggle = true -- F10 menu?
@@ -12,6 +12,7 @@ limitedAirframes.method = "inc"
 limitedAirframes.warningSound = "Quest Snare 3.wav"
 limitedAirframes.loseSound = "Death PIANO.wav"
 limitedAirframes.winSound = "Triumphant Victory.wav"
+limitedAirframes.announcer = true 
 
 limitedAirframes.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -50,6 +51,7 @@ limitedAirframes.requiredLibs = {
 		   currRed 
  - 1.4.1 - removed dependency to cfxPlayer
  - 1.5.0 - persistence support 
+ - 1.5.1 - new "announcer" attribute
 		   
 --]]--
 
@@ -133,27 +135,17 @@ function limitedAirframes.readConfigZone()
 	end
 	
 	-- ok, for each property, load it if it exists
---	if cfxZones.hasProperty(theZone, "enabled")  then 
-		limitedAirframes.enabled = cfxZones.getBoolFromZoneProperty(theZone, "enabled", true)
---	end
+	limitedAirframes.enabled = cfxZones.getBoolFromZoneProperty(theZone, "enabled", true)
+
+	limitedAirframes.userCanToggle = cfxZones.getBoolFromZoneProperty(theZone, "userCanToggle", true)
 	
---	if cfxZones.hasProperty(theZone, "userCanToggle")  then 
-		limitedAirframes.userCanToggle = cfxZones.getBoolFromZoneProperty(theZone, "userCanToggle", true)
---	end
-	
-	
---	if cfxZones.hasProperty(theZone, "maxRed")  then 
-		limitedAirframes.maxRed = cfxZones.getNumberFromZoneProperty(theZone, "maxRed", -1)
---	end
-	
---	if cfxZones.hasProperty(theZone, "maxBlue")  then 
-		limitedAirframes.maxBlue = cfxZones.getNumberFromZoneProperty(theZone, "maxBlue", -1)
---	end
+	limitedAirframes.maxRed = cfxZones.getNumberFromZoneProperty(theZone, "maxRed", -1)
+
+	limitedAirframes.maxBlue = cfxZones.getNumberFromZoneProperty(theZone, "maxBlue", -1)
 	
 	limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "#red", "*none")
 	limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "#blue", "*none")
 	
- 
 	limitedAirframes.redWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "redWins!", "*none")
 
 	if cfxZones.hasProperty(theZone, "redWinsFlag!")  then 
@@ -178,6 +170,8 @@ function limitedAirframes.readConfigZone()
 	if cfxZones.hasProperty(theZone, "loseSound")  then 
 		limitedAirframes.loseSound = cfxZones.getStringFromZoneProperty(theZone, "loseSound", "none")
 	end	
+	
+	limitedAirframes.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
 end
 
 --
@@ -221,17 +215,18 @@ function limitedAirframes.addPlayerUnit(theUnit)
 		end 
 	end 
 	limitedAirframes.playerUnits[uName] = pName 
-	trigger.action.outTextForCoalition(theSide, desc, 30)
+	if limitedAirframes.announcer then 
+		trigger.action.outTextForCoalition(theSide, desc, 30)
+	end
 end
 
 function limitedAirframes.killPlayer(pName)
 	limitedAirframes.updatePlayer(pName, "dead")
-	--trigger.action.outText("+++lim: PILOT LOST: " .. pName .. ", NO CSAR", 30)
+
 end
 
 function limitedAirframes.killPlayerInUnit(theUnit)
 	limitedAirframes.updatePlayerInUnit(theUnit, "dead")
-	--trigger.action.outText("+++lim: PILOT LOST, NO CSAR", 30)
 end
 
 function limitedAirframes.updatePlayerInUnit(theUnit, status)
@@ -476,7 +471,6 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 		local pName = limitedAirframes.getKnownUnitPilotByUnitName(theUnit:getName())
 		local pStatus = limitedAirframes.getStatusOfPlayerInUnit(theUnit)
 		-- player was already dead and has been accounted for 
-		--trigger.action.outText("limAir: Change Plane for player <" .. pName .. "> with status <" .. pStatus .. "> procced.", 30)
 		return 
 	end
 	
@@ -485,11 +479,8 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 	local uPos = theUnit:getPoint() 
 	local meInside = cfxZones.getZonesContainingPoint(uPos, limitedAirframes.safeZones)
 	local mySide = theUnit:getCoalition()
-	--local speed = dcsCommon.getUnitSpeed(theUnit) -- this can cause problems with carriers, so check if below 
-	--local agl = dcsCommon.getUnitAGL(theUnit) -- this will cause problems with FARP and carriers. 
 	-- we now check the inAir 
 	local isInAir = theUnit:inAir()
-	--trigger.action.outTextForCoalition(mySide, "limAir: safe check for Pilot " .. theUnit:getPlayerName() .. ": agl=" .. agl .. ", speed = " .. speed .. ", air status = " .. dcsCommon.bool2YesNo(isInAir), 30)
 
 	for i=1, #meInside do 
 		-- I'm inside all these zones. We look for the first
@@ -527,19 +518,18 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 		if isInAir then isSafe = false end 
 		
 		if isSafe then 
---			if limitedAirframes.verbose then 
-				trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " left unit " .. theUnit:getName() .. " legally in zone " .. theSafeZone.name, 30)
+--			if limitedAirframes.announcer then 
+--				trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " left unit " .. theUnit:getName() .. " legally in zone " .. theSafeZone.name, 30)
 --			end
-			-- remove from known player planes
-			-- no more limitedAirframes.removePlayerUnit(theUnit)
+
 			return;
 		end
 	end
 	
 	-- ditched outside safe harbour
---	if limitedAirframes.verbose then 
+	if limitedAirframes.announcer then 
 		trigger.action.outTextForCoalition(mySide, "Pilot " .. theUnit:getPlayerName() .. " DITCHED unit " .. theUnit:getName() .. " -- PILOT is considered MIA", 30)
---	end 
+	end 
 	
 	limitedAirframes.pilotLost(theUnit)
 	if csarManager and csarManager.airframeDitched then 
@@ -559,7 +549,9 @@ function limitedAirframes.pilotEjected(event)
 	local theSide = theUnit:getCoalition()
 	local pilot = limitedAirframes.getKnownUnitPilotByUnit(theUnit)
 	local uName = theUnit:getName()
-	trigger.action.outTextForCoalition(theSide, "Pilot <" .. pilot .. "> ejected from " .. uName .. ", now MIA", 30)
+	if limitedAirframes.announcer then 
+		trigger.action.outTextForCoalition(theSide, "Pilot <" .. pilot .. "> ejected from " .. uName .. ", now MIA", 30)
+	end 
 	
 	local hasLostTheWar = limitedAirframes.pilotLost(theUnit)
 	
@@ -575,7 +567,9 @@ function limitedAirframes.pilotDied(theUnit)
 	local theSide = theUnit:getCoalition()
 	local pilot = limitedAirframes.getKnownUnitPilotByUnit(theUnit)
 	local uName = theUnit:getName()
-	trigger.action.outTextForCoalition(theSide, "Pilot <" .. pilot .. "> is confirmed KIA while controlling " .. uName, 30)
+	if limitedAirframes.announcer then 
+		trigger.action.outTextForCoalition(theSide, "Pilot <" .. pilot .. "> is confirmed KIA while controlling " .. uName, 30)
+	end 
 	limitedAirframes.pilotLost(theUnit)
 end
 
@@ -593,7 +587,7 @@ function limitedAirframes.pilotLost(theUnit)
 	local theSide = theUnit:getCoalition()
 	local pilot = limitedAirframes.getKnownUnitPilotByUnit(theUnit)
 	local uName = theUnit:getName()
-	--trigger.action.outTextForCoalition(theSide, "Pilot <" .. pilot .. "> is confirmed KIA while controlling " .. uName, 30)
+
 	
 	if theSide == 1 then -- red 
 		theOtherSide = 2 
@@ -605,16 +599,16 @@ function limitedAirframes.pilotLost(theUnit)
 		
 		if limitedAirframes.currRed == 0 then
 			trigger.action.outTextForCoalition(theSide, "\nYou have lost almost all of your pilots.\n\nWARNING: Losing any more pilots WILL FAIL THE MISSION\n", 30)
-			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)
 			return false  
 		end
 		
 		if limitedAirframes.currRed < 0 then 
 			-- red have lost all airframes 
 			trigger.action.outText("\nREDFORCE has lost all of their pilots.\n\nBLUEFORCE WINS!\n", 30)
-			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound) --"Death PIANO.wav")
-			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)--"Triumphant Victory.wav")
---			trigger.action.setUserFlag(limitedAirframes.blueWinsFlag, 1 )
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound) 
+			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)
+
 			cfxZones.pollFlag(limitedAirframes.blueWinsFlag, limitedAirframes.method, limitedAirframes.config)
 			return true 
 		end
@@ -629,20 +623,22 @@ function limitedAirframes.pilotLost(theUnit)
 		
 		if limitedAirframes.currBlue == 0 then
 			trigger.action.outTextForCoalition(theSide, "\nYou have lost almost all of your pilots.\n\nWARNING: Losing any more pilots WILL FAIL THE MISSION\n", 30)
-			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)
 			return false 
 		end
 		if limitedAirframes.currBlue < 0 then 
 			-- red have lost all airframes 
 			trigger.action.outText("\nBLUEFORCE has lost all of their pilots.\n\nREDFORCE WINS!\n", 30)
---			trigger.action.setUserFlag(limitedAirframes.redWinsFlag, 1 )
+
 			cfxZones.pollFlag(limitedAirframes.redWinsFlag, limitedAirframes.method, limitedAirframes.config) 
-			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound)--"Death PIANO.wav")
-			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)--"Triumphant Victory.wav")
+			trigger.action.outSoundForCoalition(theSide, limitedAirframes.loseSound)
+			trigger.action.outSoundForCoalition(theOtherSide, limitedAirframes.winSound)
 			return true 
 		end
-		trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)--"Quest Snare 3.wav")
-		trigger.action.outTextForCoalition(theSide, "You have lost a pilot! Remaining: " .. limitedAirframes.currBlue, 30)
+		trigger.action.outSoundForCoalition(theSide, limitedAirframes.warningSound)
+--		if limitedAirframes.announcer then 
+			trigger.action.outTextForCoalition(theSide, "You have lost a pilot! Remaining: " .. limitedAirframes.currBlue, 30)
+--		end
 	end
 	return false 
 end

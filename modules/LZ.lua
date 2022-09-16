@@ -1,5 +1,5 @@
 LZ = {}
-LZ.version = "0.0.0"
+LZ.version = "1.0.0"
 LZ.verbose = false 
 LZ.ups = 1 
 LZ.requiredLibs = {
@@ -9,9 +9,11 @@ LZ.requiredLibs = {
 LZ.LZs = {}
 
 --[[--
+	LZ - module to generate flag events when a unit lands to takes off inside 
+	the zone. 
+	
 	Version History 
 	1.0.0 - initial version 
-	
 	
 --]]--
 
@@ -27,22 +29,70 @@ function LZ.getLZByName(aName)
 		trigger.action.outText("+++LZ: no LZ with name <" .. aName ..">", 30)
 	end 
 	
-	return nil 
 end
 
 --
 -- read zone 
 -- 
 function LZ.createLZWithZone(theZone)
-	-- read main trigger
-	theZone.triggerLZFlag = cfxZones.getStringFromZoneProperty(theZone, "lz!", "*<none>")
-	
-	-- TriggerMethod: common and specific synonym
-	theZone.lzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	
-	if cfxZones.hasProperty(theZone, "lzTriggerMethod") then 
-		theZone.lzMethod = cfxZones.getStringFromZoneProperty(theZone, "lzMethod", "change")
+	if cfxZones.hasProperty(theZone, "landed!") then
+		theZone.lzLanded = cfxZones.getStringFromZoneProperty(theZone, "landed!", "*<none>")
 	end 
+
+	if cfxZones.hasProperty(theZone, "departed!") then
+		theZone.lzDeparted = cfxZones.getStringFromZoneProperty(theZone, "departed!", "*<none>")
+	end
+	
+	-- who to look for 
+	theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
+	-- units / groups / types 
+	if cfxZones.hasProperty(theZone, "group") then 
+		theZone.lzGroups = cfxZones.getStringFromZoneProperty(theZone, "group", "<none>")
+		theZone.lzGroups = dcsCommon.string2Array(theZone.lzGroups, ",", true)
+	elseif cfxZones.hasProperty(theZone, "groups") then 
+		theZone.lzGroups = cfxZones.getStringFromZoneProperty(theZone, "groups", "<none>")
+		theZone.lzGroups = dcsCommon.string2Array(theZone.lzGroups, ",", true)
+	elseif cfxZones.hasProperty(theZone, "type") then 
+		theZone.lzTypes = cfxZones.getStringFromZoneProperty(theZone, "type", "ALL")
+		theZone.lzTypes = dcsCommon.string2Array(theZone.lzTypes, ",", true)
+	elseif cfxZones.hasProperty(theZone, "types") then
+		theZone.lzTypes = cfxZones.getStringFromZoneProperty(theZone, "types", "ALL")
+		theZone.lzTypes = dcsCommon.string2Array(theZone.lzTypes, ",", true)
+	elseif cfxZones.hasProperty(theZone, "unit") then 
+		theZone.lzUnits = cfxZones.getStringFromZoneProperty(theZone, "unit", "none")
+		theZone.lzUnits = dcsCommon.string2Array(theZone.lzUnits, ",", true)
+	elseif cfxZones.hasProperty(theZone, "units") then
+		theZone.lzUnits = cfxZones.getStringFromZoneProperty(theZone, "units", "none")
+		theZone.lzUnits = dcsCommon.string2Array(theZone.lzUnits, ",", true)
+	end	
+
+	theZone.lzPlayerOnly = cfxZones.getBoolFromZoneProperty(theZone, "playerOnly", false)
+
+	-- output method
+	theZone.lzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	if cfxZones.hasProperty(theZone, "outputMethod") then 
+		theZone.lzMethod = cfxZones.getStringFromZoneProperty(theZone, "outputMethod", "inc")
+	end 
+	
+	-- trigger method
+	theZone.lzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "lzTriggerMethod", "change")
+	if cfxZones.hasProperty(theZone, "triggerMethod") then 
+		theZone.lzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	end 
+	
+	
+	-- pause / unpause 
+	theZone.lzIsPaused = cfxZones.getBoolFromZoneProperty(theZone, "isPaused", false)
+	
+	if cfxZones.hasProperty(theZone, "pause?") then 
+		theZone.lzPause = cfxZones.getStringFromZoneProperty(theZone, "pause?", "*<none>")
+		theZone.lzLastPause = cfxZones.getFlagValue(theZone.lzPause, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "continue?") then 
+		theZone.lzContinue = cfxZones.getStringFromZoneProperty(theZone, "continue?", "*<none>")
+		theZone.lzLastContinue = cfxZones.getFlagValue(theZone.lzContinue, theZone)
+	end
 	
 	if LZ.verbose or theZone.verbose then 
 		trigger.action.outText("+++LZ: new LZ <".. theZone.name ..">", 30)
@@ -50,45 +100,196 @@ function LZ.createLZWithZone(theZone)
 	
 end
 
---
--- MAIN ACTION
---
-function LZ.processUpdate(theZone)
+function LZ.nameMatchForArray(theName, theArray, wildcard)
+	theName = dcsCommon.trim(theName)
+	if not theName then return false end 
+	if not theArray then return false end
+	theName = string.upper(theName) -- case insensitive 
 	
+	-- trigger.action.outText("enter name match with <" .. theName .. "> look for match in <" .. dcsCommon.array2string(theArray) .. "> and wc <" .. wildcard .. ">", 30)
+	for idx, entry in pairs(theArray) do
+		
+		if wildcard and dcsCommon.stringEndsWith(entry, wildcard) then 
+			entry = dcsCommon.removeEnding(entry, wildcard)
+			-- trigger.action.outText("trying to WC-match <" .. theName .. "> with <" .. entry .. ">", 30)
+			if dcsCommon.stringStartsWith(theName, entry) then 
+				-- theName "hi there" matches wildcarded entry "hi*"
+				return true 
+			end
+		else 
+			-- trigger.action.outText("trying to simple-match <" .. theName .. "> with <" .. entry .. ">", 30)
+			if theName == entry then 
+				return true 
+			end
+		end
+	end
+--	trigger.action.outText ("no match for <" .. theName .. ">", 30)
+	return false 
 end
+
+--
+-- Misc Processing
+--
+function LZ.unitIsInterestingForZone(theUnit, theZone)
+	--trigger.action.outText("enter isInterestingB4pause for <" .. theUnit:getName() .. ">", 40)
+	
+	-- see if zone is interested in this unit.
+	if theZone.isPaused then 
+		return false 
+	end 
+--	trigger.action.outText("enter isinteresting for <" .. theUnit:getName() .. ">", 40)
+	if theZone.lzPlayerOnly then 
+		if not dcsCommon.isPlayerUnit(theUnit) then 
+			if theZone.verbose or LZ.verbose then
+				trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> arriving/departing <" .. theZone.name .. "> is not a player unit", 30)
+			end
+			return false 
+		else 
+			-- trigger.action.outText("player match!", 30)
+		end
+	end
+	
+	if theZone.coalition > 0 then 
+		local theGroup = theUnit:getGroup()
+		local coa = theGroup:getCoalition()
+		if coa ~= theZone.coalition then
+			if theZone.verbose or LZ.verbose then
+				trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> arriving/departing <" .. theZone.name .. "> does not match coa <" .. theZone.coalition .. ">", 30)
+			end
+			return false 
+		end 
+	end
+	-- if we get here, we are filtered for coa and player 
+	if theZone.lzUnits then 
+		local theName = theUnit:getName()
+		return LZ.nameMatchForArray(theName, theZone.lzUnits, "*")
+		
+	elseif theZone.lzGroups then
+		local theGroup = theUnit:getGroup()
+		local theName = theGroup:getName()
+		return LZ.nameMatchForArray(theName, theZone.lzGroups, "*")
+		
+	elseif theZone.lzTypes then 
+		local theType = theUnit:getTypeName()
+		local theGroup = theUnit:getGroup()
+		local cat = theGroup:getCategory() -- can't trust unit:getCategory
+		local coa = theGroup:getCoalition() 
+		for idx, aType in pairs (theZone.lzTypes) do 
+
+			if aType == "ANY" or aType == "ALL" then 
+				return true
+			
+			elseif aType == "HELO" or aType == "HELICOPTER" or aType == "HELICOPTERS" or aType == "HELOS" then 
+				if cat == 1 then 
+					return true  
+				end
+			elseif aType == "PLANE" or aType == "PLANES" then 
+				if cat == 0 then 
+					return true 
+				end
+			else 
+				if theType == aType then 
+					return true 
+				end 
+			end
+		end -- for all types 
+
+		return false -- not a single match
+	else 
+		-- we can return true since player and coa mismatch 
+		-- have already been filtered 
+--[[--		-- neither type, unit, nor group 
+		local theGroup = theUnit:getGroup()
+		local coa = theGroup:getCoalition()
+		-- 
+--]]--
+		return true -- theZone.coalition == coa end
+	end
+	
+	trigger.action.outText("+++LZ: unknown attribute check for <" .. theZone.name .. ">", 30)
+	return false
+end
+
 
 --
 -- Event Handling
 --
 function LZ:onEvent(event)
-    -- only interested in S_EVENT_BASE_CAPTURED events
-    if event.id ~= world.event.S_EVENT_BASE_CAPTURED then
+	-- make sure we have an initiator 
+	if not event.initiator then return end 
+	
+    -- only interested in S_EVENT_TAKEOFF and  events
+    if event.id ~= world.event.S_EVENT_TAKEOFF and 
+	   event.id ~= world.event.S_EVENT_LAND then
         return
     end
-
+	
+	--if LZ.verbose or true then 
+	--	trigger.action.outText("+++LZ: on event proccing", 30)
+	--end
+					
+	local theUnit = event.initiator
+	if not Unit.isExist(theUnit) then return end 
+	local p = theUnit:getPoint()
+	
+	--if LZ.verbose or true then 
+	--	trigger.action.outText("+++LZ: before iterating zones", 30)
+	--end
+	
     for idx, aZone in pairs(LZ.LZs) do 
-		-- check if landed inside and of correct type, colition, name whatever 
+		-- see if inside the zone 
+		local inZone, percent, dist = cfxZones.pointInZone(p, aZone)
+		if inZone then 
+			-- see if this unit interests us at all 
+			if LZ.unitIsInterestingForZone(theUnit, aZone) then 
+				-- interesting unit in zone triggered the event 
+				if aZone.lzDeparted and event.id ==  world.event.S_EVENT_TAKEOFF then 
+					if LZ.verbose or aZone.verbose then 
+						trigger.action.outText("+++LZ: detected departure from <" .. aZone.name .. ">", 30)
+					end
+					cfxZones.pollFlag(aZone.lzDeparted, aZone.lzMethod, aZone)
+				end
+				
+				if aZone.lzLanded and event.id == world.event.S_EVENT_LAND then
+					if LZ.verbose or aZone.verbose then 
+						trigger.action.outText("+++LZ: detected landing in <" .. aZone.name .. ">", 30)
+					end
+					cfxZones.pollFlag(aZone.lzLanded, aZone.lzMethod, aZone)
+				end
+			end -- if interesting
+		else 
+			if LZ.verbose or true then 
+			--	trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> not in zone <" .. aZone.name .. ">", 30)
+			end
 		
-    end
+		end -- if in zone 
+    end -- end for 
 end
 
 --
 -- Update 
 --
-
 function LZ.update()
 	-- call me in a second to poll triggers
 	timer.scheduleFunction(LZ.update, {}, timer.getTime() + 1/LZ.ups)
 		
 	for idx, aZone in pairs(LZ.LZs) do
-		-- see if we are triggered 
-		if cfxZones.testZoneFlag(aZone, aZone.triggerLZFlag, aZone.LZTriggerMethod, 			"lastTriggerLZValue") then 
+		-- see if we are being paused or unpaused 
+		if cfxZones.testZoneFlag(aZone, aZone.lzPause, aZone.LZTriggerMethod, "lzLastPause") then 
 			if LZ.verbose or theZone.verbose then 
-				trigger.action.outText("+++LZ: triggered on main? for <".. aZone.name ..">", 30)
+				trigger.action.outText("+++LZ: triggered pause? for <".. aZone.name ..">", 30)
 			end
-			LZ.processUpdate(aZone)
+			aZone.isPaused = true 
+		end 
+		
+		if cfxZones.testZoneFlag(aZone, aZone.lzContinue, aZone.LZTriggerMethod, "lzLastContinue") then 
+			if LZ.verbose or theZone.verbose then 
+				trigger.action.outText("+++LZ: triggered continue? for <".. aZone.name ..">", 30)
+			end
+			aZone.isPaused = false 
 		end 
 	end
+	
 end
 
 --
@@ -97,12 +298,13 @@ end
 function LZ.readConfigZone()
 	local theZone = cfxZones.getZoneByName("LZConfig") 
 	if not theZone then 
+		theZone = cfxZones.createSimpleZone(LZConfig)
 		if LZ.verbose then 
 			trigger.action.outText("+++LZ: NO config zone!", 30)
 		end 
-		return 
 	end 
 	
+	LZ.lzCooldown = cfxZones.getNumberFromZoneProperty(theZone, "cooldown", 20)
 	LZ.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	
 	if LZ.verbose then 
@@ -125,11 +327,14 @@ function LZ.start()
 	
 	-- process LZ Zones 
 	-- old style
-	local attrZones = cfxZones.getZonesWithAttributeNamed("lz!")
+	local attrZones = cfxZones.getZonesWithAttributeNamed("lz")
 	for k, aZone in pairs(attrZones) do 
 		LZ.createLZWithZone(aZone) -- process attributes
 		LZ.addLZ(aZone) -- add to list
 	end
+	
+	-- connect event handler 
+	world.addEventHandler(LZ)
 	
 	-- start update 
 	LZ.update()

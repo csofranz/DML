@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.5.4"
+cloneZones.version = "1.5.5"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -61,7 +61,7 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.5.2 - fixed bug in trackWith: referencing wrong cloner 
 	1.5.3 - centerOnly/wholeGroups attribute for rndLoc, rndHeading and onRoad
 	1.5.4 - parking for aircraft processing when cloning from template 
-	
+	1.5.5 - removed some verbosity 
 	
 	
 --]]--
@@ -1053,7 +1053,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 end
 
 function cloneZones.spawnWithCloner(theZone) 
-	trigger.action.outText("+++clnZ: enter spawnWithCloner for <" .. theZone.name .. ">", 30)
+--	trigger.action.outText("+++clnZ: enter spawnWithCloner for <" .. theZone.name .. ">", 30)
 	if not theZone then 
 		trigger.action.outText("+++clnZ: nil zone on spawnWithCloner", 30)
 		return 
@@ -1232,7 +1232,7 @@ end
 function cloneZones.doOnStart()
 	for idx, theZone in pairs(cloneZones.cloners) do 
 		if theZone.onStart then 
-			trigger.action.outText("+++clnZ: onStart true for <" .. theZone.name .. ">", 30)
+--			trigger.action.outText("+++clnZ: onStart true for <" .. theZone.name .. ">", 30)
 			if theZone.isStarted then 
 				if cloneZones.verbose or theZone.verbose then 
 					trigger.action.outText("+++clnz: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)

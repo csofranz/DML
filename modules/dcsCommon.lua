@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.2"
+dcsCommon.version = "2.7.4"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -98,6 +98,9 @@ dcsCommon.version = "2.7.2"
 		 new decFlag()
 		 nil trap in stringStartsWith()
 		 new getClosestFreeSlotForCatInAirbaseTo()
+ 2.7.3 - new string2Array()
+       - additional guard for isPlayerUnit
+ 2.7.4 - new array2string()
  
 --]]--
 
@@ -1853,6 +1856,33 @@ end
 		return trimmedArray
 	end
 	
+	function dcsCommon.string2Array(inString, deli, uCase)
+		if not inString then return {} end 
+		if not deli then return {} end 
+		if not uCase then uCase = false end
+		if uCase then inString = string.upper(inString) end
+		inString = dcsCommon.trim(inString)
+		if dcsCommon.containsString(inString, deli) then 
+			local a = dcsCommon.splitString(inString, deli)
+			a = dcsCommon.trimArray(a)
+			return a 
+		else 
+			return {inString}
+		end
+	end
+	
+	function dcsCommon.array2string(inArray, deli)
+		if not deli then deli = "," end
+		if type(inArray) ~= "table" then return "<err in array2string: not an array>" end
+		local s = ""
+		local count = 0
+		for idx, ele in pairs(inArray) do
+			if count > 0 then s = s .. deli .. " " end
+			s = s .. ele
+		end
+		return s
+	end
+	
 	function dcsCommon.stripLF(theString)
 		return theString:gsub("[\r\n]", "")
 	end
@@ -2320,6 +2350,7 @@ end
 function dcsCommon.isPlayerUnit(theUnit)
 	-- new patch. simply check if getPlayerName returns something
 	if not theUnit then return false end 
+	if not Unit.isExist(theUnit) then return end 
 	if not theUnit.getPlayerName then return false end -- map/static object 
 	local pName = theUnit:getPlayerName()
 	if pName then return true end 
