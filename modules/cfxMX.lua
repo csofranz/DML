@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.3"
+cfxMX.version = "1.2.4"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -23,7 +23,7 @@ cfxMX.verbose = false
 		 - playerUnitByName
    1.2.3 - groupTypeByName
 		 - groupCoalitionByName
-		 
+   1.2.4 - playerUnit2Group cross index 
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
@@ -40,6 +40,7 @@ cfxMX.allStaticByName = {}
 
 cfxMX.playerGroupByName = {} -- returns data only if a player is in group 
 cfxMX.playerUnitByName = {} -- returns data only if this is a player unit 
+cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -240,6 +241,7 @@ function cfxMX.createCrossReferences()
 													-- player unit 
 													cfxMX.playerUnitByName[unit_data.name] = unit_data
 													cfxMX.playerGroupByName[aName] = group_data -- inefficient, but works
+													cfxMX.playerUnit2Group[unit_data.name] = group_data
 												end -- if unit skill client
 											end -- if has skill
 										end -- for all units

@@ -1,5 +1,5 @@
 radioTrigger = {}
-radioTrigger.version = "1.0.0"
+radioTrigger.version = "1.0.1"
 radioTrigger.verbose = false 
 radioTrigger.ups = 1 
 radioTrigger.requiredLibs = {
@@ -11,6 +11,7 @@ radioTrigger.radioTriggers = {}
 --[[--
 	Version History 
 	1.0.0 - initial version
+	1.0.1 - guarding rtOut to not bang on flags when not set 
 	
 --]]--
 
@@ -50,8 +51,9 @@ function radioTrigger.createRadioTriggerWithZone(theZone)
 	end
 	
 	-- out flag 
-	theZone.rtOutFlag = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
-	if cfxZones.hasProperty(theZone, "rtOut!") then 
+	if cfxZones.hasProperty(theZone, "out!") then 
+		theZone.rtOutFlag = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
+	elseif cfxZones.hasProperty(theZone, "rtOut!") then 
 		theZone.rtOutFlag = cfxZones.getStringFromZoneProperty(theZone, "rtOut!", "*<none>") 
 	end
 	
@@ -66,8 +68,9 @@ end
 --
 function radioTrigger.process(theZone)
 	-- we are triggered, simply poll the out flag 
-	cfxZones.pollFlag(theZone.rtOutFlag, theZone.rtMethod, theZone)
-	
+	if theZone.rtOutFlag then 
+		cfxZones.pollFlag(theZone.rtOutFlag, theZone.rtMethod, theZone)
+	end
 end
 
 --

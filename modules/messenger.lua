@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.0.0"
+messenger.version = "2.0.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -42,6 +42,7 @@ messenger.messengers = {}
 		  - messageError 
 		  - unit 
 		  - group 
+	2.0.1 - config optimization
 	
 --]]--
 
@@ -480,7 +481,7 @@ function messenger.readConfigZone()
 		if messenger.verbose then 
 			trigger.action.outText("+++msgr: NO config zone!", 30)
 		end 
-		return 
+		theZone =  cfxZones.createSimpleZone("messengerConfig")
 	end 
 	
 	messenger.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)

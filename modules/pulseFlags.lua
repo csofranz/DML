@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.3.0"
+pulseFlags.version = "1.3.1"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -36,6 +36,7 @@ pulseFlags.requiredLibs = {
 	- 1.2.3 deprecated paused/pulsePaused 
 	        returned onStart, defaulting to true
 	- 1.3.0 persistence
+	- 1.3.1 typos corrected
 	
 --]]--
 
@@ -326,7 +327,7 @@ function pulseFlags.loadData()
 	local theData = persistence.getSavedDataForModule("pulseFlags")
 	if not theData then 
 		if pulseFlags.verbose then 
-			trigger.action.outText("+++pulF Persistence: no save date received, skipping.", 30)
+			trigger.action.outText("+++pulF Persistence: no save data received, skipping.", 30)
 		end
 		return
 	end

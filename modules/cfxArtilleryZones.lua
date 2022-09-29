@@ -1,5 +1,5 @@
 cfxArtilleryZones = {}
-cfxArtilleryZones.version = "2.2.1" 
+cfxArtilleryZones.version = "2.2.2" 
 cfxArtilleryZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -30,6 +30,7 @@ cfxArtilleryZones.verbose = false
 	   - code cleanup
  2.2.0 - DML Watchflag integration 
  2.2.1 - minor code clean-up
+ 2.2.2 - new doParametricFireAt()
  
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -257,6 +258,37 @@ function cfxArtilleryZones.doBoom(args)
 	data.strength = args.strength 
 	cfxArtilleryZones.invokeCallbacksFor('impact', args.zone, data)
 end
+
+function cfxArtilleryZones.doParametricFireAt(aPoint, accuracy, shellNum, shellBaseStrength, shellVariance, transitionTime)
+	-- accuracy is meters from center 
+	if not aPoint then return end 
+	if not accuracy then accuracy = 100 end 
+	if not shellNum then shellNum = 17 end 
+	if not shellBaseStrength then shellBaseStrength = 500 end 
+	if not shellVariance then shellVariance = 0.2 end 
+	if not transitionTime then transitionTime = 17 end 
+	
+	local alt = land.getHeight({x=aPoint.x, y=aPoint.z})
+	local center = {x=aPoint.x, y=alt, z=aPoint.z}
+	
+	for i=1, shellNum do
+		local thePoint = dcsCommon.randomPointInCircle(accuracy, 0, center.x, center.z)
+		thePoint.y = land.getHeight({x=thePoint.x, y=thePoint.z})
+		local boomArgs = {}
+		local strVar = shellBaseStrength * shellVariance
+		strVar = strVar * (2 * dcsCommon.randomPercent() - 1.0) -- go from -1 to 1
+		
+		boomArgs.strength = shellBaseStrength + strVar
+		thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z}) + 1  -- elevate to ground height + 1
+		boomArgs.point = thePoint
+		boomArgs.zone = aZone
+		local timeVar = 5 * (2 * dcsCommon.randomPercent() - 1.0) -- +/- 1.5 seconds
+		if timeVar < 0 then timeVar = -timeVar end 
+
+		timer.scheduleFunction(cfxArtilleryZones.doBoom, boomArgs, timer.getTime() + transitionTime + timeVar)
+	end
+end
+
 
 function cfxArtilleryZones.doFireAt(aZone, maxDistFromCenter)
 	if type(aZone) == "string" then 

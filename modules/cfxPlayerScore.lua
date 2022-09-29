@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "1.4.0"
+cfxPlayerScore.version = "1.5.1"
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
 cfxPlayerScore.announcer = true 
@@ -27,9 +27,13 @@ cfxPlayerScore.announcer = true
 	      - removed dependency to cfxPlayer 
 	1.4.0 - persistence support 
 	      - better unit-->static switch support for generic type kill
-	
+	1.5.0 - added feats to score
+	      - feats API 
+		  - logFeatForPlayer(playerName, theFeat, coa)
+	1.5.1 - init feats before reading 
 		  
 --]]--
+
 cfxPlayerScore.requiredLibs = {
 	"dcsCommon", -- this is doing score keeping
 	"cfxZones", -- zones for config 
@@ -148,8 +152,10 @@ function cfxPlayerScore.getPlayerScore(playerName)
 		thePlayerScore = {}
 		thePlayerScore.name = playerName
 		thePlayerScore.score = 0 -- score
-		thePlayerScore.killTypes = {} -- the type strings killed
+		thePlayerScore.killTypes = {} -- the type strings killed, dict <typename> <numkilla>
 		thePlayerScore.totalKills = 0 -- number of kills total 
+		thePlayerScore.featTypes = {} -- dict <featname> <number> of other things player did 
+		thePlayerScore.totalFeats = 0		
 	end
 	return thePlayerScore
 end
@@ -184,11 +190,50 @@ function cfxPlayerScore.logKillForPlayer(playerName, theUnit)
 	cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
 end
 
+function cfxPlayerScore.logFeatForPlayer(playerName, theFeat, coa)
+	if not theFeat then return end
+	if not playerName then return end 
+	-- access player's record. will alloc if new by itself
+	local thePlayerScore = cfxPlayerScore.getPlayerScore(playerName)
+	if not thePlayerScore.featTypes then thePlayerScore.featTypes = {} end
+	local featCount = thePlayerScore.featTypes[theFeat]
+	if featCount == nil then 
+		featCount = 0
+	end
+	featCount = featCount + 1
+	thePlayerScore.totalFeats = thePlayerScore.totalFeats + 1
+	thePlayerScore.featTypes[theFeat] = featCount
+	
+	if coa then 
+		trigger.action.outTextForCoalition(coa, playerName .. " achieved " .. theFeat, 30)
+		trigger.action.outSoundForCoalition(coa, cfxPlayerScore.scoreSound)
+	end
+	cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
+end
+
 function cfxPlayerScore.playerScore2text(thePlayerScore)
 	local desc = thePlayerScore.name .. " - score: ".. thePlayerScore.score .. " - kills: " .. thePlayerScore.totalKills .. "\n"
 	-- now go through all killSide
+	if dcsCommon.getSizeOfTable(thePlayerScore.killTypes)  < 1 then 
+		desc = desc .. "    - NONE -\n"
+	end
 	for theType, quantity in pairs(thePlayerScore.killTypes) do 
 		desc = desc .. "  - " .. theType .. ": " .. quantity .. "\n"
+	end
+	
+	-- now enumerate all feats
+	if not thePlayerScore.featTypes then thePlayerScore.featTypes = {} end
+	
+	desc = desc .. "\nOther Accomplishments:\n"
+	if dcsCommon.getSizeOfTable(thePlayerScore.featTypes) < 1 then 
+		desc = desc .. "    - NONE -\n"
+	end
+	for theFeat, quantity in pairs(thePlayerScore.featTypes) do 
+		desc = desc .. "  - " .. theFeat
+		if quantity > 1 then 
+			desc = desc .. " (x" .. quantity .. ")"
+		end 
+		desc = desc .. "\n"
 	end
 	return desc
 end

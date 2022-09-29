@@ -1,5 +1,5 @@
 LZ = {}
-LZ.version = "1.0.0"
+LZ.version = "1.1.0"
 LZ.verbose = false 
 LZ.ups = 1 
 LZ.requiredLibs = {
@@ -14,6 +14,7 @@ LZ.LZs = {}
 	
 	Version History 
 	1.0.0 - initial version 
+	1.1.0 - persistence 
 	
 --]]--
 
@@ -131,13 +132,12 @@ end
 -- Misc Processing
 --
 function LZ.unitIsInterestingForZone(theUnit, theZone)
-	--trigger.action.outText("enter isInterestingB4pause for <" .. theUnit:getName() .. ">", 40)
 	
 	-- see if zone is interested in this unit.
 	if theZone.isPaused then 
 		return false 
 	end 
---	trigger.action.outText("enter isinteresting for <" .. theUnit:getName() .. ">", 40)
+
 	if theZone.lzPlayerOnly then 
 		if not dcsCommon.isPlayerUnit(theUnit) then 
 			if theZone.verbose or LZ.verbose then
@@ -198,11 +198,7 @@ function LZ.unitIsInterestingForZone(theUnit, theZone)
 	else 
 		-- we can return true since player and coa mismatch 
 		-- have already been filtered 
---[[--		-- neither type, unit, nor group 
-		local theGroup = theUnit:getGroup()
-		local coa = theGroup:getCoalition()
-		-- 
---]]--
+
 		return true -- theZone.coalition == coa end
 	end
 	
@@ -223,18 +219,10 @@ function LZ:onEvent(event)
 	   event.id ~= world.event.S_EVENT_LAND then
         return
     end
-	
-	--if LZ.verbose or true then 
-	--	trigger.action.outText("+++LZ: on event proccing", 30)
-	--end
 					
 	local theUnit = event.initiator
 	if not Unit.isExist(theUnit) then return end 
 	local p = theUnit:getPoint()
-	
-	--if LZ.verbose or true then 
-	--	trigger.action.outText("+++LZ: before iterating zones", 30)
-	--end
 	
     for idx, aZone in pairs(LZ.LZs) do 
 		-- see if inside the zone 
@@ -258,8 +246,8 @@ function LZ:onEvent(event)
 				end
 			end -- if interesting
 		else 
-			if LZ.verbose or true then 
-			--	trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> not in zone <" .. aZone.name .. ">", 30)
+			if LZ.verbose or aZone.verbose then 
+				--trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> not in zone <" .. aZone.name .. ">", 30)
 			end
 		
 		end -- if in zone 
@@ -293,12 +281,57 @@ function LZ.update()
 end
 
 --
+-- LOAD / SAVE 
+-- 
+function LZ.saveData()
+	local theData = {}
+	local allLZ = {}
+	for idx, theLZ in pairs(LZ.LZs) do 
+		local theName = theLZ.name 
+		local LZData = {}
+ 		LZData.isPaused = theLZ.isPaused
+		
+		allLZ[theName] = LZData 
+	end
+	theData.allLZ = allLZ
+	return theData
+end
+
+function LZ.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("LZ")
+	if not theData then 
+		if LZ.verbose then 
+			trigger.action.outText("+++LZ persistence: no save data received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allLZ = theData.allLZ
+	if not allLZ then 
+		if LZ.verbose then 
+			trigger.action.outText("+++LZ persistence: no LZ data, skipping", 30)
+		end		
+		return
+	end
+	
+	for theName, theData in pairs(allLZ) do 
+		local theLZ = LZ.getLZByName(theName)
+		if theLZ then 
+			theLZ.isPaused = theData.isPaused
+		else 
+			trigger.action.outText("+++LZ: persistence: cannot synch LZ <" .. theName .. ">, skipping", 40)
+		end
+	end
+end
+
+--
 -- Config & Start
 --
 function LZ.readConfigZone()
 	local theZone = cfxZones.getZoneByName("LZConfig") 
 	if not theZone then 
-		theZone = cfxZones.createSimpleZone(LZConfig)
+		theZone = cfxZones.createSimpleZone("LZConfig")
 		if LZ.verbose then 
 			trigger.action.outText("+++LZ: NO config zone!", 30)
 		end 
@@ -335,6 +368,16 @@ function LZ.start()
 	
 	-- connect event handler 
 	world.addEventHandler(LZ)
+	
+	-- load any saved data 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = LZ.saveData
+		persistence.registerModule("LZ", callbacks)
+		-- now load my data 
+		LZ.loadData()
+	end
 	
 	-- start update 
 	LZ.update()

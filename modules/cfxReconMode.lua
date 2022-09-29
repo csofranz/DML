@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.1.2"
+cfxReconMode.version = "2.1.3"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -18,6 +18,7 @@ cfxReconMode.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
+cfxReconMode.name = "cfxReconMode" -- to be compatible with test flags 
 
 --[[--
 VERSION HISTORY
@@ -82,6 +83,7 @@ VERSION HISTORY
  2.1.2 - imperialUnits for elevation
        - <ele> wildcard in message format 
 	   - fix for mgrs bug in message (zone coords, not unit)
+ 2.1.3 - added cfxReconMode.name to allow direct acces with test zone flag 
 	   
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 

@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.2.1"
+cfxOwnedZones.version = "1.2.2"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -46,6 +46,8 @@ cfxOwnedZones.name = "cfxOwnedZones"
       - conq+1 --> conquered!
 	  - no cfxGroundTroop bug (no delay)
 1.2.1 - fix in load to correctly re-establish all attackers for subsequent save 
+1.2.2 - redCap! and blueCap!
+
 	  
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -218,9 +220,18 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	local paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
 	aZone.paused = paused 
 	
-	aZone.conqueredFlag = cfxZones.getStringFromZoneProperty(aZone, "conquered!", "*<cfxnone>")
-	if cfxZones.hasProperty(aZone, "conq+1") then 
+	if cfxZones.hasProperty(aZone, "conquered!") then 
+		aZone.conqueredFlag = cfxZones.getStringFromZoneProperty(aZone, "conquered!", "*<cfxnone>")
+	elseif cfxZones.hasProperty(aZone, "conq+1") then 
 		aZone.conqueredFlag = cfxZones.getStringFromZoneProperty(aZone, "conq+1", "*<cfxnone>")
+	end
+	
+	if cfxZones.hasProperty(aZone, "redCap!") then 
+		aZone.redCap = cfxZones.getStringFromZoneProperty(aZone, "redCap!", "none")
+	end
+	
+	if cfxZones.hasProperty(aZone, "blueCap!") then 
+		aZone.blueCap = cfxZones.getStringFromZoneProperty(aZone, "blueCap!", "none")
 	end
 	
 	aZone.unbeatable = cfxZones.getBoolFromZoneProperty(aZone, "unbeatable", false)
@@ -517,12 +528,19 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 			trigger.action.outSoundForCoalition(1, "Death BRASS.wav")
 		end
 	end 
-	-- increase conq flag 
---	if aZone.conqueredFlag then 
-		-- local lastVal = trigger.misc.getUserFlag(aZone.conqueredFlag)
-		-- trigger.action.setUserFlag(aZone.conqueredFlag, lastVal + 1)
-	cfxZones.pollFlag(aZone.conqueredFlag, "inc", aZone) 
---	end
+
+	if aZone.conqueredFlag then 
+		cfxZones.pollFlag(aZone.conqueredFlag, "inc", aZone)
+	end 
+	
+	if theSide == 1 and aZone.redCap then 
+		cfxZones.pollFlag(aZone.redCap, "inc", aZone)
+	end
+	
+	if theSide == 2 and aZone.blueCap then 
+		cfxZones.pollFlag(aZone.blueCap, "inc", aZone)
+	end
+	
 	-- invoke callbacks now
 	cfxOwnedZones.invokeConqueredCallbacks(aZone, theSide, formerOwner)
 	

@@ -52,6 +52,8 @@ limitedAirframes.requiredLibs = {
  - 1.4.1 - removed dependency to cfxPlayer
  - 1.5.0 - persistence support 
  - 1.5.1 - new "announcer" attribute
+ - 1.5.2 - integration with autoCSAR: prevent limitedAF from creating csar 
+           when autoCSAR is active 
 		   
 --]]--
 
@@ -665,6 +667,9 @@ end
 
 
 function limitedAirframes.createCSAR(theUnit)
+	-- override if autoCSAR is installed
+	if autoCSAR then return end 
+	
 	-- only do this if we have installed CSAR Manager
 	if csarManager and csarManager.createCSARforUnit then 
 		csarManager.createCSARforUnit(theUnit, 

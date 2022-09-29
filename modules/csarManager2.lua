@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.1.3"
+csarManager.version = "2.2.0"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -41,6 +41,14 @@ csarManager.ups = 1
  - 2.1.3 - theMassObject now local 
 		 - winch pickup now also adds weight so they can be returned 
 		 - made some improvements to performance by making vars local 
+ - 2.2.0 - interface for autoCSAR 
+			createDownedPilot() - added existingUnit option 
+			createCSARMissionData() - added existinUnit option
+		 - when no config zone, runs through empty zone 
+		 - actionSound 
+		 - integration with playerScore 
+		 - score global and per-mission 
+		 - isCSARTarget API 
 		 
  
 --]]--
@@ -53,79 +61,13 @@ csarManager.requiredLibs = {
 	"cargoSuper",
 --	"cfxCommander", -- needed if you want to hand-create CSAR missions
 }
+-- integrates automatically with playerScore if installed
 
--- *** DOES NOT EXTEND ZONES *** BUT USES OWN STRUCT 
--- *** extends zones for csarMission zones though
 
---[[--
-	CSAR MANAGER
-	============
-
- This module can create and manage CSAR missions, i.e. 
- create a unit on the ground, mark it on the map, handle
- if the unit is killed, create enemies in the vicinity 
- 
- It will install a menu in any troop helicopter as
- determined by dcsCommon.isTroopCarrier() with the 
- option to list available csar mission. for each created mission
- it will give range and frequency for ADF
- When a helicopter is in range, it will set smoke to better 
- visually identify the location. 
- 
- When the helicopter lands close enough to a downed pilot,
- the pilot is picket up automatically. Their weight is added
- to the unit, so it may overload!
- 
- When the helicopter than lands in a CSARBASE Zone, the mission is 
- a success and a success callback is invoked automatically for 
- all picked up groups. All zones that have the CSARBASE property are
- CSAR Bases, but their coalition must be either neutral or match the 
- one of the unit that landed
- 
- On start, it scans all zones for a CSAR property, and creates
- a CSAR mission with data taken from the properties in the 
- zone so you can easily create CSAR missions in ME
- 
- WARNING: ASSUMES SINGLE UNIT PLAYER GROUPS
- ==========================================
-
- Main Interface
- - createCSARMission(location, side, numCrew, mark, clearing, timeout)
-   creates a csar mission that can be tracked. 
-   location is the position on the map
-   side is the side the unit is on (neutal is for any side)
-   numCrew the number of people (1-4)
-   mark true if marked on map 
-   clearing will create a clearing 
-   timeout - time in seconds until pilots die. timer stops on pickup
-   RETURNS true, "ok" --  false, "fail reason" (string)
-
- - createCSARAdversaries(location, side, numEnemies, radius, maxRadius)
-   creates some random infantery randomized on a circle around the location 
-   location - center, usually where the downed pilot is
-   side - side of the enemy red/blue
-   numEnemies - number of infantry 
-   radius[, maxRadius] distance of the enemy troops
-
- - in ME, create at least one zone with a property named "CSARBASE" for 
-   each side that supports csar missions. This is where the players 
-   can drop off pilots that they rescued. If you have no CSARBASE zone 
-   defined, you'll receive a warning for that side when you attempt a 
-   rescue
-   
- - in ME you can place zones with a CSAR attribute that will generate 
-   a scar mission. Further attributes are "coalition" (red/blue), "name" (any name you like) and "freq" (for elt ADR, leave empty for random)
-   
-   NOTE:
-     CSARBASE is compatible with the FARP Attribute of 
-	 FARP Zones 
-	 
-   
---]]--
 --
 -- OPTIONS
 --
-csarManager.useSmoke = false -- smoke is a performance killer, so you can turn it off 
+csarManager.useSmoke = true -- smoke is a performance killer, so you can turn it off 
 csarManager.smokeColor = 4 -- when using smoke
 
 
@@ -158,38 +100,48 @@ csarManager.csarCompleteCB = {}
 --
 -- CREATING A CSAR 
 --
-function csarManager.createDownedPilot(theMission)
+function csarManager.createDownedPilot(theMission, existingUnit)
+	
 	if not cfxCommander then 
 		trigger.action.outText("+++CSAR: can't create mission, module cfxCommander is missing.", 30)
 		return 
 	end
 	
-	local aLocation = {}
-	local aHeading = 0 -- in rads
-	local newTargetZone = theMission.zone
-	aLocation, aHeading = dcsCommon.randomPointOnPerimeter(newTargetZone.radius / 2 + 3, newTargetZone.point.x, newTargetZone.point.z) 
+	if not existingUnit then 
+		local aLocation = {}
+		local aHeading = 0 -- in rads
+		local newTargetZone = theMission.zone
+		if newTargetZone.radius > 1 then 
+			aLocation, aHeading = dcsCommon.randomPointOnPerimeter(newTargetZone.radius / 2 + 3, newTargetZone.point.x, newTargetZone.point.z) 
+		else 
+			aLocation.x = newTargetZone.point.x
+			aLocation.z = newTargetZone.point.z
+			aHeading = math.random(360)/360 * 2 * 3.1415 
+		end
 
-	local theBoyGroup = dcsCommon.createSingleUnitGroup(theMission.name, 
-							"Soldier M4 GRG", -- "Soldier M4 GRG",
-							aLocation.x, 
-							aLocation.z, 
-							-aHeading + 1.5) -- + 1.5 to turn inwards
-	
-	-- WARNING:
-	-- coalition.addGroup takes the COUNTRY of the group, and derives the 
-	-- coalition from that. So if mission.sie is 0, we use UN, if it is 1 (red) it
-	-- is joint red, if 2 it is joint blue 
-	local theSideCJTF = dcsCommon.coalition2county(theMission.side) -- get the correct county CJTF 
-	theMission.group = coalition.addGroup(theSideCJTF, 
-										  Group.Category.GROUND, 
-										  theBoyGroup)
-	
-	if theBoyGroup then 
+		local theBoyGroup = dcsCommon.createSingleUnitGroup(theMission.name, 
+								"Soldier M4 GRG", -- "Soldier M4 GRG",
+								aLocation.x, 
+								aLocation.z, 
+								-aHeading + 1.5) -- + 1.5 to turn inwards
+		
+		-- WARNING:
+		-- coalition.addGroup takes the COUNTRY of the group, and derives the 
+		-- coalition from that. So if mission.sie is 0, we use UN, if it is 1 (red) it
+		-- is joint red, if 2 it is joint blue 
+		local theSideCJTF = dcsCommon.coalition2county(theMission.side) -- get the correct county CJTF 
+		theMission.group = coalition.addGroup(theSideCJTF, 
+											  Group.Category.GROUND, 
+											  theBoyGroup)
+		
+		if theBoyGroup then 
 
+		else 
+			trigger.action.outText("+++csar: FAILED to create csar!", 30)
+		end
 	else 
-		trigger.action.outText("+++csar: FAILED to create csar!", 30)
+		theMission.group = existingUnit:getGroup()
 	end
-	
 	
 	-- we now use commands to send radio transmissions
 	local ADF = 20 + math.random(90)
@@ -202,7 +154,7 @@ function csarManager.createDownedPilot(theMission)
 	cfxCommander.scheduleCommands(theCommands, 2) -- in 2 seconds, so unit has time to percolate through DCS
 end
 
-function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, timeLimit, mapMarker, inRadius)
+function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, timeLimit, mapMarker, inRadius, parashootUnit) -- if parashootUnit is set, will not allocate new
 	-- create a type 
 	if not timeLimit then timeLimit = -1 end
 	if not point then return nil end 
@@ -228,7 +180,7 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 	newMission.freq = freq -- if nil will make random 
 			
 	-- allocate units
-	csarManager.createDownedPilot(newMission)
+	csarManager.createDownedPilot(newMission, parashootUnit)
 	
 	-- update counter and return
 	csarManager.missionID = csarManager.missionID + 1
@@ -261,6 +213,13 @@ function csarManager.removeMissionForGroup(theDownedGroup)
 		end
 	end
 	csarManager.openMissions = newMissions -- this is the new batch
+end
+
+function csarManager.isCSARTarget(theGroup) 
+	for idx, theMission in pairs(csarManager.openMissions) do
+		if theMission.group == theGroup then return true end
+	end 
+	return false
 end
 --
 -- UNIT CONFIG 
@@ -308,7 +267,9 @@ end
 
 function csarManager.removeConfigForUnitNamed(aName) 
 	if not aName then return end 
-	if csarManager.unitConfigs[aName] then csarManager.unitConfigs[aName] = nil end
+	if csarManager.unitConfigs[aName] then 
+		csarManager.unitConfigs[aName] = nil 
+	end
 end
 
 --
@@ -376,6 +337,25 @@ end
 --
 
 function csarManager.successMission(who, where, theMission)
+	-- who is 
+	-- where is 
+	-- theMission is mission table 
+	
+	-- playerScore integration
+	if cfxPlayerScore then 
+		local theScore = theMission.score 
+		if not theScore then theScore = csarManager.rescueScore end
+		
+		local theUnit = Unit.getByName(who)
+		if theUnit and theUnit.getPlayerName then 
+			local pName = theUnit:getPlayerName()
+			if pName then 
+				cfxPlayerScore.updateScoreForPlayer(pName, theScore)
+				cfxPlayerScore.logFeatForPlayer(pName, "Evacuated " .. theMission.name)
+			end
+		end
+	end
+	
 	trigger.action.outTextForCoalition(theMission.side,
 		who .. " successfully evacuated " .. theMission.name .. " to " .. where .. "!", 
 		30)
@@ -385,7 +365,7 @@ function csarManager.successMission(who, where, theMission)
 	
 	csarManager.invokeCallbacks(theMission.side, true, 1, "success")
 
-	trigger.action.outSoundForCoalition(theMission.side, "Quest Snare 3.wav")
+	trigger.action.outSoundForCoalition(theMission.side, csarManager.actionSound) -- "Quest Snare 3.wav")
 	
 	if csarManager.csarRedDelivered and theMission.side == 1 then 
 		cfxZones.pollFlag(csarManager.csarRedDelivered, "inc", csarManager.configZone)
@@ -536,7 +516,7 @@ function csarManager.heloLanded(theUnit)
 				theMassObject)
 	end
 	if didPickup then 
-		trigger.action.outSoundForCoalition(mySide, "Quest Snare 3.wav")
+		trigger.action.outSoundForCoalition(mySide, csarManager.actionSound) -- "Quest Snare 3.wav")
 	end
 	-- reset unit's weight based on people on board
 	local totalMass = cargoSuper.calculateTotalMassFor(myName)
@@ -756,7 +736,7 @@ function csarManager.doListCSARRequests(args)
 	report = report .. "\n"
 	
 	trigger.action.outTextForGroup(conf.id, report, 30)
-	trigger.action.outSoundForGroup(conf.id, "Quest Snare 3.wav")
+	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) --  "Quest Snare 3.wav")
 end
 
 function csarManager.redirectStatusCarrying(args)
@@ -789,7 +769,7 @@ function csarManager.doStatusCarrying(args)
 	report = report .. "\n"
 	
 	trigger.action.outTextForGroup(conf.id, report, 30)
-	trigger.action.outSoundForGroup(conf.id, "Quest Snare 3.wav")
+	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) -- "Quest Snare 3.wav")
 end
 
 function csarManager.redirectUnloadOne(args)
@@ -807,14 +787,14 @@ function csarManager.unloadOne(args)
 	if theUnit:inAir() then 
 		report = "STRONGLY recommend we land first, Sir!"
 		trigger.action.outTextForGroup(conf.id, report, 30)
-		trigger.action.outSoundForGroup(conf.id, "Quest Snare 3.wav")
+		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) -- "Quest Snare 3.wav")
 		return 
 	end
 	
 	if #conf.troopsOnBoard < 1 then
 		report = "No evacuees on board."
 		trigger.action.outTextForGroup(conf.id, report, 30)
-		trigger.action.outSoundForGroup(conf.id, "Quest Snare 3.wav")
+		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) -- "Quest Snare 3.wav")
 		
 	else 
 		-- simulate a crash but for one unit 
@@ -829,7 +809,7 @@ function csarManager.unloadOne(args)
 		--TODO: remove weight for this pilot!
 		
 		trigger.action.outTextForCoalition(theSide, myName .. " has aborted evacuating " .. msn.name .. ". New CSAR available.", 30)
-		trigger.action.outSoundForCoalition(theSide, "Quest Snare 3.wav")
+		trigger.action.outSoundForCoalition(theSide, csarManager.actionSound) -- "Quest Snare 3.wav")
 		
 		-- recalc weight
 		trigger.action.setUnitInternalCargo(myName, 10 + #conf.troopsOnBoard * csarManager.pilotWeight) -- 10 kg as empty + per-unit time people 
@@ -933,7 +913,7 @@ function csarManager.updateCSARMissions()
 		else 
 			local msg = aMission.name .. " confirmed KIA, repeat KIA. Abort CSAR."	
 			trigger.action.outTextForCoalition(aMission.side, msg, 30)
-			trigger.action.outSoundForCoalition(aMission.side, "Quest Snare 3.wav")
+			trigger.action.outSoundForCoalition(aMission.side, csarManager.actionSound) -- "Quest Snare 3.wav")
 		end
 	end
 	csarManager.openMissions = newMissions -- this is the new batch
@@ -981,7 +961,7 @@ function csarManager.update() -- every second
 							end
 							msg = msg .. "\n"
 							trigger.action.outTextForGroup(uID, msg, 30)
-							trigger.action.outSoundForGroup(uID, "Quest Snare 3.wav")
+							trigger.action.outSoundForGroup(uID, csarManager.actionSound) -- "Quest Snare 3.wav")
 							table.insert(csarMission.messagedUnits, uName) -- remember that we messaged them so we don't do again
 						end
 						-- also pop smoke if not popped already, or more than 5 minutes ago
@@ -1046,7 +1026,7 @@ function csarManager.update() -- every second
 											end
 											
 											trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
-											trigger.action.outSoundForGroup(uID, "Quest Snare 3.wav")
+											trigger.action.outSoundForGroup(uID, csarManager.actionSound) --"Quest Snare 3.wav")
 
 											return -- we only ever rescue one 
 										end -- hovered long enough 
@@ -1104,7 +1084,7 @@ end
 --
 -- create a CSAR Mission for a unit 
 -- 
-function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent)
+function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score) -- invoked with aircraft as theUnit, usually still in air
 	if not silent then silent = false end 
 	if not radius then radius = 1000 end 
 	if not pilotName then pilotName = "Eddie" end 
@@ -1121,7 +1101,7 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent)
 	if surf == 2 or surf == 3 then 
 		if not silent then 
 			trigger.action.outTextForCoalition(coal, "Bad chute! Bad chute! ".. pilotName .. " did not survive ejection out of their " .. theUnit:getTypeName(), 30)
-			trigger.action.outSoundForGroup(coal, "Quest Snare 3.wav")
+			trigger.action.outSoundForGroup(coal, csarManager.actionSound) --  "Quest Snare 3.wav")
 		end
 		return 
 	end
@@ -1137,13 +1117,26 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent)
 		1, 
 		nil, 
 		nil)
+	theMission.score = score 
 	csarManager.addMission(theMission)
 	if not silent then 
 		trigger.action.outTextForCoalition(coal, "MAYDAY MAYDAY MAYDAY! ".. pilotName .. " in " .. theUnit:getTypeName() .. " ejected, report good chute. Prepare CSAR!", 30)
-		trigger.action.outSoundForGroup(coal, "Quest Snare 3.wav")
+		trigger.action.outSoundForGroup(coal, csarManager.actionSound) -- "Quest Snare 3.wav")
 	end 
 end
 
+function csarManager.createCSARForParachutist(theUnit, name) -- invoked with parachute guy on ground as theUnit
+	local coa = theUnit:getCoalition()
+	local pos = theUnit:getPoint()
+	-- unit DOES NOT HAVE GROUP!!!
+	-- create a CSAR mission now
+	local theMission = csarManager.createCSARMissionData(pos, coa, nil, name, nil, nil, nil, 0.1, nil)
+	csarManager.addMission(theMission)
+--	if not silent then 
+		trigger.action.outTextForCoalition(coa, "MAYDAY MAYDAY MAYDAY! ".. name ..  " requesting extraction after eject!", 30)
+		trigger.action.outSoundForGroup(coa, csarManager.actionSound) -- "Quest Snare 3.wav")
+--	end 
+end
 
 --
 -- csar (mission) zones 
@@ -1199,6 +1192,9 @@ function csarManager.readCSARZone(theZone)
 		theZone.lastCSARVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
 	end 
 	
+	if cfxZones.hasProperty(theZone, "score") then 
+		theZone.score = cfxZones.getNumberFromZoneProperty(theZone, "score", 100)
+	end
 	
 	if (not deferred) then 
 		local theMission = csarManager.createCSARMissionData(
@@ -1240,9 +1236,6 @@ end
 -- Init & Start 
 --
 
-
-
-
 function csarManager.invokeCallbacks(theCoalition, success, numRescued, notes)
 	-- invoke anyone who wants to know that a group 
 	-- of people was rescued.
@@ -1261,7 +1254,7 @@ function csarManager.readConfigZone()
 		if csarManager.verbose then 
 			trigger.action.outText("+++csar: NO config zone!", 30)
 		end 
-		return 
+		theZone = cfxZones.createSimpleZone("csarManagerConfig") 
 	end 
 	csarManager.configZone = theZone -- save for flag banging compatibility 
 	
@@ -1284,7 +1277,7 @@ function csarManager.readConfigZone()
 	
 	if cfxZones.hasProperty(theZone, "csarDelivered!") then 
 		csarManager.csarDelivered = cfxZones.getStringFromZoneProperty(theZone, "csarDelivered!", "*<none>")
-		trigger.action.outText("+++csar: will bang csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+		--trigger.action.outText("+++csar: will bang csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
 	end
 	
 	csarManager.rescueRadius = cfxZones.getNumberFromZoneProperty(theZone, "rescueRadius", 70) --70 -- must land within 50m to rescue
@@ -1295,6 +1288,9 @@ function csarManager.readConfigZone()
 	csarManager.beaconSound = cfxZones.getStringFromZoneProperty(theZone, "beaconSound", "Radio_beacon_of_distress_on_121.ogg") --"Radio_beacon_of_distress_on_121,5_MHz.ogg"
 	csarManager.pilotWeight = cfxZones.getNumberFromZoneProperty(theZone, "pilotWeight", 120) -- 120
 	
+	csarManager.rescueScore = cfxZones.getNumberFromZoneProperty(theZone, "rescueScore", 100)
+	
+	csarManager.actionSound = cfxZones.getStringFromZoneProperty(theZone, "actionSound", "Quest Snare 3.wav")
 	csarManager.vectoring = cfxZones.getBoolFromZoneProperty(theZone, "vectoring", true)
 	
 	if csarManager.verbose then 
@@ -1373,4 +1369,5 @@ end
 	
 	- when unloading one by menu, update weight!!!
 	
+	-- allow neutral pick-up
 --]]--

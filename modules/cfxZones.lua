@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.8.5"
+cfxZones.version = "2.8.7"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -92,6 +92,9 @@ cfxZones.version = "2.8.5"
 - 2.8.5   - createGroundUnitsInZoneForCoalition() now always passes back a copy of the group data 
           - data also contains cty = country and cat = category for easy spawn
           - getFlagValue additional zone name guards 
+- 2.8.6   - fix in getFlagValue for missing delay 
+- 2.8.7   - update isPointInsideZone(thePoint, theZone, radiusIncrease) - new radiusIncrease
+          - isPointInsideZone() returns delta as well
 
 --]]--
 cfxZones.verbose = false
@@ -507,17 +510,19 @@ function cfxZones.isPointInsidePoly(thePoint, poly)
 	return true
 end;
 
-function cfxZones.isPointInsideZone(thePoint, theZone)
+function cfxZones.isPointInsideZone(thePoint, theZone, radiusIncrease)
+	-- radiusIncrease only works for circle zones 
+	if not radiusIncrease then radiusIncrease = 0 end 
 	local p = {x=thePoint.x, y = 0, z = thePoint.z} -- zones have no altitude
 	if (theZone.isCircle) then 
 		local zp = cfxZones.getPoint(theZone)
 		local d = dcsCommon.dist(p, theZone.point)
-		return d < theZone.radius
+		return d < theZone.radius + radiusIncrease, d 
 	end 
 	
 	if (theZone.isPoly) then 
 		--trigger.action.outText("zne: isPointInside: " .. theZone.name .. " is Polyzone!", 30)
-		return (cfxZones.isPointInsidePoly(p, theZone.poly))
+		return (cfxZones.isPointInsidePoly(p, theZone.poly)), 0 -- always returns delta 0
 	end
 
 	trigger.action.outText("isPointInsideZone: Unknown zone type for " .. outerZone.name, 10)
@@ -1324,7 +1329,7 @@ end
 function cfxZones.getFlagValue(theFlag, theZone)
 	local zoneName = "<dummy>"
 	if not theZone or not theZone.name then 
-		trigger.action.outText("+++Zne: no zone or zone name on getFlagValue")
+		trigger.action.outText("+++Zne: no zone or zone name on getFlagValue", 30)
 	else 
 		zoneName = theZone.name -- for flag wildcards
 	end

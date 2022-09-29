@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "2.2.0"
+cfxHeloTroops.version = "2.3.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -22,7 +22,9 @@ cfxHeloTroops.pickupRange = 100 -- meters
 --       -- (re?) connected readConfigZone (wtf?)
 --       -- persistence support
 --       -- made legalTroops entrirely optional and defer to dcsComon else
-
+-- 2.3.0 -- interface with owned zones and playerScore when 
+--       -- combat-dropping troops into non-owned owned zone.
+--       -- prevent auto-load from pre-empting loading csar troops 
 --
 -- cfxHeloTroops -- a module to pick up and drop infantry. Can be used with any helo,
 -- might be used to configure to only certain
@@ -511,30 +513,39 @@ end
 
 function cfxHeloTroops.filterTroopsByType(unitsToLoad)
 	local filteredGroups = {}
-		for idx, aTeam in pairs(unitsToLoad) do 
-			local group = aTeam.group
-			local theTypes = dcsCommon.getGroupTypeString(group)
+	for idx, aTeam in pairs(unitsToLoad) do 
+		local group = aTeam.group
+		local theTypes = dcsCommon.getGroupTypeString(group)
 
-			local aT = dcsCommon.splitString(theTypes, ",")
-			local pass = true 
-			for iT, sT in pairs(aT) do 
-				-- check if this is a valid type 
-				if cfxHeloTroops.legalTroops then 
-					if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, sT) then 
-						pass = false
-						break 
-					end
-				else 
-					if not dcsCommon.typeIsInfantry(sT) then 
-						pass = false
-						break 
-					end
+		local aT = dcsCommon.splitString(theTypes, ",")
+		local pass = true 
+		for iT, sT in pairs(aT) do 
+			-- check if this is a valid type 
+			if cfxHeloTroops.legalTroops then 
+				if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, sT) then 
+					pass = false
+					break 
 				end
-			end 
-			if pass then 
-				table.insert(filteredGroups, aTeam)
+			else 
+				if not dcsCommon.typeIsInfantry(sT) then 
+					pass = false
+					break 
+				end
+			end
+		end 
+		-- check if we are about to pre-empt a CSAR mission
+		if csarManager then 
+			if csarManager.isCSARTarget(group) then 
+				-- this one is managed by csarManager,
+				-- don't load it for helo troops
+				pass = false 
 			end
 		end
+			
+		if pass then 
+			table.insert(filteredGroups, aTeam)
+		end
+	end
 	return filteredGroups
 end
 --
@@ -578,11 +589,42 @@ function cfxHeloTroops.redirectDeployTroops(args)
 	timer.scheduleFunction(cfxHeloTroops.doDeployTroops, args, timer.getTime() + 0.1)
 end
 
+function cfxHeloTroops.scoreWhenCapturing(theUnit)
+	if theUnit and Unit.isExist(theUnit) and theUnit.getPlayerName then 
+		-- see if wer are inside a non-alinged zone
+		-- and this includes a neutral zone 
+		local coa = theUnit:getCoalition()
+		local p = theUnit:getPoint()
+		local theGroup = theUnit:getGroup()
+		local ID = theGroup:getID()
+		local nearestZone, dist = cfxOwnedZones.getNearestOwnedZoneToPoint(p)
+		if nearestZone and dist < nearestZone.radius then 
+			-- we are inside an owned zone!
+			if nearestZone.owner ~= coa then 
+				-- yup, combat drop!
+				local theScore = cfxHeloTroops.combatDropScore
+				local pName = theUnit:getPlayerName()
+				if pName then 
+					cfxPlayerScore.updateScoreForPlayer(pName, theScore)
+					cfxPlayerScore.logFeatForPlayer(pName, "Combat Troop Insertion at " .. nearestZone.name, coa)
+				end
+			end
+		end
+	end
+end
+
 function cfxHeloTroops.doDeployTroops(args)
 	local conf = args[1]
 	local what = args[2]
 	-- deploy the troops I have on board in formation
 	cfxHeloTroops.deployTroopsFromHelicopter(conf)
+	
+	-- interface with playerscore if we dropped 
+	-- inside an enemy-owned zone 
+	if cfxPlayerScore and cfxOwnedZones then 
+		local theUnit = conf.unit
+		cfxHeloTroops.scoreWhenCapturing(theUnit)
+	end
 	
 	-- set own troops to 0 and erase type string 
 	conf.troopsOnBoardNum = 0
@@ -840,7 +882,7 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.autoDrop = cfxZones.getBoolFromZoneProperty(theZone, "autoDrop", false)	
 	cfxHeloTroops.autoPickup = cfxZones.getBoolFromZoneProperty(theZone, "autoPickup", false)
 	cfxHeloTroops.pickupRange = cfxZones.getNumberFromZoneProperty(theZone, "pickupRange", 100)
-	
+	cfxHeloTroops.combatDropScore = cfxZones.getNumberFromZoneProperty(theZone, "combatDropScore", 200)
 end
 
 --

@@ -1,5 +1,5 @@
 fireFX = {}
-fireFX.version = "1.0.0"
+fireFX.version = "1.1.0"
 fireFX.verbose = false 
 fireFX.ups = 1 
 fireFX.requiredLibs = {
@@ -7,6 +7,13 @@ fireFX.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 }
 fireFX.fx = {}
+
+--[[--
+	Version History 
+	1.0.0 - Initial version 
+	1.1.0 - persistence
+
+--]]--
 
 function fireFX.addFX(theZone)
 	table.insert(fireFX.fx, theZone)
@@ -128,12 +135,61 @@ function fireFX.update()
 end
 
 --
+-- LOAD / SAVE 
+-- 
+function fireFX.saveData()
+	local theData = {}
+	local allFX = {}
+	for idx, theFX in pairs(fireFX.fx) do 
+		local theName = theFX.name 
+		local FXData = {}
+ 		FXData.burning = theFX.burning
+		
+		allFX[theName] = FXData 
+	end
+	theData.allFX = allFX
+	return theData
+end
+
+function fireFX.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("fireFX")
+	if not theData then 
+		if fireFX.verbose then 
+			trigger.action.outText("+++ffx persistence: no save data received, skipping.", 30)
+		end
+		return
+	end
+	
+	local allFX = theData.allFX
+	if not allFX then 
+		if fireFX.verbose then 
+			trigger.action.outText("+++ffx persistence: no fire FX data, skipping", 30)
+		end		
+		return
+	end
+	
+	for theName, theData in pairs(allFX) do 
+		local theFX = fireFX.getFXByName(theName)
+		if theFX then 
+			if theData.burning then 
+				fireFX.startTheFire(theFX)
+			end
+			theFX.inited = true -- ensure no onStart overwrite 
+		else 
+			trigger.action.outText("+++ffx: persistence: cannot synch fire FX <" .. theName .. ">, skipping", 40)
+		end
+	end
+end
+
+
+--
 -- Config & Start
 --
 function fireFX.readConfigZone()
 	local theZone = cfxZones.getZoneByName("fireFXConfig") 
 	if not theZone then 
-		theZone = cfxZones.createSimpleZone(LZConfig)
+		theZone = cfxZones.createSimpleZone("fireFX")
 		if fireFX.verbose then 
 			trigger.action.outText("+++ffx: NO config zone!", 30)
 		end 
@@ -165,9 +221,20 @@ function fireFX.start()
 		fireFX.addFX(aZone) -- add to list
 	end
 	
+	-- load any saved data 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = fireFX.saveData
+		persistence.registerModule("fireFX", callbacks)
+		-- now load my data 
+		fireFX.loadData()
+	end
+	
 	-- handle onStart 
 	for idx, theZone in pairs(fireFX.fx) do
-		if theZone.fxOnStart then 
+		if (not theZone.inited) and (theZone.fxOnStart) then
+			-- only if we did not init them with loaded data 
 			fireFX.startTheFire(theZone)
 		end
 	end

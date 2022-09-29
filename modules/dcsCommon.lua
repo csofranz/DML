@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.4"
+dcsCommon.version = "2.7.5"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -101,6 +101,9 @@ dcsCommon.version = "2.7.4"
  2.7.3 - new string2Array()
        - additional guard for isPlayerUnit
  2.7.4 - new array2string()
+ 2.7.5 - new bitAND32()
+       - new LSR()
+	   - new num2bin()
  
 --]]--
 
@@ -2719,6 +2722,62 @@ function dcsCommon.getSceneryObjectInZoneByName(theName, theZone) -- DCS ZONE!!!
 	end
 	return nil 
 end
+
+--
+-- bitwise operators
+--
+function dcsCommon.bitAND32(a, b)
+	if not a then a = 0 end 
+	if not b then b = 0 end 
+	local z = 0
+	local e = 1
+	for i = 0, 31 do 
+		local a1 = a % 2 -- 0 or 1
+		local b1 = b % 2 -- 0 or 1
+		if a1 == 1 and b1 == 1 then 
+			a = a - 1 -- remove bit 
+			b = b - 1 
+			z = z + e
+		else
+			if a1 == 1 then a = a - 1 end -- remove bit 
+			if b1 == 1 then b = b - 1 end 
+		end
+		a = a / 2 -- shift right
+		b = b / 2		
+		e = e * 2 -- raise e by 1 
+	end
+	return z
+end
+
+function dcsCommon.num2bin(a)
+	if not a then a = 0 end 
+	local z = ""
+	for i = 0, 31 do 
+		local a1 = a % 2 -- 0 or 1
+		if a1 == 1 then 
+			a = a - 1 -- remove bit 
+			z = "1"..z
+		else
+			z = "0"..z
+		end
+		a = a / 2 -- shift right
+	end
+	return z
+end
+
+function dcsCommon.LSR(a, num)
+	if not a then a = 0 end 
+	if not num then num = 16 end 
+	for i = 1, num do 
+		local a1 = a % 2 -- 0 or 1
+		if a1 == 1 then 
+			a = a - 1 -- remove bit 
+		end
+		a = a / 2 -- shift right
+	end
+	return a
+end
+
 
 --
 --
