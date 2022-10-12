@@ -27,7 +27,7 @@ function autoCSAR.createNewCSAR(theUnit)
 	-- unit has no group 
 	local coa = theUnit:getCoalition()
 	if coa == 0 then -- neutral
-		trigger.action.outText("Neutal Pilot made it safely to ground.", 30)
+		trigger.action.outText("Neutral Pilot made it safely to ground.", 30)
 		return 
 	end
 	if coa == 1 and not autoCSAR.redCSAR then 

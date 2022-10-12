@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.3"
+persistence.version = "1.0.4"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -24,10 +24,11 @@ persistence.requiredLibs = {
 	1.0.2 - QoL when verbosity is on 
 	1.0.3 - no longer always tells " mission saved to"
 		    new 'saveNotification" can be off 
+	1.0.4 - new optional 'root' property 
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
-	PROVIDES STANDALONE/HOSTED SERVER COMPATIOBILITY
+	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
 	
 --]]--
 
@@ -255,7 +256,6 @@ function persistence.initFlagsFromData(theFlags)
 		trigger.action.outText("+++persistence: no flags loaded, commencing mission data load", 30)
 	end	
 	
-	
 end
 
 function persistence.missionStartDataLoad()
@@ -427,7 +427,24 @@ function persistence.readConfigZone()
 	end 
 	
 	-- serverDir is the path from the server save directory, usually "Missions/".
-    -- will be added to lfs.writedir(). 	
+    -- will be added to lfs.writedir() unless given a root attribute 
+	if cfxZones.hasProperty(theZone, "root") then 
+		-- we split this to enable further processing down the 
+		-- line if neccessary
+		persistence.root = cfxZones.getStringFromZoneProperty(theZone, "root", lfs.writedir()) -- safe default
+		if not dcsCommon.stringEndsWith(persistence.root, "\\") then 
+			persistence.root = persistence.root .. "\\"
+		end
+		if theZone.verbose then 
+			trigger.action.outText("+++persistence: setting root to <" .. persistence.root .. ">", 30)
+		end
+	else 
+		persistence.root = lfs.writedir() -- safe defaulting
+		if theZone.verbose then 
+			trigger.action.outText("+++persistence: defaulting root to <" .. persistence.root .. ">", 30)
+		end
+	end
+	
 	persistence.serverDir = cfxZones.getStringFromZoneProperty(theZone, "serverDir", "Missions\\")
 
 	if hasConfig then 
@@ -509,13 +526,13 @@ function persistence.start()
 		end
 	end
 	
-	local mainDir = lfs.writedir() .. persistence.serverDir
+--	local mainDir = lfs.writedir() .. persistence.serverDir
+	local mainDir = persistence.root .. persistence.serverDir 
 	if not dcsCommon.stringEndsWith(mainDir, "\\") then 
 		mainDir = mainDir .. "\\"
 	end
 	-- lets see if we can access the server's mission directory and 
 	-- save directory 
-	-- we first try to access server's main mission directory, called "mainDir" which is usually <writeDir>/Missions/>
 	
 	if persistence.isDir(mainDir) then 
 		if persistence.verbose then 
@@ -563,6 +580,7 @@ function persistence.start()
 		end 
 	end
 	
+	-- missionDir is root + serverDir + saveDir 
 	persistence.missionDir = missionDir
 	
 	persistence.active = true -- we can load and save data 

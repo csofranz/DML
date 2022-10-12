@@ -1,7 +1,8 @@
 williePete = {}
 williePete.version = "1.0.0"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
--- mach two missile is within 33 meters, with interpolation even less
+-- missile moving at Mach 2 is within 33 meters, 
+-- with interpolation even at 3 meters
 
 williePete.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,8 +13,11 @@ williePete.requiredLibs = {
 williePete.willies = {}
 williePete.wpZones = {}
 williePete.playerGUIs = {} -- used for unit guis 
+williePete.blastedObjects = {} -- used when we detonate something 
 
-williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM"}
+-- recognizes WP munitions. May require regular update when new
+-- models come out. 
+williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM"}
 
 function williePete.addWillie(theWillie)
 	table.insert(williePete.willies, theWillie)
@@ -72,8 +76,6 @@ function williePete.getClosestZoneForCoa(point, coa)
 				currDelta = delta
 				closestZone = zData
 			end
-		else 
---			trigger.outText("Zone <" .. zData.name .. ">, coa <" .. zData.coalition .. "> does not match <" .. coa .. ">", 30)
 		end
 	end
 	return closestZone, currDelta 
@@ -91,19 +93,20 @@ function williePete.createWPZone(aZone)
 	aZone.readyTime = 0 -- if readyTime > now we are not ready
 	aZone.trackingPlayer = nil -- name player's unit who is being tracked for wp. may not be neccessary
 	aZone.checkedIn = {} -- dict of all planes currently checked in
-	aZone.trackingEndsTime = 0 -- if now > trackingends, we remove player and send a message
 	
-	aZone.wpTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "wpTriggerMethod", "change")
-
-	aZone.FACTypes = cfxZones.getStringFromZoneProperty(aZone, "facTypes", "all")
+	aZone.wpMethod = cfxZones.getStringFromZoneProperty(aZone, "wpMethod", "change")
 	
 	aZone.checkInRange = cfxZones.getNumberFromZoneProperty(aZone, "checkInRange", williePete.checkInRange) -- default to my default
 	
 	aZone.ackSound = cfxZones.getStringFromZoneProperty(aZone, "ackSound", williePete.ackSound)
 	aZone.guiSound = cfxZones.getStringFromZoneProperty(aZone, "guiSound", williePete.guiSound)
 	
-	if cfxZones.hasProperty(aZone, "triggerMethod") then 
-		aZone.wpTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(aZone, "method") then 
+		aZone.wpMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "change")
+	end
+	
+	if cfxZones.hasProperty(aZone, "wpFire!") then 
+		aZone.wpFire = cfxZones.getStringFromZoneProperty(aZone, "wpFire!", "<none)")
 	end
 	
 	if aZone.verbose then 
@@ -112,7 +115,7 @@ function williePete.createWPZone(aZone)
 end
 
 --
--- player management
+-- PLAYER MANAGEMENT
 --
 function williePete.startPlayerGUI()
 	-- scan all mx players 
@@ -159,21 +162,32 @@ function williePete.startPlayerGUI()
 end
 
 --
--- BOOM
---
-
---
 -- BOOM command
 --
 function williePete.doBoom(args)
+	local unitInfo = args.unitInfo
+	if unitInfo then 
+		-- note that unit who commânded fire may no longer be alive 
+		-- so check it every time. unit must be alive 
+		-- to receive credits later
+		local uName = unitInfo.name
+		local blastRad = math.floor(math.sqrt(args.strength)) * 2
+		if blastRad < 10 then blastRad = 10 end 
+		
+		local affectedUnits = dcsCommon.getObjectsForCatAtPointWithRadius(nil, args.point, blastRad)
+		for idx, aUnit in pairs(affectedUnits) do 
+			local aName = aUnit:getName()
+			if williePete.verbose then 
+				trigger.action.outText("<" .. aName .. "> is in blast Radius (" .. blastRad .. "m) of shells for <" .. uName .. ">'s target coords", 30)
+			end
+			williePete.blastedObjects[aName] = uName -- last one gets the kill
+		end 
+	end
 	trigger.action.explosion(args.point, args.strength)
-	data = {}
-	data.point = args.point 
-	data.strength = args.strength 
---	cfxArtilleryZones.invokeCallbacksFor('impact', args.zone, data)
+
 end
 
-function williePete.doParametricFireAt(aPoint, accuracy, shellNum, shellBaseStrength, shellVariance, transitionTime)
+function williePete.doParametricFireAt(aPoint, accuracy, shellNum, shellBaseStrength, shellVariance, transitionTime, unitInfo)
 	if williePete.verbose then 
 		trigger.action.outText("fire with accuracy <" .. accuracy .. "> shellNum <" .. shellNum .. "> baseStren <" .. shellBaseStrength .. "> variance <" .. shellVariance .. ">, ttime <" .. transitionTime .. ">", 30)
 	end 
@@ -200,6 +214,7 @@ function williePete.doParametricFireAt(aPoint, accuracy, shellNum, shellBaseStre
 		thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z}) + 1  -- elevate to ground height + 1
 		boomArgs.point = thePoint
 		boomArgs.zone = aZone
+		boomArgs.unitInfo = unitInfo
 		local timeVar = 5 * (2 * dcsCommon.randomPercent() - 1.0) -- +/- 1.5 seconds
 		if timeVar < 0 then timeVar = -timeVar end 
 
@@ -218,6 +233,12 @@ end
 function williePete.doCheckIn(unitInfo)
 	--trigger.action.outText("check-in received", 30)
 	local theUnit = Unit.getByName(unitInfo.name)
+	if not theUnit then 
+		-- dead man calling. Pilot dead but unit still alive 
+		trigger.action.outText("Calling station, say again, can't read you.", 30)
+		return 
+	end
+	
 	local p = theUnit:getPoint()
 	local theZone, dist = williePete.closestCheckInTgtZoneForCoa(p, unitInfo.coa)
 
@@ -245,12 +266,12 @@ function williePete.doCheckIn(unitInfo)
 	theZone.checkedIn[unitInfo.name] = unitInfo
 	
 	-- add the 'Target marked' menu 
-	unitInfo.targetMarked = missionCommands.addCommandForGroup(unitInfo.gID, "Target Marked", unitInfo.root, williePete.redirectTargetMarked, unitInfo)
+	unitInfo.targetMarked = missionCommands.addCommandForGroup(unitInfo.gID, "Target Marked, commence firing", unitInfo.root, williePete.redirectTargetMarked, unitInfo)
 	-- remove 'check in'
 	missionCommands.removeItemForGroup(unitInfo.gID, unitInfo.checkIn)
 	unitInfo.checkIn = nil 
 	-- add 'check out'
-	unitInfo.checkOut = missionCommands.addCommandForGroup(unitInfo.gID, "Check Out", unitInfo.root, williePete.redirectCheckOut, unitInfo)
+	unitInfo.checkOut = missionCommands.addCommandForGroup(unitInfo.gID, "Check Out of " .. theZone.name, unitInfo.root, williePete.redirectCheckOut, unitInfo)
 	
 	trigger.action.outTextForGroup(unitInfo.gID, "Roger " .. unitInfo.name .. ", " .. theZone.name .. " tracks you, standing by for target data.", 30)
 	trigger.action.outSoundForGroup(unitInfo.gID, theZone.guiSound)
@@ -261,8 +282,6 @@ function williePete.redirectCheckOut(unitInfo)
 end
 
 function williePete.doCheckOut(unitInfo)
-	--trigger.action.outText("check-out received", 30)
-	
 	-- check out of all zones 
 	local wasCheckedIn = false 
 	local fromZone = ""
@@ -305,9 +324,14 @@ function williePete.rogerDodger(args)
 end
 
 function williePete.doTargetMarked(unitInfo)
-	--trigger.action.outText("mark received", 30)
 	-- first, check if we are past the time-out
 	local now = timer.getTime()
+	
+	if not unitInfo.wpInZone then 
+		trigger.action.outTextForGroup(unitInfo.gID, "No target mark visible, please mark again", 30)
+		trigger.action.outSoundForGroup(unitInfo.gID, williePete.guiSound)
+		return
+	end
 	
 	-- now check if zone matches check-in 
 	if not unitInfo.expiryTime or unitInfo.expiryTime < now then 
@@ -357,13 +381,15 @@ function williePete.doTargetMarked(unitInfo)
 	local transitionTime = tgtZone.transitionTime
 	local accuracy = tgtZone.baseAccuracy 
 	
-	williePete.doParametricFireAt(unitInfo.pos, accuracy, shellNum, shellStrength, 0.2, transitionTime)
+	williePete.doParametricFireAt(unitInfo.pos, accuracy, shellNum, shellStrength, 0.2, transitionTime, unitInfo)
 	
 	-- set zone's cooldown
 	tgtZone.readyTime = now + tgtZone.coolDown
-	-- erase player's wp mark
-	unitInfo.wpInZone = nil
-	unitInfo.pos = nil 
+
+	-- if we have an output, trigger it now 
+	if tgtZone.wpFire then 
+		cfxZones.pollFlag(tgtZone.wpFire, tgtZone.wpMethod, tgtZone)
+	end
 end
 -- return true if a zone is actively tracking theUnit to place 
 -- a wp 
@@ -381,16 +407,43 @@ function williePete.isWP(theWeapon)
 	for idx, wpw in pairs(williePete.smokeWeapons) do 
 		if theDesc == wpw then return true end 
 	end
+	trigger.action.outText(theDesc .. " is no wp, ignoring.", 30)
 	return false 
+end
+
+function williePete.zedsDead(theObject) 
+	if not theObject then return end 
+	
+	local theName = theObject:getName()
+	-- now check if it's a registered blasted object:getSampleRate()
+	local blaster = williePete.blastedObjects[theName]
+	if blaster then 
+		local theUnit = Unit.getByName(blaster)
+		if theUnit then 
+			-- interface to playerscore 
+			if cfxPlayerScore then
+				local fakeEvent = {}
+				fakeEvent.initiator = theUnit -- killer
+				fakeEvent.target = theObject -- vic 
+				cfxPlayerScore.killDetected(fakeEvent)
+			end
+		end
+		williePete.blastedObjects[theName] = nil 
+	end
 end
 
 function williePete:onEvent(event)
 	if not event.initiator then 
-		--trigger.action.outText("onEvent - " .. event.id .. ": no initiator",30)
 		return 
 	end 
+	
+	-- check if it's a dead event
+	if event.id == 8 then 
+		-- death event
+		williePete.zedsDead(event.initiator)
+	end
+	
 	if not event.weapon then 
-		--trigger.action.outText("onEvent - " .. event.id .. ": no WEAPON",30)
 		return 
 	end 
 	
@@ -401,21 +454,18 @@ function williePete:onEvent(event)
 	if event.id == 1 then -- S_EVENT_SHOT
 		-- initiator is who fired. maybe want to test if player  
 		
-		--trigger.action.outText(theUnit:getName() .. " " .. pType .. " fired " .. event.weapon:getTypeName() .. ".", 30)
-		
 		if not williePete.isWP(event.weapon) then 
-			--trigger.action.outText("<" .. event.weapon:getTypeName() .. "> not a smoke weapon", 30)
+			-- we only trigger on WP weapons 
 			return  
 		end
 		
 		-- make sure that whoever fired it is being tracked by 
 		-- a zone 
 		if not williePete.zoneIsTracking(theUnit) then 
-			--trigger.action.outText("<" .. event.weapon:getTypeName() .. "> fired while not being tracked by zone", 30)
 			return  
 		end
 		
-		-- assuming it's a willie, let's track it 
+		-- it's a willie, fired by player who is checked in: let's track it 
 		local theWillie = {}
 		theWillie.firedBy = theUnit:getName()
 		theWillie.theUnit = theUnit 
@@ -427,16 +477,18 @@ function williePete:onEvent(event)
 		williePete.addWillie(theWillie)
 	end
 
+--[[--
 	if event.id == 2 then -- hit 
 		local what = "something"
 		if event.target then what = event.target:getName() end 
 		--trigger.action.outText("Weapon " .. event.weapon:getTypeName() .. " fired by unit ".. theUnit:getName() .. " " .. pType .. " hit " .. what, 30)
 		-- may need to remove willie from willies
 	end
+--]]--
 	
 end 
 
--- test if a projectile hit ground inside a wp zone 
+-- test if a projectile has hit the ground inside a wp zone 
 function williePete.isInside(theWillie)
 	local thePoint = theWillie.pos 
 	local theUnitName = theWillie.firedBy -- may be dead already, but who cares
@@ -457,8 +509,6 @@ function williePete.isInside(theWillie)
 			end
 			-- if we want to allow neutral zones (doens't make sense)
 			-- add another guard below 
-		else 
-			--trigger.action.outText("willie outside " .. theZone.name, 30)
 		end
 	end
 	return nil
@@ -471,7 +521,6 @@ function williePete.projectileHit(theWillie)
 	-- interpolate pos: half time between updates times last velocity 
 	local vmod = dcsCommon.vMultScalar(theWillie.v, 0.5 / williePete.ups)
 	theWillie.pos = dcsCommon.vAdd(theWillie.pos, vmod) 
-	--trigger.action.outText("Willie " .. theWillie.wt .. " expired at " .. dcsCommon.point2text(theWillie.pos) .. " interpolated.", 30)
 	
 	-- reset last mark for player
 	local thePlayer = williePete.playerGUIs[theWillie.firedBy]
@@ -493,15 +542,6 @@ function williePete.projectileHit(theWillie)
 	thePlayer.pos = theWillie.pos -- remember the loc
 	thePlayer.wpInZone = theZone -- remember the zone 
 	
-	-- mark point with smoke blue 
-	--dcsCommon.markPointWithSmoke(theWillie.pos, 4)
-	
-	if cfxArtilleryZones then 
-		--cfxArtilleryZones.doParametricFireAt(theWillie.pos, 50, 10)
-	else 
-		-- mark point with smoke blue 
-		--dcsCommon.markPointWithSmoke(theWillie.pos, 4)
-	end
 end
 
 function williePete.updateWP()
@@ -635,14 +675,3 @@ if not williePete.start() then
 	trigger.action.outText("cf/x Willie Pete aborted: missing libraries", 30)
 	williePete = nil 
 end
-
---[[--
-	Mechanics:
-		- unit checks in with arty zone. if not in range of arty zone + safe dist, error 'not in range' is returned, else <artillery zone: status> is sent. <status can be ready, firing, or reloading>. Zone will advise on status change when checked in.
-		- if unit leaves arty zone + safe dist, <leaving zone> is displayed and <checkout> is invoked
-		- unit can check out any time
-		- when checked in, any wp hitting the ground is remembered if still inside target zone 
-		- player then gives 'target marked'
-		- if artillery on cooldown, or wp not inside zone error, else fire sequence starts, and cooldown starts for entire zone 
-
---]]--

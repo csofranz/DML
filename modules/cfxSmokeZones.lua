@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.1.0" 
+cfxSmokeZone.version = "1.1.1" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -16,16 +16,8 @@ cfxSmokeZone.requiredLibs = {
 	   - alphanum DML flag upgrade 
 	   - random color support 
  1.1.0 - Watchflag upgrade 
+ 1.1.1 - stopSmoke? input 
  
-	SMOKE ZONES *** EXTENDS ZONES ***
-	keeps 'eternal' smoke up for any zone that has the 
-	'smoke' attribute 
-	
-	USAGE
-	add a 'smoke' attribute to the zone. the value of the attribute 
-	defines the color. Valid values are: red, green, blue, white, orange, 0 (results in green smoke), 1 (red smoke), 2 (white), 3 (orange), 4 (blue)
-	defaults to "green"
-	altiude is meters above ground height, defaults to 5m
 --]]--
 cfxSmokeZone.smokeZones = {}
 cfxSmokeZone.updateDelay = 5 * 60 -- every 5 minutes 
@@ -51,14 +43,17 @@ function cfxSmokeZone.processSmokeZone(aZone)
 	-- f? query flags 
 	if cfxZones.hasProperty(aZone, "f?") then 
 		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "*<none>")
-	end
-	
-	if cfxZones.hasProperty(aZone, "startSmoke?") then 
+	elseif cfxZones.hasProperty(aZone, "startSmoke?") then 
 		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "startSmoke?", "none")
 	end
 	
 	if aZone.onFlag then 
 		aZone.onFlagVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- save last value
+	end
+	
+	if cfxZones.hasProperty(aZone, "stopSmoke?") then 
+		aZone.smkStopFlag = cfxZones.getStringFromZoneProperty(aZone, "stopSmoke?", "<none>")
+		aZone.smkLastStopFlag = cfxZones.getFlagValue(aZone.smkStopFlag, aZone)
 	end
 	
 	-- watchflags:
@@ -145,16 +140,13 @@ function cfxSmokeZone.checkFlags()
 			-- see if this changed 
 			if cfxZones.testZoneFlag(aZone, aZone.onFlag, aZone.smokeTriggerMethod, "onFlagVal") then
 				cfxSmokeZone.startSmoke(aZone)
-			end 
---[[--			
-			-- old code 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- trigger.misc.getUserFlag(aZone.onFlag)
-			if currTriggerVal ~= aZone.onFlagVal then
-				-- yupp, trigger start 
-				cfxSmokeZone.startSmoke(aZone)
-				aZone.onFlagVal = currTriggerVal
-			end	
---]]--			
+			end 		
+		end
+		
+		if aZone.smkStopFlag then 
+			if cfxZones.testZoneFlag(aZone, aZone.smkStopFlag, aZone.smokeTriggerMethod, "smkLastStopFlag") then 
+				aZone.paused = true -- will no longer re-smoke on update
+			end
 		end
 	end
 end

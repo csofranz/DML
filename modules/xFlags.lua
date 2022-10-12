@@ -1,5 +1,5 @@
 xFlags = {}
-xFlags.version = "1.3.0"
+xFlags.version = "1.3.1"
 xFlags.verbose = false 
 xFlags.hiVerbose = false 
 xFlags.ups = 1 -- overwritten in get config when configZone is present
@@ -27,7 +27,13 @@ xFlags.requiredLibs = {
 		  - hiVerbose option
 		  - corrected bug in reset checksum
 	1.3.0 - xCount! flag 
-		  - "never" operator  
+		  - "never" operator
+	1.3.1 - guards for xtriggerOffFlag and xtriggerOnFlag
+	        to prevent QoL warnings 
+		  - guards for xDirect
+		  - guards for xCount 
+	
+			
 	
 --]]--
 xFlags.xFlagZones = {}
@@ -96,9 +102,13 @@ function xFlags.createXFlagsWithZone(theZone)
 		theZone.xChange = cfxZones.getStringFromZoneProperty(theZone, "xChange!", "*<none>")
 	end 
 	
-	theZone.xDirect = cfxZones.getStringFromZoneProperty(theZone, "xDirect", "*<none>") 
+	if cfxZones.hasProperty(theZone, "xDirect") then 
+		theZone.xDirect = cfxZones.getStringFromZoneProperty(theZone, "xDirect", "*<none>") 
+	end 
 	
-	theZone.xCount = cfxZones.getStringFromZoneProperty(theZone, "xCount", "*<none>") 
+	if cfxZones.hasProperty(theZone, "xCount") then 
+		theZone.xCount = cfxZones.getStringFromZoneProperty(theZone, "xCount", "*<none>") 
+	end 
 	
 	theZone.inspect = cfxZones.getStringFromZoneProperty(theZone, "require", "or") -- same as any 
 	-- supported any/or, all/and, moreThan, atLeast, exactly 
@@ -132,11 +142,14 @@ function xFlags.createXFlagsWithZone(theZone)
 		trigger.action.outText("+++xFlg: <" .. theZone.name .. "> starts suspended", 30)
 	end
 	
-	theZone.xtriggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "xOn?", "*<none1>")
-	theZone.xlastTriggerOnValue = cfxZones.getFlagValue(theZone.xtriggerOnFlag, theZone)
-		
-	theZone.xtriggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "xOff?", "*<none2>")
-	theZone.xlastTriggerOffValue = cfxZones.getFlagValue(theZone.xtriggerOffFlag, theZone)
+	if cfxZones.hasProperty(theZone, "xOn?") then 
+		theZone.xtriggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "xOn?", "*<none1>")
+		theZone.xlastTriggerOnValue = cfxZones.getFlagValue(theZone.xtriggerOnFlag, theZone)
+	end
+	if cfxZones.hasProperty(theZone, "xOff?") then 
+		theZone.xtriggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "xOff?", "*<none2>")
+		theZone.xlastTriggerOffValue = cfxZones.getFlagValue(theZone.xtriggerOffFlag, theZone)
+	end
 end
 
 function xFlags.evaluateNumOrFlag(theAttribute, theZone)
@@ -363,15 +376,18 @@ function xFlags.evaluateZone(theZone)
 	-- now directly set the value of evalResult (0 = false, 1 = true) 
 	-- to "xDirect". Always sets output to current result of evaluation
 	-- true (1)/false(0), no matter if changed or not  
-	
-	if evalResult then 
-		cfxZones.setFlagValueMult(theZone.xDirect, 1, theZone)
-	else 
-		cfxZones.setFlagValueMult(theZone.xDirect, 0, theZone)
-	end 
+	if theZone.xDirect then 
+		if evalResult then 
+			cfxZones.setFlagValueMult(theZone.xDirect, 1, theZone)
+		else 
+			cfxZones.setFlagValueMult(theZone.xDirect, 0, theZone)
+		end 
+	end
 	
 	-- directly set the xCount flag 
-	cfxZones.setFlagValueMult(theZone.xCount, hits, theZone)
+	if theZone.xCount then 
+		cfxZones.setFlagValueMult(theZone.xCount, hits, theZone)
+	end
 	
 	-- now see if we bang the output according to method 
 	if evalResult then 
@@ -391,14 +407,14 @@ function xFlags.update()
 	
 	for idx, theZone in pairs (xFlags.xFlagZones) do 
 		-- see if we should suspend 
-		if cfxZones.testZoneFlag(theZone, theZone.xtriggerOnFlag, "change", "xlastTriggerOnValue") then 
+		if theZone.xtriggerOnFlag and cfxZones.testZoneFlag(theZone, theZone.xtriggerOnFlag, "change", "xlastTriggerOnValue") then 
 			if xFlags.verbose or theZone.verbose then 
 				trigger.action.outText("+++xFlg: enabling " .. theZone.name, 30)
 			end 
 			theZone.xSuspended = false 
 		end
 		
-		if cfxZones.testZoneFlag(theZone, theZone.xtriggerOffFlag, "change", "xlastTriggerOffValue") then 
+		if theZone.xtriggerOffFlag and cfxZones.testZoneFlag(theZone, theZone.xtriggerOffFlag, "change", "xlastTriggerOffValue") then 
 			if xFlags.verbose or theZone.verbose then 
 				trigger.action.outText("+++xFlg: DISabling " .. theZone.name, 30)
 			end 

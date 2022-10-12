@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.5"
+dcsCommon.version = "2.7.6"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -104,6 +104,7 @@ dcsCommon.version = "2.7.5"
  2.7.5 - new bitAND32()
        - new LSR()
 	   - new num2bin()
+ 2.7.6 - new getObjectsForCatAtPointWithRadius()
  
 --]]--
 
@@ -2691,6 +2692,25 @@ end
 function dcsCommon.objectHandler(theObject, theCollector)
 	table.insert(theCollector, theObject)
 	return true 
+end
+
+function dcsCommon.getObjectsForCatAtPointWithRadius(aCat, thePoint, theRadius)
+	if not aCat then aCat = Object.Category.UNIT end 
+	local p = {x=thePoint.x, y=thePoint.y, z=thePoint.z}
+	local collector = {}
+	
+	-- now build the search argument 
+	local args = {
+			id = world.VolumeType.SPHERE,
+			params = {
+				point = p,
+				radius = theRadius
+			}
+		}
+	
+	-- now call search
+	world.searchObjects(aCat, args, dcsCommon.objectHandler, collector)
+	return collector
 end
 
 function dcsCommon.getSceneryObjectsInZone(theZone) -- DCS ZONE!!! 
