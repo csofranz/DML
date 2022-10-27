@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.6"
+dcsCommon.version = "2.7.7"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -105,7 +105,10 @@ dcsCommon.version = "2.7.6"
        - new LSR()
 	   - new num2bin()
  2.7.6 - new getObjectsForCatAtPointWithRadius()
- 
+ 2.7.7 - clone() has new stripMeta option. pass true to remove all meta tables 
+	   - dumpVar2Str detects meta tables 
+	   - rotateGroupData kills unit's psi value if it existed since it messes with heading 
+	   - rotateGroupData - changes psi to -heading if it exists rather than nilling
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -979,7 +982,7 @@ dcsCommon.version = "2.7.6"
 
 	-- clone is a recursive clone which will also clone
 	-- deeper levels, as used in units 
-	function dcsCommon.clone(orig)
+	function dcsCommon.clone(orig, stripMeta)
 		if not orig then return nil end 
 		local orig_type = type(orig)
 		local copy
@@ -988,7 +991,17 @@ dcsCommon.version = "2.7.6"
 			for orig_key, orig_value in next, orig, nil do
 				copy[dcsCommon.clone(orig_key)] = dcsCommon.clone(orig_value)
 			end
-			setmetatable(copy, dcsCommon.clone(getmetatable(orig)))
+			if not stripMeta then 
+				-- also connect meta data
+				setmetatable(copy, dcsCommon.clone(getmetatable(orig)))
+			else 
+				-- strip all except string, and for strings use a fresh string 
+				if type(copy) == "string" then 
+					local tmp = ""
+					tmp = tmp .. copy -- will get rid of any foreign metas for string 
+					copy = tmp 
+				end
+			end
 		else -- number, string, boolean, etc
 			copy = orig
 		end
@@ -1599,10 +1612,9 @@ dcsCommon.version = "2.7.6"
 	
 	end;
 	
-
 	function dcsCommon.rotatePointAroundOrigin(inX, inY, angle) -- angle in degrees
-		local degrees =  3.14152 / 180 -- ok, it's actually radiants. 
-		angle = angle * degrees -- turns into rads
+		local rads =  3.14152 / 180 -- convert to radiants. 
+		angle = angle * rads -- turns into rads
 		local c = math.cos(angle)
 		local s = math.sin(angle)
 		local px
@@ -1650,6 +1662,12 @@ dcsCommon.version = "2.7.6"
 
 			-- may also want to increase heading by degreess
 			theUnit.heading = theUnit.heading + rads 
+			-- now kill psi if it existed before 
+			-- theUnit.psi = nil
+			-- better code: psi is always -heading. Nobody knows what psi is, though
+			if theUnit.psi then 
+				theUnit.psi = -theUnit.heading 
+			end
 		end
 	end
 
@@ -2075,6 +2093,12 @@ end
 		if not value then value = "nil" end
 		if not prefix then prefix = "" end
 		prefix = " " .. prefix
+		if getmetatable(value) then 
+			if type(value) == "string" then 
+			else 
+				trigger.action.outText(prefix .. key (" .. type(value) .. ") .. " HAS META", 30)
+			end
+		end
 		if type(value) == "table" then 
 			trigger.action.outText(prefix .. key .. ": [ ", 30)
 			-- iterate through all kvp

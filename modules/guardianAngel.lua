@@ -58,6 +58,7 @@ guardianAngel.requiredLibs = {
 	       - Supporst cloned units 
 		   - removed legacy code 
 	 3.0.2 - added guardianAngel.name for those who use local flags on activate
+	 3.0.3 - monitorItem() guards against loss of target (nil)
 
 
 This script detects missiles launched against protected aircraft an 
@@ -243,7 +244,7 @@ function guardianAngel.monitorItem(theItem)
 	-- this can happen with any missile, even threat missiles, 
 	-- so do this always!
 	local ctName = nil 
-	if currentTarget then 
+	if currentTarget and Object.isExist(currentTarget) then 
 		-- get current name to check against last target name 
 		ctName = currentTarget:getName() 
 	else 

@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.5.5"
+cloneZones.version = "1.6.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -62,6 +62,9 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.5.3 - centerOnly/wholeGroups attribute for rndLoc, rndHeading and onRoad
 	1.5.4 - parking for aircraft processing when cloning from template 
 	1.5.5 - removed some verbosity 
+	1.6.0 - fixed issues with cloning for zones with linked units
+		  - cloning with useHeading 
+		  - major declutter 
 	
 	
 --]]--
@@ -122,6 +125,7 @@ end
 --
 function cloneZones.partOfGroupDataInZone(theZone, theUnits)
 	local zP = cfxZones.getPoint(theZone)
+	zP = cfxZones.getDCSOrigin(theZone) -- don't use getPoint now.
 	zP.y = 0
 	
 	for idx, aUnit in pairs(theUnits) do 
@@ -149,17 +153,30 @@ function cloneZones.allGroupsInZoneByData(theZone)
 	return theGroupsInZone
 end
 
+
 function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if cloneZones.verbose or theZone.verbose then 
-		trigger.action.outText("+++clnZ: new cloner " .. theZone.name, 30)
+		trigger.action.outText("+++clnZ: new cloner <" .. theZone.name ..">", 30)
 	end
 
 	local localZones = cloneZones.allGroupsInZoneByData(theZone)  
-	local localObjects = cfxZones.allStaticsInZone(theZone)
+	local localObjects = cfxZones.allStaticsInZone(theZone, true) -- true = use DCS origin, not moved zone
+	if theZone.verbose then 
+		trigger.action.outText("+++clnZ: building cloner <" .. theZone.name .. "> TMPL: >>>", 30)
+		for idx, theGroup in pairs (localZones) do 
+			trigger.action.outText("Zone <" .. theZone.name .. ">: group <" .. theGroup:getName() .. "> in template", 30)
+		end
+		for idx, theObj in pairs(localObjects) do 
+			trigger.action.outText("Zone <" .. theZone.name .. ">: static object <" .. theObj:getName() .. "> in template", 30)
+		end
+		trigger.action.outText("END cloner <" .. theZone.name .. "> TMPL: <<<", 30)
+	end
 	theZone.cloner = true -- this is a cloner zoner 
 	theZone.mySpawns = {}
-	theZone.myStatics = {}
-	theZone.origin = cfxZones.getPoint(theZone) -- save reference point for all groupVectors 
+	theZone.myStatics = {} 
+	-- update: getPoint is bad if it's a moving zone. 
+	-- use getDCSOrigin instead 
+	theZone.origin = cfxZones.getDCSOrigin(theZone) 
 	
 	-- source tells us which template to use. it can be the following:
 	-- nothing (no attribute) - then we use whatever groups are in zone to 
@@ -185,8 +202,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 				-- resolving internal references 
 				local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(gName)
 				local origID = rawData.groupId
---				cloneZones.templateGroups[gName] = origID 
---				cloneZones.templateGroupsReverse[origID] = gName
 			end 	
 		end
 		
@@ -211,8 +226,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		end
 	end
 	
-	-- watchflag:
-	-- triggerMethod
+	-- watchflags
 	theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 
 	if cfxZones.hasProperty(theZone, "cloneTriggerMethod") then 
@@ -302,11 +316,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.rndHeading = cfxZones.getBoolFromZoneProperty(theZone, "rndHeading", false)
 	
 	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
-	
-	if theZone.rndLoc and theZone.verbose then 
-		--trigger.action.outText("+++ rndloc on for " .. theZone.name, 30)
-	end 
-	
+
 	-- we end with clear plate 
 end
 
@@ -366,7 +376,7 @@ function cloneZones.assignClosestParking(theData)
 		local newSlot = dcsCommon.getClosestFreeSlotForCatInAirbaseTo(cat, theUnit.x, theUnit.y, theAirbase, slotsTaken)
 		if newSlot then 
 			local slotNo = newSlot.Term_Index
-			--trigger.action.outText("unit <" .. theUnit.name .. "> old slot <" .. theUnit.parking .. "> to new slot <" .. slotNo .. ">", 30)
+
 			theUnit.parking_id = nil -- !! or you b screwed
 			theUnit.parking = slotNo -- !! screw parking_ID, they don't match
 			theUnit.x = newSlot.vTerminalPos.x 
@@ -376,22 +386,35 @@ function cloneZones.assignClosestParking(theData)
 	end
 end
 
-function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints)
+function cloneZones.rotateWPAroundCenter(thePoint, center, angle)
+	-- angle in rads
+	-- move to center 
+	thePoint.x = thePoint.x - center.x 
+	thePoint.y = thePoint.y - center.z -- !! 
+	-- rotate 
+	local c = math.cos(angle)
+	local s = math.sin(angle)
+	local px = thePoint.x * c - thePoint.y * s
+	local py = thePoint.x * s + thePoint.y * c
+	
+	-- apply and move back 
+	thePoint.x = px + center.x 
+	thePoint.y = py + center.z -- !!
+end
+
+function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints, center, angle)
 	-- enter with theData being group's data block 
 	-- remember that zoneDelta's [z] modifies theData's y!!
-	theData.x = theData.x + zoneDelta.x 
-	theData.y = theData.y + zoneDelta.z -- !!!
 	local units = theData.units 
 	local departFromAerodrome = false 
-	--local departingAerodrome 
 	local fromParking = false 
 	for idx, aUnit in pairs(units) do 
 		aUnit.x = aUnit.x + zoneDelta.x 
 		aUnit.y = aUnit.y + zoneDelta.z -- again!!!!
 	end
 	-- now modifiy waypoints. we ALWAYS adjust the  
-	-- first waypoint, but only all others if asked 
-	-- to 
+	-- first waypoint, all others only if asked 
+	-- to by moveRoute attribute (adjustAllWaypoints)
 	local theRoute = theData.route 
 	if theRoute then 
 		local thePoints = theRoute.points 
@@ -400,19 +423,26 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 				for i=1, #thePoints do 
 					thePoints[i].x = thePoints[i].x + zoneDelta.x 
 					thePoints[i].y = thePoints[i].y + zoneDelta.z -- (!!)
-
+					-- rotate around center by angle if given
+					if center and angle then 
+						cloneZones.rotateWPAroundCenter(thePoints[i], center, angle)
+					else 
+						trigger.action.outText("not rotating route", 30)
+					end
 				end
 			else 
 				-- only first point 
 				thePoints[1].x = thePoints[1].x + zoneDelta.x 
 				thePoints[1].y = thePoints[1].y + zoneDelta.z -- (!!)
+				if center and angle then 
+					cloneZones.rotateWPAroundCenter(thePoints[1], center, angle)
+				end
 			end 
 			
 			-- if there is an airodrome id given in first waypoint, 
 			-- adjust for closest location 
 			local firstPoint = thePoints[1]
 			if firstPoint.airdromeId then 
---					trigger.action.outText("first: airdrome adjust for " .. theData.name .. " now is " .. firstPoint.airdromeId, 30)
 				local loc = {}
 				loc.x = firstPoint.x
 				loc.y = 0
@@ -420,7 +450,6 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 				local bestAirbase = dcsCommon.getClosestAirbaseTo(loc)
 				--departingAerodrome = bestAirbase
 				firstPoint.airdromeId = bestAirbase:getID()
---					trigger.action.outText("first: adjusted to " .. firstPoint.airdromeId, 30)
 				departFromAerodrome = true  
 				fromParking = dcsCommon.stringStartsWith(firstPoint.action, "From Parking")
 			end
@@ -429,19 +458,17 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 			if #thePoints > 1 then 
 				local lastPoint = thePoints[#thePoints]
 				if firstPoint.airdromeId then 
---						trigger.action.outText("last: airdrome adjust for " .. theData.name .. " now is " .. lastPoint.airdromeId, 30)
 					local loc = {}
 					loc.x = lastPoint.x
 					loc.y = 0
 					loc.z = lastPoint.y 
 					local bestAirbase = dcsCommon.getClosestAirbaseTo(loc)
 					lastPoint.airdromeId = bestAirbase:getID()
---						trigger.action.outText("last: adjusted to " .. lastPoint.airdromeId, 30)
 				end
 			
 			end
-		end
-	end -- if theRoute 
+		end -- if points in route 
+	end -- if route 
 	
 	-- now process departing slot if given 
 	if departFromAerodrome then 
@@ -454,6 +481,7 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 		end
 	end
 end
+
 
 function cloneZones.uniqueID()
 	local uid = cloneZones.uniqueCounter
@@ -482,15 +510,13 @@ function cloneZones.uniqueIDUnitData(theData)
 		aUnit.unitId = cloneZones.uniqueID()
 		aUnit.CZTargetID = aUnit.unitId
 	end 
-
 end
 
 function cloneZones.resolveOwnership(spawnZone, ctry)
 	if not spawnZone.masterOwner then return ctry end 
-
 	local masterZone = cfxZones.getZoneByName(spawnZone.masterOwner)
 	if not masterZone then 
-		trigger.action.outText("+++clnZ: cloner " .. spawnZone.name .. " could not fine master owner <" .. spawnZone.masterOwner .. ">", 30)
+		trigger.action.outText("+++clnZ: cloner " .. spawnZone.name .. " could not find master owner <" .. spawnZone.masterOwner .. ">", 30)
 		return ctry 
 	end
 	
@@ -505,14 +531,12 @@ end
 --
 -- resolve external group references 
 -- 
-
 function cloneZones.resolveGroupID(gID, rawData, dataTable, reason)
 	if not reason then reason = "<default>" end 
 	
 	local resolvedID = gID
 	local myOName = rawData.CZorigName
 	local groupName = cfxMX.groupNamesByID[gID]
-	--trigger.action.outText("Resolve for <" .. myOName .. "> the external ID: " .. gID .. " --> " .. groupName .. " for <" .. reason.. "> task", 30)
 	
 	-- first, check if this an internal reference, i.e. inside the same 
 	-- zone template 
@@ -521,7 +545,6 @@ function cloneZones.resolveGroupID(gID, rawData, dataTable, reason)
 		if otherData.CZorigName == groupName then 
 			-- using cfxMX for clarity only (name access)
 			resolvedID = otherData.CZTargetID
-			--trigger.action.outText("resolved (internally) " .. gID .. " to " .. resolvedID, 30)
 			return resolvedID
 		end
 	end
@@ -530,20 +553,16 @@ function cloneZones.resolveGroupID(gID, rawData, dataTable, reason)
 	local lastClone = cloneZones.groupXlate[gID]
 	if lastClone then 
 		resolvedID = lastClone
-		--trigger.action.outText("resolved (EXT) " .. gID .. " to " .. resolvedID, 30)
 		return resolvedID	
 	end
 	
 	-- if we get here, reference is not to a cloned item 
-	--trigger.action.outText("resolved " .. gID .. " to " .. resolvedID, 30)
 	return resolvedID
 end 
 
 function cloneZones.resolveUnitID(uID, rawData, dataTable, reason)
 -- also resolves statics as they share ID with units 
-	local resolvedID = uID
-	--trigger.action.outText("Resolve reference to unitId <" .. uID .. "> for <" .. reason.. "> task", 30)
-	
+	local resolvedID = uID	
 	-- first, check if this an internal reference, i.e. inside the same 
 	-- zone template 
 	for idx, otherData in pairs(dataTable) do
@@ -551,7 +570,6 @@ function cloneZones.resolveUnitID(uID, rawData, dataTable, reason)
 		for idy, aUnit in pairs(otherData.units) do 
 			if aUnit.CZorigID == uID then 
 				resolvedID = aUnit.CZTargetID
-				--trigger.action.outText("resolved (internally) " .. uID .. " to " .. resolvedID, 30)
 				return resolvedID
 			end
 		end		
@@ -562,12 +580,10 @@ function cloneZones.resolveUnitID(uID, rawData, dataTable, reason)
 	local lastClone = cloneZones.unitXlate[uID]
 	if lastClone then 
 		resolvedID = lastClone
-		--trigger.action.outText("resolved (U-EXT) " .. uID .. " to " .. resolvedID, 30)
 		return resolvedID	
 	end
 	
 	-- if we get here, reference is not to a cloned item 
-	--trigger.action.outText("resolved G-" .. uID .. " to " .. resolvedID, 30)
 	return resolvedID
 end 
 
@@ -576,7 +592,6 @@ function cloneZones.resolveStaticLinkUnit(uID)
 	local lastClone = cloneZones.unitXlate[uID]
 	if lastClone then 
 		resolvedID = lastClone
-		--trigger.action.outText("resolved (U-EXT) " .. uID .. " to " .. resolvedID, 30)
 		return resolvedID	
 	end
 	return resolvedID
@@ -596,7 +611,6 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 				local gID = aPoint.linkUnit
 				local resolvedID = cloneZones.resolveUnitID(gID, rawData, dataTable, "linkUnit")
 				aPoint.linkUnit = resolvedID
-				--trigger.action.outText("resolved link unit to "..resolvedID .. " for " .. rawData.name, 30)
 			end
 			
 			-- iterate all tasks assigned to point
@@ -623,7 +637,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						for grpIdx, gID in pairs(embarkers) do 
 							local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
 							table.insert(newEmbarkers, resolvedID)
-							trigger.action.outText("+++clnZ: resolved embark group id <" .. gID .. "> to <" .. resolvedID .. ">", 30)
+							--trigger.action.outText("+++clnZ: resolved embark group id <" .. gID .. "> to <" .. resolvedID .. ">", 30)
 						end
 						-- replace old with new table
 						taskData.params.groupsForEmbarking = newEmbarkers
@@ -641,7 +655,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 								-- translate old to new 
 								local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
 								table.insert(newEmbarkers, resolvedID)
-								trigger.action.outText("+++clnZ: resolved distribute unit/group id <" .. aUnit .. "/" .. gID .. "> to <".. newUnit .. "/" .. resolvedID .. ">", 30)
+								--trigger.action.outText("+++clnZ: resolved distribute unit/group id <" .. aUnit .. "/" .. gID .. "> to <".. newUnit .. "/" .. resolvedID .. ">", 30)
 							end
 							-- store this as new group for 
 							-- translated transportID
@@ -649,7 +663,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						end
 						-- replace old distribution with new 
 						taskData.params.distribution = newDist 
-						trigger.action.outText("+++clnZ: rebuilt distribution", 30)
+						--trigger.action.outText("+++clnZ: rebuilt distribution", 30)
 					end
 					
 					-- resolve selectedTransport unit reference 
@@ -657,7 +671,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						local tID = taskData.params.selectedTransport
 						local newTID = cloneZones.resolveUnitID(tID, rawData, dataTable, "transportID")
 						taskData.params.selectedTransport = newTID
-						rigger.action.outText("+++clnZ: resolved selected transport <" .. tID .. "> to <" .. newTID .. ">", 30)
+						--trigger.action.outText("+++clnZ: resolved selected transport <" .. tID .. "> to <" .. newTID .. ">", 30)
 					end
 					
 					-- note: we may need to process x and y as well
@@ -733,16 +747,26 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	if cloneZones.verbose or spawnZone.verbose then 
 		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
 	end
-	-- theZone is the cloner with the template
-	-- spawnZone is the spawner with settings 
-	-- if not spawnZone then spawnZone = theZone end 
-	local newCenter = cfxZones.getPoint(spawnZone) 
+	-- theZone is the cloner with the template (source)
+	-- spawnZone is the spawner with settings (target location)
+	local newCenter = cfxZones.getPoint(spawnZone) -- includes zone following updates
+	local oCenter = cfxZones.getDCSOrigin(theZone) -- get original coords on map for cloning offsets 
 	-- calculate zoneDelta, is added to all vectors 
-	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin)
+	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin) -- oCenter) --theZone.origin)
+	
+	-- precalc turn value for linked rotation
+	local dHeading = 0 -- for linked zones 
+	local rotCenter = nil 
+	if spawnZone.linkedUnit and spawnZone.uHdg and spawnZone.useHeading and Unit.isExist(spawnZone.linkedUnit) then 
+		local theUnit = spawnZone.linkedUnit
+		local currHeading = dcsCommon.getUnitHeading(theUnit)
+		dHeading = currHeading - spawnZone.uHdg
+		rotCenter = cfxZones.getPoint(spawnZone)
+	end 
 	
 	local spawnedGroups = {}
 	local spawnedStatics = {}
-	local dataToSpawn = {}
+	local dataToSpawn = {} -- temp save so we can connect in-group references
 	
 	for idx, aGroupName in pairs(theZone.cloneNames) do 
 		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(aGroupName)
@@ -756,20 +780,19 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			trigger.action.outText("Clone: FAILED name check", 30)
 		end
 		
-		-- now use raw data to spawn and see if it works outabox
 		local theCat = cfxMX.catText2ID(cat)
-		rawData.CZtheCat = theCat -- save cat 
+		rawData.CZtheCat = theCat -- save category 
 		
 		-- update their position if not spawning to exact same location
-		if cloneZones.verbose or theZone.verbose then 	
+		if cloneZones.verbose or theZone.verbose or spawnZone.verbose then 	
 			trigger.action.outText("+++clnZ: tmpl delta x = <" .. math.floor(zoneDelta.x) .. ">, y = <" .. math.floor(zoneDelta.z) .. "> for tmpl <" .. theZone.name  .. "> to cloner <" .. spawnZone.name .. ">", 30)
 		end
-		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute)
+		-- update routes when not spawning same location 
+		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute, rotCenter, spawnZone.turn / 57.2958 +
+		dHeading)
 		
 		-- apply randomizer if selected 
-
 		if spawnZone.rndLoc then 
-			--trigger.action.outText("rndloc for <" .. spawnZone.name .. ">", 30)
 			-- calculate the entire group's displacement
 			local units = rawData.units
 			local r = math.random() * spawnZone.radius
@@ -850,11 +873,10 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 								cx = cx + cloneZones.minSep
 								cy = cy + cloneZones.minSep
 								iterCount = iterCount + 1
-								-- trigger.action.outText("d fail for <" .. aUnit.name.. ">: d= <" .. d .. ">, iters = <" .. iterCount .. ">", 30)
 							end
 						end						
 					until (iterCount > cloneZones.maxIter) or (not tooClose)
-					-- trigger.action.outText("separation iters for <" .. aUnit.name.. ">:<" .. iterCount .. ">", 30)
+
 					table.insert(otherLocs, np)
 					aUnit.x = nx
 					aUnit.y = ny 
@@ -864,8 +886,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		
 		-- apply turning 
-		dcsCommon.rotateGroupData(rawData, spawnZone.turn, newCenter.x, newCenter.z)
-		
+		dcsCommon.rotateGroupData(rawData, spawnZone.turn + 57.2958 *dHeading, newCenter.x, newCenter.z)
+
 		-- make sure unit and group names are unique 
 		cloneZones.uniqueNameGroupData(rawData)
 		
@@ -885,15 +907,25 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- first norm and clone data for later save
 		rawData.cty = rawData.CZctry 
 		rawData.cat = rawData.CZtheCat
+				
+		-- make group, unit[1] and route point [1] all match up
+		if rawData.route and rawData.units[1] then 
+			-- trigger.action.outText("matching route point 1 and group with unit 1", 30)
+			rawData.route.points[1].x = rawData.units[1].x
+			rawData.route.points[1].y = rawData.units[1].y
+			rawData.x = rawData.units[1].x
+			rawData.y = rawData.units[1].y
+		end
+		
+		-- clone for persistence
 		local theData = dcsCommon.clone(rawData)
 		cloneZones.allClones[rawData.name] = theData 
 		
 		local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
-		
-		--trigger.action.outText("spawned group " .. rawData.name .. "consisting of", 30)
-		
-		-- update groupXlate table 
+				
+		-- update groupXlate table from spawned group
+		-- so we can later reference them with other clones
 		local newGroupID = theGroup:getID() -- new ID assigned by DCS
 		local origID = rawData.CZorigID -- before we materialized
 		cloneZones.groupXlate[origID] = newGroupID
@@ -907,7 +939,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 				-- unit exists. compare planned and assigned ID
 				local uID = tonumber(gUnit:getID())
 				if uID == aUnit.CZTargetID then 
-					--trigger.action.outText("unit " .. uName .. "#"..uID, 30)
 					-- all good 
 				else 
 					trigger.action.outText("clnZ: post-clone verification failed for unit <" .. uName .. ">: ÎD mismatch: " .. uID .. " -- " .. aUnit.CZTargetID, 30)
@@ -932,7 +963,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			cloneZones.handoffTracking(theGroup, spawnZone) 
 		end
 	end
-
+	
 	-- static spawns 
 	for idx, aStaticName in pairs(theZone.staticNames) do 
 		local rawData, cat, ctry, parent = cfxMX.getStaticFromDCSbyName(aStaticName) -- returns a UNIT data block
@@ -945,15 +976,10 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			trigger.action.outText("Static Clone: FAILED name check for <" .. aStaticName .. ">", 30)
 		end
 		local origID = rawData.unitId -- save original unit ID
-		rawData.CZorigID = origID 
-				
-		-- now use raw data to spawn and see if it works outabox
-		--local theCat = cfxMX.catText2ID(cat) -- will be "static"
-		
-		-- trigger.action.outText("static object proccing", 30)
+		rawData.CZorigID = origID 					
 		rawData.x = rawData.x + zoneDelta.x 
 		rawData.y = rawData.y + zoneDelta.z -- !!!
-	
+			
 		-- randomize if enabled
 		if spawnZone.rndLoc then 
 			local r = math.random() * spawnZone.radius
@@ -978,7 +1004,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end
 		
 		-- apply turning 
-		dcsCommon.rotateUnitData(rawData, spawnZone.turn, newCenter.x, newCenter.z)
+		dcsCommon.rotateUnitData(rawData, spawnZone.turn + 57.2958 * dHeading, newCenter.x, newCenter.z)
 		
 		-- make sure static name is unique and remember original 
 		rawData.name = dcsCommon.uuid(rawData.name)
@@ -990,22 +1016,18 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		-- handle linkUnit if provided  
 		if false and rawData.linkUnit then 
-			--trigger.action.outText("has link to " .. rawData.linkUnit, 30)
 			local lU = cloneZones.resolveStaticLinkUnit(rawData.linkUnit)
-			--trigger.action.outText("resolved to " .. lU, 30)
 			rawData.linkUnit = lU 
 			if not rawData.offsets then 
 				rawData.offsets = {}
 				rawData.offsets.angle = 0
 				rawData.offsets.x = 0
 				rawData.offsets.y = 0
-				--trigger.action.outText("clnZ: link required offset for " .. rawData.name, 30)
 			end 
 			rawData.offsets.y = rawData.offsets.y - zoneDelta.z 
 			rawData.offsets.x = rawData.offsets.x - zoneDelta.x 
 			rawData.offsets.angle = rawData.offsets.angle + spawnZone.turn
 			rawData.linkOffset = true 
---			trigger.action.outText("zone deltas are " .. zoneDelta.x .. ", " .. zoneDelta.y, 30)
 		end
 		
 		local isCargo = rawData.canCargo 
@@ -1020,7 +1042,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- we don't mix groups with units, so no lookup tables for 
 		-- statics 
 		if newStaticID == rawData.CZTargetID then 
-
 		else 
 			trigger.action.outText("Static ID mismatch: " .. newStaticID .. " vs (target) " .. rawData.CZTargetID .. " for " .. rawData.name, 30)
 		end
@@ -1053,7 +1074,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 end
 
 function cloneZones.spawnWithCloner(theZone) 
---	trigger.action.outText("+++clnZ: enter spawnWithCloner for <" .. theZone.name .. ">", 30)
 	if not theZone then 
 		trigger.action.outText("+++clnZ: nil zone on spawnWithCloner", 30)
 		return 
@@ -1106,7 +1126,6 @@ function cloneZones.spawnWithCloner(theZone)
 		cloneZones.invokeCallbacks(theZone, "wiped", {})
 	end
 	
-
 	local theClones, theStatics = cloneZones.spawnWithTemplateForZone(templateZone, theZone)
 	-- reset hasClones so we know our spawns are full and we can 
 	-- detect complete destruction
@@ -1232,7 +1251,6 @@ end
 function cloneZones.doOnStart()
 	for idx, theZone in pairs(cloneZones.cloners) do 
 		if theZone.onStart then 
---			trigger.action.outText("+++clnZ: onStart true for <" .. theZone.name .. ">", 30)
 			if theZone.isStarted then 
 				if cloneZones.verbose or theZone.verbose then 
 					trigger.action.outText("+++clnz: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)
@@ -1414,8 +1432,8 @@ function cloneZones.loadData()
 		local newStatic = dcsCommon.clone(oData)
 		-- add link info if it exists
 		newStatic.linkUnit = cfxMX.linkByName[oName]
-		if newStatic.linkUnit and unitPersistence.verbose then 
-				trigger.action.outText("+++unitPersistence: linked static <" .. oName .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
+		if newStatic.linkUnit and cloneZones.verbose then 
+				trigger.action.outText("+++clnZ: linked static <" .. oName .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
 		end
 		local cty = newStatic.cty 
 --		local cat = staticData.cat
