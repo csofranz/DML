@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.8.7"
+cfxZones.version = "2.9.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -95,6 +95,17 @@ cfxZones.version = "2.8.7"
 - 2.8.6   - fix in getFlagValue for missing delay 
 - 2.8.7   - update isPointInsideZone(thePoint, theZone, radiusIncrease) - new radiusIncrease
           - isPointInsideZone() returns delta as well
+- 2.9.0   - linked zones can useOffset and useHeading 
+		  - getPoint update 
+		  - new getOrigin()
+		  - pointInZone understands useOrig
+		  - allStaticsInZone supports useOrig 
+		  - dPhi for zones with useHeading 
+		  - uHdg for zones with useHading, contains linked unit's original heading
+		  - Late-linking implemented:
+		  - linkUnit works for late-activating units 
+		  - linkUnit now also works for player / clients, dynamic (re-)linking 
+		  - linkUnit uses zone's origin for all calculations 
 
 --]]--
 cfxZones.verbose = false
@@ -198,7 +209,7 @@ function cfxZones.readFromDCS(clearfirst)
 			--          altitude (they are an infinite cylinder) this works. Remember to 
 			--          drop y from zone calculations to see if inside. 
 			newZone.point = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
-
+			newZone.dcsOrigin = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
 
 			-- start type processing. if zone.type exists, we have a mission 
 			-- created with 2.7 or above, else earlier 
@@ -631,7 +642,7 @@ function cfxZones.allGroupNamesInZone(theZone, categ) -- categ is optional, must
 	return inZones
 end
 
-function cfxZones.allStaticsInZone(theZone) -- categ is optional, must be code 
+function cfxZones.allStaticsInZone(theZone, useOrigin) -- categ is optional, must be code 
 	-- warning: does not check for exiting!
 	local inZones = {}
 	local coals = {0, 1, 2} -- all coalitions
@@ -639,7 +650,12 @@ function cfxZones.allStaticsInZone(theZone) -- categ is optional, must be code
 		local allStats = coalition.getStaticObjects(coa)
 		for key, statO in pairs(allStats) do -- iterate all groups
 			local oP = statO:getPoint()
-			if cfxZones.pointInZone(oP, theZone) then
+			if useOrigin then 
+				if cfxZones.pointInZone(oP, theZone, true) then 
+					-- use DCS original coords
+					table.insert(inZones, statO)
+				end
+			elseif cfxZones.pointInZone(oP, theZone) then
 				table.insert(inZones, statO)
 			end
 		end
@@ -941,13 +957,18 @@ end
 -- the second value returned is the percentage of distance
 -- from center to rim, with 100% being entirely in center, 0 = outside
 -- the third value returned is the distance to center
-function cfxZones.pointInZone(thePoint, theZone)
+function cfxZones.pointInZone(thePoint, theZone, useOrig)
 
 	if not (theZone) then return false, 0, 0 end
 		
 	local pflat = {x = thePoint.x, y = 0, z = thePoint.z}
 	
-	local zpoint = cfxZones.getPoint(theZone) -- updates zone if linked 
+	local zpoint 
+	if useOrig then
+		zpoint = cfxZones.getDCSOrigin(theZone)
+	else 
+		zpoint = cfxZones.getPoint(theZone) -- updates zone if linked 
+	end
 	local ppoint = thePoint -- xyz
 	local pflat = {x = ppoint.x, y = 0, z = ppoint.z}
 	local dist = dcsCommon.dist(zpoint, pflat)
@@ -2033,26 +2054,39 @@ end
 --
 -- requires that readFromDCS has been done
 --
-function cfxZones.getPoint(aZone) -- always works, even linked, point can be reused 
+function cfxZones.getDCSOrigin(aZone)
+	local o = {}
+	o.x = aZone.dcsOrigin.x
+	o.y = 0
+	o.z = aZone.dcsOrigin.z 
+	return o
+end
+
+function cfxZones.getPoint(aZone) -- always works, even linked, returned point can be reused 
 	if aZone.linkedUnit then 
 		local theUnit = aZone.linkedUnit
 		-- has a link. is link existing?
 		if theUnit:isExist() then 
 			-- updates zone position 
 			cfxZones.centerZoneOnUnit(aZone, theUnit)
-			cfxZones.offsetZone(aZone, aZone.dx, aZone.dy)
+			local dx = aZone.dx
+			local dy = aZone.dy
+			if aZone.useHeading then 
+				dx, dy = cfxZones.calcHeadingOffset(aZone, theUnit)
+			end
+			cfxZones.offsetZone(aZone, dx, dy)
 		end
 	end
 	local thePos = {}
 	thePos.x = aZone.point.x
 	thePos.y = 0 -- aZone.y 
 	thePos.z = aZone.point.z
-	-- update the zone as well -- that's stupid!
-	--[[-- aZone.point = thePos 
-	local retPoint = {} -- create new copy to pass back 
-	retPoint.x = thePos.x
-	retPoint.y = 0 
-	retPoint.z = thePos.z
+	--[[--
+	if aZone.linkedUnit then 
+		trigger.action.outText("GetPoint: LINKED <".. aZone.name .. "> p = " .. dcsCommon.point2text(thePos) .. ", O = " .. dcsCommon.point2text(cfxZones.getDCSOrigin(aZone)), 30  )
+	else 
+		trigger.action.outText("GetPoint: unlinked <".. aZone.name .. "> p = " .. dcsCommon.point2text(thePos) .. ", O = " .. dcsCommon.point2text(cfxZones.getDCSOrigin(aZone)), 30  )
+	end
 	--]]--
 	return thePos 
 end
@@ -2063,6 +2097,22 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	if not dy then dy = 0 end 
 	theZone.dx = dx
 	theZone.dy = dy 
+	theZone.rxy = math.sqrt(dx * dx + dy * dy) -- radius 
+	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local bearingOffset = math.atan2(dy, dx) -- rads 
+	if bearingOffset < 0 then bearingOffset = bearingOffset + 2 * 3.141592 end 
+	--trigger.action.outText("zone <" .. theZone.name .. "> is <" .. math.floor(bearingOffset * 57.2958) .. "> degrees from Unit <" .. theUnit:getName() .. ">", 30)
+	--trigger.action.outText("Unit <" .. theUnit:getName() .. "> has heading .. <" .. math.floor(57.2958 * unitHeading) .. ">", 30)
+	local dPhi = bearingOffset - unitHeading
+	if dPhi < 0 then dPhi = dPhi + 2 * 3.141592 end
+	if (theZone.verbose and theZone.useHeading) then 
+		trigger.action.outText("Zone is at <" .. math.floor(57.2958 * dPhi) .. "> relative to unit heading", 30)
+	end
+	theZone.dPhi = dPhi -- constant delta between unit heading and 
+	-- direction to zone 
+	theZone.uHdg = unitHeading -- original unit heading to turn other 
+	-- units if need be 
+	--trigger.action.outText("Link setup: dx=<" .. dx .. ">, dy=<" .. dy .. "> unit original hdg = <" .. math.floor(57.2958 * unitHeading)  .. ">", 30)
 end
 
 function cfxZones.zonesLinkedToUnit(theUnit) -- returns all zones linked to this unit 
@@ -2076,19 +2126,74 @@ function cfxZones.zonesLinkedToUnit(theUnit) -- returns all zones linked to this
 	return linkedZones
 end
 
+function cfxZones.calcHeadingOffset(aZone, theUnit)
+	-- recalc dx and dy based on ry and current heading 
+	-- since 0 degrees is [0,1] = [0,r] the calculation of 
+	-- rotated coords can be simplified from 
+	-- xr = x cos phi - y sin phi = -r sin phi
+	-- yr = y cos phi + x sin phi = r cos phi 
+	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	-- add heading offset 
+	local zoneBearing = unitHeading + aZone.dPhi 
+	if zoneBearing > 2 * 3.141592 then zoneBearing = zoneBearing - 2 * 3.141592 end 
+					
+	-- in DCS, positive x is north (wtf?) and positive z is east 
+	local dy = (-aZone.rxy) * math.sin(zoneBearing)
+	local dx = aZone.rxy * math.cos(zoneBearing)
+	
+	--trigger.action.outText("zone bearing is " .. math.floor(zoneBearing * 57.2958) .. " dx = <" .. dx .. "> , dy = <" .. dy .. ">", 30)
+	return dx, -dy -- note: dy is z coord!!!!
+end
+
 function cfxZones.updateMovingZones()
 	cfxZones.updateSchedule = timer.scheduleFunction(cfxZones.updateMovingZones, {}, timer.getTime() + 1/cfxZones.ups)
 	-- simply scan all cfx zones for the linkedUnit property and if there
 	-- update the zone's points
 	for aName,aZone in pairs(cfxZones.zones) do
+		if aZone.linkBroken then 
+			-- try to relink 
+			cfxZones.initLink(aZone)
+		end
 		if aZone.linkedUnit then 
 			local theUnit = aZone.linkedUnit
 			-- has a link. is link existing?
 			if theUnit:isExist() then 
 				cfxZones.centerZoneOnUnit(aZone, theUnit)
-				cfxZones.offsetZone(aZone, aZone.dx, aZone.dy)
-				--trigger.action.outText("cf/x zones update " .. aZone.name, 30)
+				local dx = aZone.dx 
+				local dy = aZone.dy -- this is actually z 
+				if aZone.useHeading then 
+					dx, dy = cfxZones.calcHeadingOffset(aZone, theUnit)
+				end
+				cfxZones.offsetZone(aZone, dx, dy)
+			else 
+				-- we lost link 
+				aZone.linkBroken = true 
+				aZone.linkedUnit = nil 
 			end
+		end
+	end
+end
+
+function cfxZones.initLink(theZone)
+	theZone.linkBroken = true 
+	theZone.linkedUnit = nil 
+	theUnit = Unit.getByName(theZone.linkName)
+	if theUnit then
+		local dx = 0
+		local dz = 0
+		if theZone.useOffset or theZone.useHeading then 
+			local delta = dcsCommon.vSub(cfxZones.getDCSOrigin(theZone),theUnit:getPoint()) -- delta = B - A 
+			dx = delta.x 
+			dz = delta.z
+		end
+		cfxZones.linkUnitToZone(theUnit, theZone, dx, dz) -- also sets theZone.linkedUnit
+		if theZone.verbose then 
+			trigger.action.outText("Link established for zone <" .. theZone.name .. "> to unit <" .. theZone.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
+		end 
+		theZone.linkBroken = nil 
+	else 
+		if theZone.verbose then 
+			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
 		end
 	end
 end
@@ -2096,29 +2201,43 @@ end
 function cfxZones.startMovingZones()
 	-- read all zoness, and look for a property called 'linkedUnit'
 	-- which will make them a linked zone if there is a unit that exists
+	-- also suppors 'useOffset' and 'useHeading'
 	for aName,aZone in pairs(cfxZones.zones) do
-		local lU = cfxZones.getZoneProperty(aZone, "linkedUnit")
+		local lU = nil 
+		if cfxZones.hasProperty(aZone, "linkedUnit") then 
+			lU = cfxZones.getZoneProperty(aZone, "linkedUnit")
+		end
 		if lU then 
+			aZone.linkName = lU
+			aZone.useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
+			aZone.useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading", false)
+			
+			cfxZones.initLink(aZone)
+--[[--			
 			-- this zone is linked to a unit
 			theUnit = Unit.getByName(lU)
 			local useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
 			if useOffset then aZone.useOffset = true end
+			local useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading")
+			if useHeading then aZone.useHeading = true end 
 			if theUnit then
 				local dx = 0
 				local dz = 0
-				if useOffset then 
+				if useOffset or useHeading then 
 					local delta = dcsCommon.vSub(aZone.point,theUnit:getPoint()) -- delta = B - A 
 					dx = delta.x 
 					dz = delta.z
 				end
 				cfxZones.linkUnitToZone(theUnit, aZone, dx, dz)
-				--trigger.action.outText("cf/x zones: linked " .. aZone.name .. " to " .. theUnit:getName(), 30)
+				--trigger.action.outText("Link setup: dx=<" .. dx .. ">, dz=<" .. dz .. ">", 30)
 				if useOffset then 
-					--trigger.action.outText("and dx = " .. dx .. " dz = " .. dz, 30)
 				end
+			else 
+				trigger.action.outText("Linked unit: no unit to link <" .. aZone.name .. "> to", 30)
 			end
+--]]--
 		end
-		-- support for local verbose flag 
+		-- support for zone-local verbose flag 
 		aZone.verbose = cfxZones.getBoolFromZoneProperty(aZone, "verbose", false)
 	end
 end
