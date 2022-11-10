@@ -1,5 +1,5 @@
 baseCaptured={}
-baseCaptured.version = "1.0.1"
+baseCaptured.version = "1.0.2"
 baseCaptured.verbose = false
 baseCaptured.ups = 1
 baseCaptured.requiredLibs = {
@@ -15,6 +15,8 @@ baseCaptured.handleContested = true --
     1.0.0 - Initial version based on cloose's code
 	1.0.1 - contested! flag
 		  - update and handleContested
+	1.0.2 - expanded verbosity
+	      - typo in defining redCaptured! corrected
 	
 --]]--
 
@@ -47,7 +49,7 @@ function baseCaptured.createZone(theZone)
     end
 	
 	if cfxZones.hasProperty(theZone, "redCaptured!") then
-        theZone.redCap = cfxZones.getStringFromZoneProperty(theZone, "blueCaptured!", "*none")
+        theZone.redCap = cfxZones.getStringFromZoneProperty(theZone, "redCaptured!", "*none")
     end
 	
     if cfxZones.hasProperty(theZone, "red!") then
@@ -81,10 +83,16 @@ function baseCaptured.triggerZone(theZone)
 	if newOwner == 1 then -- red 
 		if theZone.redCap then 
 			cfxZones.pollFlag(theZone.redCap, theZone.capturedMethod, theZone)
+			if baseCaptured.verbose or theZone.verbose then
+				trigger.action.outText("+++bCap: banging redCap! with <" .. theZone.redCap .. "> for zone <" .. theZone.name .. ">", 30)
+			end
 		end
 	elseif newOwner == 2 then 
 		if theZone.blueCap then 
 			cfxZones.pollFlag(theZone.blueCap, theZone.capturedMethod, theZone)
+			if baseCaptured.verbose or theZone.verbose then
+				trigger.action.outText("+++bCap: banging blueCap! with <" .. theZone.blueCap .. "> for zone <" .. theZone.name .. ">", 30)
+			end
 		end
 	else 
 		-- contested

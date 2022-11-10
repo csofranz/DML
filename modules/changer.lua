@@ -1,5 +1,5 @@
 changer = {}
-changer.version = "1.0.3"
+changer.version = "1.0.4"
 changer.verbose = false 
 changer.ups = 1 
 changer.requiredLibs = {
@@ -13,6 +13,7 @@ changer.changers = {}
 	1.0.1 - Better guards in config to avoid <none> Zone getter warning 
 	1.0.2 - on/off: verbosity 
 	1.0.3 - NOT on/off
+	1.0.4 - a little bit more conversation
 	
 	Transmogrify an incoming signal to an output signal
 	- not 
@@ -224,7 +225,7 @@ function changer.update()
 					changer.process(aZone)
 				else 
 					if changer.verbose or aZone.verbose then 
-						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed.", 30)
+						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed [flag <" .. aZone.changerOnOff .. "> is 0].", 30)
 					end 
 				end
 			elseif aZone.changerOnOffINV then 
@@ -232,12 +233,16 @@ function changer.update()
 					changer.process(aZone)
 				else 
 					if changer.verbose or aZone.verbose then 
-						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed.", 30)
+						trigger.action.outText("+++chgr: " .. aZone.name .. " gate closed [INVflag <" .. aZone.changerOnOffINV .. "> is 1].", 30)
 					end 
 				end
 			else
 				changer.process(aZone)
 			end
+		else 
+			if aZone.verbose then 
+				trigger.action.outText("+++chgr: <" .. aZone.name .. "> is paused.")
+			end	
 		end 
 	end
 end

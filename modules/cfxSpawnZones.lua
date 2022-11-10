@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.7.0"
+cfxSpawnZones.version = "1.7.1"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -61,6 +61,8 @@ cfxSpawnZones.spawnedGroups = {}
 --   1.5.3 - spawn?, spawnUnits? flags 
 --   1.6.0 - trackwith interface for group tracker
 --   1.7.0 - persistence support 
+--   1.7.1 - improved verbosity 
+--         - spelling check
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -230,6 +232,10 @@ function cfxSpawnZones.createSpawner(inZone)
 		theSpawner.target = nil 
 	end
 	
+	if cfxSpawnZones.verbose or inZone.verbose then 
+		trigger.action.outText("+++spwn: created spawner for <" .. inZone.name .. ">", 30)
+	end	
+	
 	return theSpawner
 end
 
@@ -325,6 +331,10 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	end
 	if not aSpawner then return end 
 	local theZone = aSpawner.zone -- retrieve the zone that defined me 
+	
+	if cfxSpawnZones.verbose or theZone.verbose then 
+		trigger.action.outText("+++spwn: started spawn with spawner for <" .. theZone.name .. ">", 30)
+	end
 	
 	-- will NOT check if conditions are met. This forces a spawn
 	local unitTypes = {} -- build type names

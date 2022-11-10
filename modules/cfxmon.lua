@@ -1,9 +1,11 @@
 cfxmon = {}
-cfxmon.version = "1.0.0"
+cfxmon.version = "1.0.1"
 cfxmon.delay = 30 -- seconds for display 
 --[[--
 	Version History 
 	1.0.0 - initial version
+	1.0.1 - better guard for even.initiator to check if unit exists
+	      - and handle static objcects and other non-grouped objects
 	
 cfxmon is a monitor for all cfx events and callbacks
 use monConfig to tell cfxmon which events and callbacks
@@ -36,17 +38,22 @@ function cfxmon.rejected(event)
 	trigger.action.outText("***mon - dcsReject: " .. event.id .. " (" .. dcsCommon.event2text(event.id) .. ")", cfxmon.delay)
 end
 
-function cfxmon.dcsCB(event)
+function cfxmon.dcsCB(event) -- callback
 	local initiatorStat = ""
-	if event.initiator then
+	if event.initiator and Unit.isExist(event.initiator) then
 		local theUnit = event.initiator
-		local theGroup = theUnit:getGroup()
+		-- we assume it is  unit, but it can be a static object, 
+		-- and may not have getGroup implemented!
+		if theUnit.getGroup then 
+			local theGroup = theUnit:getGroup()
 		
-		local theGroupName = "<none>"
-		if theGroup then theGroupName = theGroup:getName() end 
-		
-		initiatorStat = ", for " .. theUnit:getName()
-		initiatorStat = initiatorStat .. " of " .. theGroupName 
+			local theGroupName = "<none>"
+			if theGroup then theGroupName = theGroup:getName() end 	
+			initiatorStat = ", for " .. theUnit:getName()
+			initiatorStat = initiatorStat .. " of " .. theGroupName
+		else 
+			initiatorStat = ", non-unit (static?) " .. theUnit:getName()
+		end
 	else 
 		initiatorStat = ", NO Initiator" 
 	end 

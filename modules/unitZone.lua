@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.3"
+unitZone.version = "1.2.4"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -16,6 +16,7 @@ unitZone.requiredLibs = {
 	1.2.2 - uzDirectInv 
 	1.2.3 - better guards for enterZone!, exitZone!, changeZone!
 		  - better guards for uzOn? and uzOff?
+	1.2.4 - more verbosity on uzDirect 
 		  
 --]]--
 
@@ -282,7 +283,7 @@ function unitZone.update()
 		
 		-- scan all zones 
 		if not aZone.uzPaused then 
-			local newState = unitZone.checkZoneStatus(aZone)
+			local newState = unitZone.checkZoneStatus(aZone) -- returns true if at least one unit in zone 
 
 			if newState ~= aZone.lastStatus then 
 				-- bang on change! 
@@ -292,6 +293,9 @@ function unitZone.update()
 			
 			-- output direct state suite
 			if aZone.uzDirect then 
+				if aZone.verbose or unitZone.verbose then 
+					trigger.action.outText("+++uZone: <" .. aZone.name .. "> setting uzDirect <" .. aZone.uzDirect .. "> to ".. dcsCommon.bool2Num(newState), 30)
+				end
 				if newState then 
 					cfxZones.setFlagValueMult(aZone.uzDirect, 1, aZone)
 				else 
@@ -299,6 +303,10 @@ function unitZone.update()
 				end
 			end
 			if aZone.uzDirectInv then 
+				local invState = not newState
+				if aZone.verbose or unitZone.verbose then 
+					trigger.action.outText("+++uZone: <" .. aZone.name .. "> setting INVuzDirect <" .. aZone.uzDirectInv .. "> to ".. dcsCommon.bool2Num(invState), 30)
+				end
 				if newState then 
 					cfxZones.setFlagValueMult(aZone.uzDirectInv, 0, aZone)
 				else 
@@ -363,5 +371,6 @@ if not unitZone.start() then
 	unitZone = nil 
 end
 
+--ToDo: matching: name, name wildcard, type  
 --ToDo: add 'neutral' support and add 'both' option 
 --ToDo: add API 

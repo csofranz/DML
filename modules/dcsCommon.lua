@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.7"
+dcsCommon.version = "2.7.9"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -109,6 +109,15 @@ dcsCommon.version = "2.7.7"
 	   - dumpVar2Str detects meta tables 
 	   - rotateGroupData kills unit's psi value if it existed since it messes with heading 
 	   - rotateGroupData - changes psi to -heading if it exists rather than nilling
+ 2.7.8 - new getGeneralDirection()
+	   - new getNauticalDirection()
+	   - more robust guards for getUnitSpeed
+ 2.7.9 - new bool2Num(theBool)
+	   - new aspectByDirection()
+	   - createGroundGroupWithUnits corrected spelling of minDist, crashed scattered formation
+	   - randomPointInCircle fixed erroneous local for x, z 
+	   - "scattered" formation repaired
+ 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -663,7 +672,9 @@ dcsCommon.version = "2.7.7"
 		while direction < 0 do 
 			direction = direction + 360
 		end
-		
+		while direction >= 360 do 
+			direction = direction - 360
+		end
 		if direction < 15 then -- special case 12 o'clock past 12 o'clock
 			return 12
 		end
@@ -673,6 +684,54 @@ dcsCommon.version = "2.7.7"
 	
 	end
 
+	function dcsCommon.getGeneralDirection(direction) -- inspired by cws, improvements my own
+		if not direction then return "unkown" end
+		direction = math.fmod (direction, 360)
+		while direction < 0 do 
+			direction = direction + 360
+		end
+		while direction >= 360 do 
+			direction = direction - 360
+		end
+		if direction < 45 then return "ahead" end	
+		if direction < 135 then return "right" end
+		if direction < 225 then return "behind" end
+		if direction < 315 then return "left" end 
+		return "ahead"
+	end
+	
+	function dcsCommon.getNauticalDirection(direction) -- inspired by cws, improvements my own
+		if not direction then return "unkown" end
+		direction = math.fmod (direction, 360)
+		while direction < 0 do 
+			direction = direction + 360
+		end
+		while direction >= 360 do 
+			direction = direction - 360
+		end
+		if direction < 45 then return "ahead" end	
+		if direction < 135 then return "starboard" end
+		if direction < 225 then return "aft" end
+		if direction < 315 then return "port" end 
+		return "ahead"
+	end
+
+	function dcsCommon.aspectByDirection(direction) -- inspired by cws, improvements my own
+		if not direction then return "unkown" end
+		direction = math.fmod (direction, 360)
+		while direction < 0 do 
+			direction = direction + 360
+		end
+		while direction >= 360 do 
+			direction = direction - 360
+		end
+		
+		if direction < 45 then return "hot" end	
+		if direction < 135 then return "beam" end
+		if direction < 225 then return "drag" end
+		if direction < 315 then return "beam" end 
+		return "hot"
+	end
 	
 	function dcsCommon.randomDegrees()
 		local degrees = math.random(360) * 3.14152 / 180
@@ -690,6 +749,8 @@ dcsCommon.version = "2.7.7"
 
 	function dcsCommon.randomPointInCircle(sourceRadius, innerRadius, x, z)
 		if not x then x = 0 end
+		if not z then z = 0 end 
+		
 		--local y = 0
 		if not innerRadius then innerRadius = 0 end		
 		if innerRadius < 0 then innerRadius = 0 end
@@ -698,8 +759,8 @@ dcsCommon.version = "2.7.7"
 		-- now lets get a random degree
 		local degrees = dcsCommon.randomDegrees() -- math.random(360) * 3.14152 / 180 -- ok, it's actually radiants. 
 		local r = (sourceRadius-innerRadius) * percent 
-		local x = x + (innerRadius + r) * math.cos(degrees)
-		local z = z + (innerRadius + r) * math.sin(degrees)
+		x = x + (innerRadius + r) * math.cos(degrees)
+		z = z + (innerRadius + r) * math.sin(degrees)
 	
 		local thePoint = {}
 		thePoint.x = x
@@ -1351,12 +1412,15 @@ dcsCommon.version = "2.7.7"
 				local lowDist = 10000
 				local uPoint = {}
 				local thePoint = {}
-				repeat 	-- get random point intil mindistance to all is kept or emergencybreak
+				repeat 	-- get random point until mindistance to all is kept or emergencybreak
+					thePoint = dcsCommon.randomPointInCircle(radius, innerRadius) -- returns x, 0, z
+					-- check if too close to others
 					for idx, rUnit in pairs(processedUnits) do -- get min dist to all positioned units
-						thePoint = dcsCommon.randomPointInCircle(radius, innerRadius) -- returns x, 0, z
+						--trigger.action.outText("rPnt: thePoint =  " .. dcsCommon.point2text(thePoint), 30)
 						uPoint.x = rUnit.x
 						uPoint.y = 0
 						uPoint.z = rUnit.y 
+						--trigger.action.outText("rPnt: uPoint =  " .. dcsCommon.point2text(uPoint), 30)
 						local dist = dcsCommon.dist(thePoint, uPoint) -- measure distance to unit
 						if (dist < lowDist) then lowDist = dist end
 					end
@@ -1509,7 +1573,7 @@ dcsCommon.version = "2.7.7"
 	
 	
 	function dcsCommon.createGroundGroupWithUnits(name, theUnitTypes, radius, minDist, formation, innerRadius)
-		if not minDist then mindist = 4 end -- meters
+		if not minDist then minDist = 4 end -- meters
 		if not formation then formation = "line" end 
 		if not radius then radius = 30 end -- meters 
 		if not innerRadius then innerRadius = 0 end
@@ -1981,6 +2045,12 @@ end
 		if theBool then return "yes" end 
 		return "no"
 	end
+	
+	function dcsCommon.bool2Num(theBool)
+		if not theBool then theBool = false end 
+		if theBool then return 1 end 
+		return 0
+	end
 
 	function dcsCommon.point2text(p) 
 		if not p then return "<!NIL!>" end 
@@ -2417,7 +2487,7 @@ end
 
 function dcsCommon.getUnitSpeed(theUnit)
 	if not theUnit then return 0 end
-	if not theUnit:isExist() then return 0 end 
+	if not Unit.isExist(theUnit) then return 0 end 
 	local v = theUnit:getVelocity()
 	return dcsCommon.mag(v.x, v.y, v.z)
 end

@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.9.0"
+cfxZones.version = "2.9.1"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -106,6 +106,9 @@ cfxZones.version = "2.9.0"
 		  - linkUnit works for late-activating units 
 		  - linkUnit now also works for player / clients, dynamic (re-)linking 
 		  - linkUnit uses zone's origin for all calculations 
+- 2.9.1   - new evalRemainder()
+		  - pollFlag supports +/- for immediate numbers, flags, number flags in parantheses
+		  - stronger guards in hasProperty 
 
 --]]--
 cfxZones.verbose = false
@@ -1186,6 +1189,35 @@ function cfxZones.unPulseFlag(args)
 	cfxZones.setFlagValue(theFlag, newVal, theZone)
 end
 
+function cfxZones.evalRemainder(remainder)
+	local rNum = tonumber(remainder)
+	if not rNum then 
+		-- we use remainder as name for flag 
+		-- PROCESS ESCAPE SEQUENCES
+		local esc = string.sub(remainder, 1, 1)
+		local last = string.sub(remainder, -1)
+		if esc == "@" then 
+			remainder = string.sub(remainder, 2)
+			remainder = dcsCommon.trim(remainder)
+		end
+		
+		if esc == "(" and last == ")" and string.len(remainder) > 2 then 
+			-- note: iisues with startswith("(") ???
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if esc == "\"" and last == "\"" and string.len(remainder) > 2 then 
+			remainder = string.sub(remainder, 2, -2)
+			remainder = dcsCommon.trim(remainder)		
+		end
+		if cfxZones.verbose then 
+			trigger.action.outText("+++zne: accessing flag <" .. remainder .. ">", 30)
+		end 
+		rNum = cfxZones.getFlagValue(remainder, theZone)
+	end 
+	return rNum
+end
+
 function cfxZones.doPollFlag(theFlag, method, theZone)
 	if cfxZones.verbose then 
 		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
@@ -1198,14 +1230,19 @@ function cfxZones.doPollFlag(theFlag, method, theZone)
 	method = method:lower()
 	method = dcsCommon.trim(method)
 	val = tonumber(method)
-	if val then 
-		cfxZones.setFlagValue(theFlag, val, theZone)
-		if cfxZones.verbose or theZone.verbose then
-			trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed to #" .. val, 30)
+	if dcsCommon.stringStartsWith(method, "+") or dcsCommon.stringStartsWith(method, "-")
+	then 
+		-- skip this processing, a legal Lua val can start with "+" or "-"
+		-- but we interpret it as a method
+	else
+		if val then 
+			cfxZones.setFlagValue(theFlag, val, theZone)
+			if cfxZones.verbose or theZone.verbose then
+				trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed to #" .. val, 30)
+			end 
+			return
 		end 
-		return 
-	end 
-	
+	end
 	--trigger.action.outText("+++zones: polling " .. theZone.name .. " method " .. method .. " flag " .. theFlag, 30)
 	local currVal = cfxZones.getFlagValue(theFlag, theZone)
 	if method == "inc" or method == "f+1" then 
@@ -1233,6 +1270,21 @@ function cfxZones.doPollFlag(theFlag, method, theZone)
 	elseif dcsCommon.stringStartsWith(method, "pulse") then 
 		cfxZones.pulseFlag(theFlag, method, theZone)
 		
+	elseif dcsCommon.stringStartsWith(method, "+") then 
+		-- we add whatever is to the right 
+		local remainder = dcsCommon.removePrefix(method, "+")
+		local adder = cfxZones.evalRemainder(remainder)
+		cfxZones.setFlagValue(theFlag, currVal+adder, theZone)
+		if theZone.verbose then 
+			trigger.action.outText("+++zones: (poll) updating with '+' flag <" .. theFlag .. "> in <" .. theZone.name .. "> by <" .. adder .. "> to <" .. adder + currVal .. ">", 30)
+		end
+		
+	elseif dcsCommon.stringStartsWith(method, "-") then 
+		-- we subtract whatever is to the right 
+		local remainder = dcsCommon.removePrefix(method, "-")
+		local adder = cfxZones.evalRemainder(remainder)
+		cfxZones.setFlagValue(theFlag, currVal-adder, theZone)
+
 	else 
 		if method ~= "on" and method ~= "f=1" then 
 			trigger.action.outText("+++zones: unknown method <" .. method .. "> - using 'on'", 30)
@@ -1894,6 +1946,10 @@ function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default
 end
 
 function cfxZones.hasProperty(theZone, theProperty) 
+	if not theProperty then 
+		trigger.action.outText("+++zne: WARNING - hasProperty called with nil theProperty for zone <" .. theZone.name .. ">", 30)
+		return false 
+	end 
 	local foundIt = cfxZones.getZoneProperty(theZone, theProperty)
 	if not foundIt then 
 		-- check for possible forgotten or exchanged IO flags 

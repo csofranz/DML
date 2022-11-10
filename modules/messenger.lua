@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.0.1"
+messenger.version = "2.1.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -43,6 +43,24 @@ messenger.messengers = {}
 		  - unit 
 		  - group 
 	2.0.1 - config optimization
+	2.1.0 - unit only: dynamicUnitProcessing for 
+			- <bae: u/z> bearing to unit/zone
+			- <rbae u/z> response mapped by unit's heading
+			- <clk: u/z> bearing in clock position to unit/zone 
+			- <rng: u/z> range to unit/zone 
+			- <hnd: u/z> bearing in left/right/ahead/behind
+			- <sde: u/z> bearing in starboard/port/ahead/aft 
+			- added dynamicGroupProcessing to select unit 1
+			- responses attribute
+			- <rsp: flag>
+			- <rrnd> response randomized
+			- <rhdg: u/z> respons mapped by unit's heading
+			- <cls unit> closing speed 
+			- <vel unit> velocity (speed) 
+			- <asp unit> aspect 
+		    - fix to messageMute
+			- <type: unit> 
+			
 	
 --]]--
 
@@ -137,6 +155,38 @@ function messenger.processDynamicValues(inMsg, theZone)
 			outMsg = string.gsub(outMsg, pattern, val, 1) -- only one sub!
 		end
 	until not startLoc
+	
+	-- now process rsp 
+	pattern = "<rsp:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+
+	if theZone.msgResponses and (#theZone.msgResponses > 0) then -- only if this zone has an array
+		--trigger.action.outText("enter response proccing", 30)
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then 
+				--trigger.action.outText("response: found an occurence", 30)
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<rsp:%s*", "")
+				param = string.gsub(param, ">","")
+				
+				-- access flag
+				local val = cfxZones.getFlagValue(param, theZone)
+				if not val or (val < 1) then val = 1 end 
+				if val > #theZone.msgResponses then val = #theZone.msgResponses end 
+				
+				val = theZone.msgResponses[val]
+				val = dcsCommon.trim(val)
+				-- replace pattern in original with new val 
+				outMsg = string.gsub(outMsg, pattern, val, 1) -- only one sub!
+			end
+		until not startLoc
+		
+		-- rnd response 
+		local rndRsp = dcsCommon.pickRandom(theZone.msgResponses)
+		outMsg = outMsg:gsub ("<rrnd>", rndRsp)
+	end
+	
 	return outMsg
 end
 
@@ -167,8 +217,13 @@ end
 
 function messenger.processDynamicLoc(inMsg, theZone)
 	-- replace all occurences of <lat/lon/ele/mgrs: flagName> with their values 
-	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon"}
+-- agl = angels 
+-- vel = velocity (speed) 
+-- hdg = heading 
+-- rhdg = heading, response-mapped
+	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type"}
 	local outMsg = inMsg
+	local uHead = 0
 	for idx, aLocale in pairs(locales) do 
 		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
 		repeat -- iterate all patterns one by one 
@@ -183,14 +238,32 @@ function messenger.processDynamicLoc(inMsg, theZone)
 				local thePoint = nil 
 				local tZone = cfxZones.getZoneByName(param)
 				local tUnit = Unit.getByName(param)
-				if tZone then 
+				local spd = 0
+				local angels = 0 
+				local theType = "<errType>"
+				if tZone then
+					theType = "Zone"
 					thePoint = cfxZones.getPoint(tZone)
-					-- since zones always have elevation of 0, 
-					-- now get the elevation from the map 
-					thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z})
+					if tZone.linkedUnit and Unit.isExist(tZone.linkedUnit) then 
+						local lU = tZone.linkedUnit
+						local masterPoint = lU:getPoint()
+						thePoint.y = masterPoint.y 
+						spd = dcsCommon.getUnitSpeed(lU)
+						spd = math.floor(spd * 3.6)
+						uHead = math.floor(dcsCommon.getUnitHeading(tUnit) * 57.2958) -- to degrees.
+					else 
+						-- since zones always have elevation of 0, 
+						-- now get the elevation from the map 
+						thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z})
+					end
 				elseif tUnit then 
-					if Unit.isExist(tUnit) then 
+					if Unit.isExist(tUnit) then
+						theType = tUnit:getTypeName()
 						thePoint = tUnit:getPoint()
+						spd = dcsCommon.getUnitSpeed(tUnit)
+						-- convert m/s to km/h 
+						spd = math.floor(spd * 3.6)
+						uHead = math.floor(dcsCommon.getUnitHeading(tUnit) * 57.2958) -- to degrees. 
 					end
 				else 
 					-- nothing to do, remove me.
@@ -202,16 +275,31 @@ function messenger.processDynamicLoc(inMsg, theZone)
 					-- processing. return result in locString
 					local lat, lon, alt = coord.LOtoLL(thePoint)
 					lat, lon = dcsCommon.latLon2Text(lat, lon)
+					angels = math.floor(thePoint.y) 
 					if theZone.imperialUnits then 
-						alt = math.floor(alt * 3.28084) -- feet 
+						alt = math.floor(alt * 3.28084) -- feet
+						spd = math.floor(spd * 0.539957) -- km/h to knots	
+						angels = math.floor(angels * 3.28084)
 					else 
 						alt = math.floor(alt) -- meters 
 					end 
+					
+					if angels > 1000 then 
+						angels = math.floor(angels / 100) * 100 
+					end
+					
 					if aLocale == "lat" then locString = lat 
 					elseif aLocale == "lon" then locString = lon 
 					elseif aLocale == "ele" then locString = tostring(alt)
 					elseif aLocale == "lle" then locString = lat .. " " .. lon .. " ele " .. tostring(alt) 
 					elseif aLocale == "latlon" then locString = lat .. " " .. lon 
+					elseif aLocale == "alt" then locString = tostring(angels) -- don't confuse alt and angels, bad var naming here
+					elseif aLocale == "vel" then locString = tostring(spd)
+					elseif aLocale == "hdg" then locString = tostring(uHead)
+					elseif aLocale == "type" then locString = theType 
+					elseif aLocale == "rhdg" and (theZone.msgResponses) then 
+						local offset = messenger.rspMapper360(uHead, #theZone.msgResponses)
+						locString = dcsCommon.trim(theZone.msgResponses[offset])
 					else 
 						-- we have mgrs
 						local grid = coord.LLtoMGRS(coord.LOtoLL(thePoint))
@@ -225,6 +313,161 @@ function messenger.processDynamicLoc(inMsg, theZone)
 	end -- for all locales 
 	return outMsg
 end
+
+
+
+function messenger.rspMapper360(directionInDegrees, numResponses)
+	-- maps responses like clock. Clock has 12 'responses' (12, 1, .., 11), 
+	-- with the first (12) also mapping to the last half arc 
+	-- this method dynamically 'winds' the responses around 
+	-- a clock and returns the index of the message to display 
+	if numResponses < 1 then numResponses = 1 end 
+	directionInDegrees = math.floor(directionInDegrees) 
+	while directionInDegrees < 0 do directionInDegrees = directionInDegrees + 360 end 
+	while directionInDegrees >= 360 do directionInDegrees = directionInDegrees - 360 end 
+	-- now we have 0..360 
+	-- calculate arc per item 
+	local arcPerItem = 360 / numResponses
+	local halfArc = arcPerItem / 2
+
+	-- we now map 0..360 to (0-halfArc..360-halfArc) by shifting 
+	-- direction by half-arc and clipping back 0..360
+	-- and now we can directly derive the index of the response 
+	directionInDegrees = directionInDegrees + halfArc
+	if directionInDegrees >= 360 then directionInDegrees = directionInDegrees - 360 end 
+	
+	local index = math.floor(directionInDegrees / arcPerItem) + 1 -- 1 .. numResponses 
+	
+	return index 
+end
+
+
+function messenger.dynamicGroupProcessing(msg, theZone, theGroup)
+	if not theGroup then return msg end 
+	-- access first unit 
+	local theUnit = theGroup:getUnit(1) 
+	if not theUnit then return msg end 
+	if not Unit.isExist(theUnit) then return msg end 
+	-- we always use unit 1 as reference 
+	return messenger.dynamicUnitProcessing(msg, theZone, theUnit)
+end
+
+function messenger.dynamicUnitProcessing(inMsg, theZone, theUnit)
+-- replace all occurences of <bae/rng/asp/cls/clk: unit/zone> with their values 
+-- bae = bearingInDegreesFromAtoB
+-- rng = range 
+
+-- asp = aspect (not yet implemented)
+-- cls = closing velocity (not yet implemented) 
+-- clk = o'clock 
+-- hnd = handedness (left/right/ahead/behind
+-- sde = side (starboard / port / ahead / aft)
+-- rbea = responses mapped to bearing. maps all responses like clock, with "12" being the first response. requires msgResponses set
+
+	local here = theUnit:getPoint()
+	local uHead = dcsCommon.getUnitHeading(theUnit) * 57.2958 -- to degrees. 
+	local locales = {"bea", "rng", "clk", "hnd", "sde", "rbea", "cls", "pcls", "asp"}
+	local outMsg = inMsg
+	for idx, aLocale in pairs(locales) do 
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "")
+				param = string.gsub(param, ">","")
+				-- find zone or unit
+				param = dcsCommon.trim(param)
+				local thePoint = nil 
+				local cls = 0 
+				local aspct = 0
+				local tZone = cfxZones.getZoneByName(param)
+				local tUnit = Unit.getByName(param)
+				local aspect = 0
+				local tHead = 0
+				
+				if tZone then 
+					thePoint = cfxZones.getPoint(tZone)
+					-- if this zone follows a unit, get the master units elevaltion
+					if tZone.linkedUnit and Unit.isExist(tZone.linkedUnit) then 
+						local lU = tZone.linkedUnit
+						local masterPoint = lU:getPoint()
+						thePoint.y = masterPoint.y 
+						cls = -dcsCommon.getClosingVelocity(theUnit, lU)
+						tHead = dcsCommon.getUnitHeading(lU) * 57.2958
+					else 
+						-- since zones always have elevation of 0, 
+						-- now get the elevation from the map 
+						thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z})
+					end
+				elseif tUnit then 
+					if Unit.isExist(tUnit) then 
+						thePoint = tUnit:getPoint()
+						cls = -dcsCommon.getClosingVelocity(theUnit, tUnit)
+						tHead = dcsCommon.getUnitHeading(tUnit) * 57.2958
+					end
+				else 
+					-- nothing to do, remove me.
+				end
+
+				local locString = theZone.errString
+				if thePoint then 
+					-- now that we have a point, we can do locale-specific
+					-- processing. return result in locString
+					local pcls = cls
+					local r = dcsCommon.dist(here, thePoint)
+					--local alt = thePoint.y
+					local uSize = "m"
+					if theZone.imperialUnits then 
+						r = math.floor(r * 3.28084) -- feet 
+						uSize = "ft"
+						if r > 1000 then 
+						-- convert to nautical mile
+							r = math.floor(r * 10 / 6076.12) / 10
+							uSize = "nm"
+						end
+						cls = math.floor(cls * 1.9438452) -- m/s to knots
+						pcls = math.floor(pcls * 32.8084) / 10 -- ft/s
+					else 
+						r = math.floor(r) -- meters 
+						if r > 1000 then  
+							r = math.floor (r /	100) / 10
+							uSize = "km"
+						end
+						cls = math.floor(cls * 3.6) -- m/s to km/h
+						pcls = math.floor(pcls * 10) / 10 -- m/s
+					end 
+
+					local bea = dcsCommon.bearingInDegreesFromAtoB(here, thePoint)
+					local beaInv = 360 - bea -- from tUnit to player
+					local direction = bea - uHead  -- tUnit as seen from player heading uHead
+					if direction < 0 then direction = direction + 360 end 
+					aspect = beaInv - tHead 
+					-- set up locale exchange string
+					if aLocale == "bea" then locString = tostring(bea)
+					elseif aLocale == "asp" then locString = dcsCommon.aspectByDirection(aspect)
+					elseif aLocale == "clk" then 
+						locString = tostring(dcsCommon.getClockDirection(direction))
+					elseif aLocale == "rng" then locString = tostring(r)..uSize
+					elseif aLocale == "cls" then locString = tostring(cls)
+					elseif aLocale == "pcls" then locString = tostring(pcls)
+					elseif aLocale == "hnd" then locString = dcsCommon.getGeneralDirection(direction)
+					elseif aLocale == "sde" then locString = dcsCommon.getNauticalDirection(direction) 
+					elseif aLocale == "rbea" and (theZone.msgResponses) then 
+						local offset = messenger.rspMapper360(direction, #theZone.msgResponses)
+						locString = dcsCommon.trim(theZone.msgResponses[offset])
+					else locString = "<locale " .. aLocale .. " err: undefined params>"
+					end
+				end
+				-- replace pattern in original with new val 
+				outMsg = string.gsub(outMsg, pattern, locString, 1) -- only one sub!
+			end -- if startloc
+		until not startLoc
+	end -- for all locales 
+	return outMsg
+end
+
 
 function messenger.dynamicFlagProcessing(inMsg, theZone)
 	if not inMsg then return "No in message" end 
@@ -296,9 +539,11 @@ function messenger.createMessengerWithZone(theZone)
 --	end
 
 	theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "mute", false) --false 
-	if cfxZones.hasProperty(theZone, "messageOff?") then
+	if cfxZones.hasProperty(theZone, "messageMute") then
 		theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "messageMute", false)
 	end
+	
+	-- advisory: messageOff, messageOffFlag and lastMessageOff are all distinct 
 	
 	if cfxZones.hasProperty(theZone, "messageOff?") then 
 		theZone.messageOffFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOff?", "*none")
@@ -313,23 +558,19 @@ function messenger.createMessengerWithZone(theZone)
 	-- reveiver: coalition, group, unit 
 	if cfxZones.hasProperty(theZone, "coalition") then 
 		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
-	end 
-	
-	if cfxZones.hasProperty(theZone, "msgCoalition") then 
+	elseif cfxZones.hasProperty(theZone, "msgCoalition") then 
 		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "msgCoalition", 0)
 	end 
 	
 	if cfxZones.hasProperty(theZone, "group") then 
 		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "group", "<none>")
-	end
-	if cfxZones.hasProperty(theZone, "msgGroup") then 
+	elseif cfxZones.hasProperty(theZone, "msgGroup") then 
 		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "msgGroup", "<none>")
 	end
 	
 	if cfxZones.hasProperty(theZone, "unit") then 
 		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "unit", "<none>")
-	end
-	if cfxZones.hasProperty(theZone, "msgUnit") then 
+	elseif cfxZones.hasProperty(theZone, "msgUnit") then 
 		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "msgUnit", "<none>")
 	end
 	
@@ -356,6 +597,12 @@ function messenger.createMessengerWithZone(theZone)
 	theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "error", "")
 	if cfxZones.hasProperty(theZone, "messageError") then 
 		theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "messageError", "")
+	end
+	
+	-- possible responses for mapping
+	if cfxZones.hasProperty(theZone, "responses") then 
+		local resp = cfxZones.getStringFromZoneProperty(theZone, "responses", "none")
+		theZone.msgResponses = dcsCommon.string2Array(resp, ",")
 	end
 	
 	if messenger.verbose or theZone.verbose then 
@@ -424,6 +671,7 @@ function messenger.isTriggered(theZone)
 		local theGroup = Group.getByName(theZone.msgGroup)
 		if theGroup and Group.isExist(theGroup) then 
 			local ID = theGroup:getID()
+			msg = messenger.dynamicGroupProcessing(msg, theZone, theGroup)
 			trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
 			trigger.action.outSoundForGroup(ID, fileName)
 		end
@@ -431,6 +679,7 @@ function messenger.isTriggered(theZone)
 		local theUnit = Unit.getByName(theZone.msgUnit)
 		if theUnit and Unit.isExist(theUnit) then 
 			local ID = theUnit:getID()
+			msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
 			trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
 			trigger.action.outSoundForUnit(ID, fileName)
 		end
@@ -533,11 +782,6 @@ if not messenger.start() then
 end
 
 --[[--
-Wildcard extension: 
- - general flag access <v flag name>
- - <t: flag name>
- - <lat: unit/zone name>
- - <mrgs: unit/zone name>
- 
+
   
 --]]--

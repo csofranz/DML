@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "3.0.2"
+guardianAngel.version = "3.0.4"
 guardianAngel.ups = 10
 guardianAngel.name = "Guardian Angel" -- just in case someone accesses .name  
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
@@ -59,6 +59,8 @@ guardianAngel.requiredLibs = {
 		   - removed legacy code 
 	 3.0.2 - added guardianAngel.name for those who use local flags on activate
 	 3.0.3 - monitorItem() guards against loss of target (nil)
+	 3.0.4 - launchSound attribute 
+		   - interventionSound attribute 
 
 
 This script detects missiles launched against protected aircraft an 
@@ -276,11 +278,20 @@ function guardianAngel.monitorItem(theItem)
 				local desc = "Missile, missile, missile - now heading for " .. ctName .. "!"
 				if guardianAngel.private then 
 					trigger.action.outTextForGroup(ID, desc, 30) 
+					if guardianAngel.launchSound then 
+						local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
+						trigger.action.outSoundForGroup(ID, fileName)
+					end
 				else 
-					trigger.action.outText(desc, 30) 
+					trigger.action.outText(desc, 30)
+					if guardianAngel.launchSound then 
+						local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
+						trigger.action.outSound(fileName)
+					end
 				end
 			end
 		end
+		
 		guardianAngel.retargetItem(theItem, currentTarget, isThreat)
 		t = currentTarget
 	else
@@ -326,14 +337,20 @@ function guardianAngel.monitorItem(theItem)
 		   d <= lethalRange + 10 
 		then 
 			desc = desc .. " ANGEL INTERVENTION"
-			--if theItem.lostTrack then desc = desc .. " (little sneak!)" end 
-			--if theItem.missed then desc = desc .. " (missed you!)" end 
 			
 			if guardianAngel.announcer then 
 				if guardianAngel.private then 
 					trigger.action.outTextForGroup(ID, desc, 30) 
+					if guardianAngel.interventionSound then 
+						local fileName = "l10n/DEFAULT/" .. guardianAngel.interventionSound
+						trigger.action.outSoundForGroup(ID, fileName)
+					end
 				else 
 					trigger.action.outText(desc, 30) 
+					if guardianAngel.interventionSound then 
+						local fileName = "l10n/DEFAULT/" .. guardianAngel.interventionSound
+						trigger.action.outSound(fileName)
+					end
 				end
 			end
 			guardianAngel.invokeCallbacks("intervention", theItem.targetName, theItem.weaponName)
@@ -608,8 +625,16 @@ function guardianAngel.somethingHappened(event)
 			-- can be moved to update()
 			if guardianAngel.private then 
 				trigger.action.outTextForGroup(grpID, "Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, 30)
+				if guardianAngel.launchSound then 
+					local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
+					trigger.action.outSoundForGroup(grpID, fileName)
+				end
 			else 
 				trigger.action.outText("Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, 30)
+				if guardianAngel.launchSound then 
+					local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
+					trigger.action.outSound(fileName)
+				end
 			end
 			
 			theQItem.detected = true -- remember: we detected and warned already
@@ -848,6 +873,14 @@ function guardianAngel.readConfigZone()
 	elseif cfxZones.hasProperty(theZone, "off?") then 
 		guardianAngel.deactivate = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>") 
 		guardianAngel.lastDeActivate = cfxZones.getFlagValue(guardianAngel.deactivate, theZone)
+	end
+	
+	if cfxZones.hasProperty(theZone, "launchSound") then 
+		guardianAngel.launchSound = cfxZones.getStringFromZoneProperty(theZone, "launchSound", "nosound")
+	end
+	
+	if cfxZones.hasProperty(theZone, "interventionSound") then 
+		guardianAngel.interventionSound = cfxZones.getStringFromZoneProperty(theZone, "interventionSound", "nosound")
 	end
 	
 	guardianAngel.configZone = theZone 
