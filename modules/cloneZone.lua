@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.6.0"
+cloneZones.version = "1.6.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -65,6 +65,12 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.6.0 - fixed issues with cloning for zones with linked units
 		  - cloning with useHeading 
 		  - major declutter 
+	1.6.1 - removed some verbosity when not rotating routes
+		  - updateTaskLocations ()
+		  - cloning groups now also adjusts tasks like search and engage in zone
+		  - cloning with rndLoc supports polygons
+		  - corrected rndLoc without centerOnly to not include individual offsets
+		  - ensure support of recovery tanker resolve cloned group 
 	
 	
 --]]--
@@ -402,6 +408,21 @@ function cloneZones.rotateWPAroundCenter(thePoint, center, angle)
 	thePoint.y = py + center.z -- !!
 end
 
+function cloneZones.updateTaskLocations(thePoint, zoneDelta)
+	-- parse tasks for x and y and update them by zoneDelta
+	if thePoint and thePoint.task and thePoint.task.params and thePoint.task.params.tasks then 
+		local theTasks = thePoint.task.params.tasks
+		for idx, aTask in pairs(theTasks) do 
+			-- EngageTargetsInZone task has x & y in params
+			if aTask.params and aTask.params.x and aTask.params.y then 
+				aTask.params.x = aTask.params.x + zoneDelta.x 
+				aTask.params.y = aTask.params.y + zoneDelta.z --!!
+--				trigger.action.outText("moved search & engage zone", 30)
+			end
+		end
+	end
+end
+
 function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWaypoints, center, angle)
 	-- enter with theData being group's data block 
 	-- remember that zoneDelta's [z] modifies theData's y!!
@@ -427,8 +448,9 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 					if center and angle then 
 						cloneZones.rotateWPAroundCenter(thePoints[i], center, angle)
 					else 
-						trigger.action.outText("not rotating route", 30)
+--						trigger.action.outText("not rotating route", 30)
 					end
+					cloneZones.updateTaskLocations(thePoints[i], zoneDelta)
 				end
 			else 
 				-- only first point 
@@ -437,6 +459,7 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 				if center and angle then 
 					cloneZones.rotateWPAroundCenter(thePoints[1], center, angle)
 				end
+				cloneZones.updateTaskLocations(thePoints[i], zoneDelta)
 			end 
 			
 			-- if there is an airodrome id given in first waypoint, 
@@ -617,8 +640,10 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 			local task = aPoint.task
 			if task and task.params and task.params.tasks then
 				local tasks = task.params.tasks 
+				-- iterate all tasks for this waypoint 
 				for idy, taskData in pairs(tasks) do
 					-- resolve group references in TASKS
+					-- also covers recovery tanke etc
 					if taskData.id and taskData.params and taskData.params.groupId
 					then 
 						-- we resolve group reference 
@@ -628,7 +653,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						
 					end
 					
-					-- resolve EMBARK/DISEMBARK groupd references 
+					-- resolve EMBARK/DISEMBARK group references 
 					if taskData.id and taskData.params and taskData.params.groupsForEmbarking
 					then 
 						-- build new groupsForEmbarking
@@ -686,6 +711,7 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 					end
 					
 					-- resolve unit references in ACTIONS
+					-- for example TACAN
 					if taskData.params and taskData.params.action and 
 					taskData.params.action.params and taskData.params.action.params.unitId then 
 						local uID = taskData.params.action.params.unitId 
@@ -795,24 +821,32 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		if spawnZone.rndLoc then 
 			-- calculate the entire group's displacement
 			local units = rawData.units
+			--[[
 			local r = math.random() * spawnZone.radius
 			local phi = 6.2831 * math.random() -- that's 2Pi, folx 
 			local dx = r * math.cos(phi)
 			local dy = r * math.sin(phi)
-				
+			--]]
+			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+			
 			for idx, aUnit in pairs(units) do 
 				if not spawnZone.centerOnly then 
 					-- *every unit's displacement is randomized
-					r = math.random() * spawnZone.radius
-					phi = 6.2831 * math.random() -- that's 2Pi, folx 
-					dx = r * math.cos(phi)
-					dy = r * math.sin(phi)
+					-- r = math.random() * spawnZone.radius
+					-- phi = 6.2831 * math.random() -- that's 2Pi, folx 
+					-- dx = r * math.cos(phi)
+					-- dy = r * math.sin(phi)
+					loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone)
+					aUnit.x = loc.x 
+					aUnit.y = loc.z 
+				else 
+					aUnit.x = aUnit.x + dx
+					aUnit.y = aUnit.y + dy 
 				end
 				if spawnZone.verbose or cloneZones.verbose then 
 					trigger.action.outText("+++clnZ: <" .. spawnZone.name .. "> R = " .. spawnZone.radius .. ":G<" .. rawData.name .. "/" .. aUnit.name .. "> - rndLoc: r = " .. r .. ", dx = " .. dx .. ", dy= " .. dy .. ".", 30)
 				end
-				aUnit.x = aUnit.x + dx
-				aUnit.y = aUnit.y + dy 
+
 			end
 		end
 		
@@ -982,10 +1016,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			
 		-- randomize if enabled
 		if spawnZone.rndLoc then 
-			local r = math.random() * spawnZone.radius
-			local phi = 6.2831 * math.random() -- that's 2Pi, folx 
-			local dx = r * math.cos(phi)
-			local dy = r * math.sin(phi)
+			--local r = math.random() * spawnZone.radius
+			--local phi = 6.2831 * math.random() -- that's 2Pi, folx 
+			--local dx = r * math.cos(phi)
+			--local dy = r * math.sin(phi)
+			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
 			rawData.x = rawData.x + dx
 			rawData.y = rawData.y + dy 
 		end

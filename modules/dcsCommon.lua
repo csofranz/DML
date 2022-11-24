@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.9"
+dcsCommon.version = "2.7.10"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -117,6 +117,7 @@ dcsCommon.version = "2.7.9"
 	   - createGroundGroupWithUnits corrected spelling of minDist, crashed scattered formation
 	   - randomPointInCircle fixed erroneous local for x, z 
 	   - "scattered" formation repaired
+ 2.7.10- semaphore groundwork 
  
 --]]--
 
@@ -2892,7 +2893,30 @@ function dcsCommon.LSR(a, num)
 	return a
 end
 
+--
+-- SEMAPHORES
+--
+dcsCommon.semaphores = {}
 
+-- replacement for trigger.misc.getUserFlag
+function dcsCommon.getUserFlag(flagName)
+	if dcsCommon.semaphores[flagName] then 
+		return dcsCommon.semaphores[flagName]
+	end
+	
+	return trigger.misc.getUserFlag(flagName)
+end
+
+-- replacement for trigger.action.setUserFlag 
+function dcsCommon.setUserFlag(flagName, theValue)
+	-- not yet connected: semaphores
+	
+	-- forget semaphore content if new value is old-school 
+	if type(theValue) == "number" then 
+		dcsCommon.semaphores[theValue] = nil --return to old-school 
+	end
+	trigger.action.setUserFlag(flagName, theValue)
+end
 --
 --
 -- INIT

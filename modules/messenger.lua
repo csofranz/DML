@@ -43,24 +43,24 @@ messenger.messengers = {}
 		  - unit 
 		  - group 
 	2.0.1 - config optimization
-	2.1.0 - unit only: dynamicUnitProcessing for 
-			- <bae: u/z> bearing to unit/zone
-			- <rbae u/z> response mapped by unit's heading
-			- <clk: u/z> bearing in clock position to unit/zone 
-			- <rng: u/z> range to unit/zone 
-			- <hnd: u/z> bearing in left/right/ahead/behind
-			- <sde: u/z> bearing in starboard/port/ahead/aft 
-			- added dynamicGroupProcessing to select unit 1
-			- responses attribute
-			- <rsp: flag>
-			- <rrnd> response randomized
-			- <rhdg: u/z> respons mapped by unit's heading
-			- <cls unit> closing speed 
-			- <vel unit> velocity (speed) 
-			- <asp unit> aspect 
-		    - fix to messageMute
-			- <type: unit> 
-			
+	2.1.0 - unit only: dynamicUnitProcessing with other units/zones 
+		  - <bae: u/z> bearing to unit/zone
+		  - <rbae u/z> response mapped by unit's heading
+		  - <clk: u/z> bearing in clock position to unit/zone 
+		  - <rng: u/z> range to unit/zone 
+		  - <hnd: u/z> bearing in left/right/ahead/behind
+		  - <sde: u/z> bearing in starboard/port/ahead/aft 
+		  - added dynamicGroupProcessing to select unit 1
+		  - responses attribute
+		  - <rsp: flag>
+		  - <rrnd> response randomized
+		  - <rhdg: u/z> respons mapped by unit's heading
+		  - <cls unit> closing speed 
+		  - <vel unit> velocity (speed) 
+		  - <asp unit> aspect 
+		  - fix to messageMute
+		  - <type: unit> 
+	2.1.1 - cosmetic: only output text if len>0 and not cls 
 	
 --]]--
 
@@ -665,14 +665,18 @@ function messenger.isTriggered(theZone)
 	if theZone.spaceAfter then msg = msg .. "\n" end 
 	
 	if theZone.msgCoalition then 
-		trigger.action.outTextForCoalition(theZone.msgCoalition, msg, theZone.duration, theZone.clearScreen)
+		if #msg > 0 or theZone.clearScreen then 
+			trigger.action.outTextForCoalition(theZone.msgCoalition, msg, theZone.duration, theZone.clearScreen)
+		end
 		trigger.action.outSoundForCoalition(theZone.msgCoalition, fileName)
 	elseif theZone.msgGroup then 
 		local theGroup = Group.getByName(theZone.msgGroup)
 		if theGroup and Group.isExist(theGroup) then 
 			local ID = theGroup:getID()
 			msg = messenger.dynamicGroupProcessing(msg, theZone, theGroup)
-			trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
+			if #msg > 0 or theZone.clearScreen then 
+				trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
+			end
 			trigger.action.outSoundForGroup(ID, fileName)
 		end
 	elseif theZone.msgUnit then 
@@ -680,12 +684,16 @@ function messenger.isTriggered(theZone)
 		if theUnit and Unit.isExist(theUnit) then 
 			local ID = theUnit:getID()
 			msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
-			trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
+			if #msg > 0 or theZone.clearScreen then 
+				trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
+			end
 			trigger.action.outSoundForUnit(ID, fileName)
 		end
 	else 
 		-- out to all 
-		trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
+		if #msg > 0 or theZone.clearScreen then 
+			trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
+		end
 		trigger.action.outSound(fileName)
 	end
 end

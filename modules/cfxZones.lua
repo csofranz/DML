@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.9.1"
+cfxZones.version = "2.9.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -109,6 +109,11 @@ cfxZones.version = "2.9.1"
 - 2.9.1   - new evalRemainder()
 		  - pollFlag supports +/- for immediate numbers, flags, number flags in parantheses
 		  - stronger guards in hasProperty 
+- 2.9.2   - new createRandomPointInPolyZone()
+          - createRandomZoneInZone uses createRandomPointInPolyZone
+		  - new createRandomPointInZone()
+		  - new randomPointInZone()
+
 
 --]]--
 cfxZones.verbose = false
@@ -207,7 +212,7 @@ function cfxZones.readFromDCS(clearfirst)
 			local upperName = newZone.name:upper()
 			
 			-- location as 'point'
-			-- WARNING: zones locs are 2D (x,y) pairs, whily y in DCS is altitude.
+			-- WARNING: zones locs are 2D (x,y) pairs, while y in DCS is altitude.
 			--          so we need to change (x,y) into (x, 0, z). Since Zones have no
 			--          altitude (they are an infinite cylinder) this works. Remember to 
 			--          drop y from zone calculations to see if inside. 
@@ -229,10 +234,12 @@ function cfxZones.readFromDCS(clearfirst)
 			elseif zoneType == 2 then
 				-- polyZone
 				newZone.isPoly = true 
-				newZone.radius = dcsZone.radius -- radius is still written in DCS, may change later
+				newZone.radius = dcsZone.radius -- radius is still written in DCS, may change later. The radius has no meaning and is the last radius written before zone changed to poly.
+				-- note that newZone.point is only inside the tone for 
+				-- convex polys, and DML only correctly works with convex polys
 				-- now transfer all point in the poly
 				-- note: DCS in 2.7 misspells vertices as 'verticies'
-				-- correct vor this 
+				-- correct for this 
 				local verts = {}
 				if dcsZone.verticies then verts = dcsZone.verticies 
 				else 
@@ -242,7 +249,7 @@ function cfxZones.readFromDCS(clearfirst)
 				
 				for v=1, #verts do
 					local dcsPoint = verts[v]
-					local polyPoint = cfxZones.createPointFromDCSPoint(dcsPoint) -- (x, y) -- (x, 0, y-->z)
+					local polyPoint = cfxZones.createPointFromDCSPoint(dcsPoint) -- (x, y) --> (x, 0, y-->z)
 					newZone.poly[v] = polyPoint
 				end
 			else 
@@ -290,15 +297,18 @@ function cfxZones.calculateZoneBounds(theZone)
 		local lr = cfxZones.createPointFromPoint(poly[1])
 		local ul = cfxZones.createPointFromPoint(poly[1])
 		local ur = cfxZones.createPointFromPoint(poly[1])
-
+		
+		local pRad = dcsCommon.dist(theZone.point, poly[1]) -- rRad is radius for polygon from theZone.point 
+		
 		-- now iterate through all points and adjust bounds accordingly 
 		for v=2, #poly do 
-			 local vertex = poly[v]
-			 if (vertex.x < ll.x) then ll.x = vertex.x; ul.x = vertex.x end 
-			 if (vertex.x > lr.x) then lr.x = vertex.x; ur.x = vertex.x end 
-			 if (vertex.z < ul.z) then ul.z = vertex.z; ur.z = vertex.z end
-			 if (vertex.z > ll.z) then ll.z = vertex.z; lr.z = vertex.z end 
-			
+			local vertex = poly[v]
+			if (vertex.x < ll.x) then ll.x = vertex.x; ul.x = vertex.x end 
+			if (vertex.x > lr.x) then lr.x = vertex.x; ur.x = vertex.x end 
+			if (vertex.z < ul.z) then ul.z = vertex.z; ur.z = vertex.z end
+			if (vertex.z > ll.z) then ll.z = vertex.z; lr.z = vertex.z end 
+			local dp = dcsCommon.dist(theZone.point, vertex)
+			if dp > pRad then pRad = dp end -- find largst distance to vertex
 		end
 		
 		-- now keep the new point references
@@ -307,6 +317,9 @@ function cfxZones.calculateZoneBounds(theZone)
 		bounds.lr = lr
 		bounds.ul = ul
 		bounds.ur = ur 
+		-- store pRad 
+		theZone.pRad = pRad -- not sure we'll ever need that, but at least we have it
+--		trigger.action.outText("+++Zones: poly zone <" .. theZone.name .. "> has pRad = " .. pRad, 30) -- remember to remove me 
 	else 
 		-- huston, we have a problem
 		if cfxZones.verbose then 
@@ -351,9 +364,80 @@ end
 
 
 function cfxZones.createRandomPointInsideBounds(bounds)
+	-- warning: bounds do not move woth zone! may have to be updated
 	local x = math.random(bounds.ll.x, ur.x)
 	local z = math.random(bounds.ll.z, ur.z)
 	return cfxZones.createPoint(x, 0, z)
+end
+
+function cfxZones.createRandomPointInZone(theZone)
+	if not theZone then return nil end 
+	if theZone.isPoly then 
+		local loc, dx, dy = cfxZones.createRandomPointInPolyZone(theZone)
+		return loc, dx, dy 
+	else 
+		local loc, dx, dy = cfxZones.createRandomPointInCircleZone(theZone)
+		return loc, dx, dy 
+	end
+end
+
+function cfxZones.randomPointInZone(theZone)
+	local loc, dx, dy =  cfxZones.createRandomPointInZone(theZone)
+	return loc, dx, dy 
+end
+
+function cfxZones.createRandomPointInCircleZone(theZone)
+	if not theZone.isCircle then 
+		trigger.action.outText("+++Zones: warning - createRandomPointInCircleZone called for non-circle zone <" .. theZone.name .. ">", 30)
+		return {x=theZone.point.x, y=0, z=theZone.point.z}
+	end
+	
+	-- ok, let's first create a random percentage value for the new radius
+	-- now lets get a random degree
+	local degrees = math.random() * 2 * 3.14152 -- radiants. 
+	local r = theZone.radius * math.random() 
+	local p = cfxZones.getPoint(theZone) -- force update of zone if linked
+	local dx = r * math.cos(degrees)
+	local dz = r * math.sin(degrees)
+	local px = p.x + dx -- r * math.cos(degrees)
+	local pz = p.z + dz -- r * math.sin(degrees)
+	return {x=px, y=0, z = pz}, dx, dz -- returns loc and offsets to theZone.point
+end
+
+function cfxZones.createRandomPointInPolyZone(theZone)
+	if not theZone.isPoly then 
+		trigger.action.outText("+++Zones: warning - createRandomPointInPolyZone called for non-poly zone <" .. theZone.name .. ">", 30)
+		return cfxZones.createPoint(theZone.point.x, 0, theZone.point.z)
+	end
+	-- force update of all points 
+	local p = cfxZones.getPoint(theZone)
+	
+	-- point in convex poly: choose two different lines from that polygon 
+	local lineIdxA = dcsCommon.smallRandom(#theZone.poly)
+	repeat lineIdxB = dcsCommon.smallRandom(#theZone.poly) until (lineIdxA ~= lineIdxB)
+	
+	-- we now have two different lines. pick a random point on each. 
+	-- we use lerp to pick any point between a and b 
+	local a = theZone.poly[lineIdxA]
+	lineIdxA = lineIdxA + 1 -- get next point in poly and wrap around
+	if lineIdxA > #theZone.poly then lineIdxA = 1 end 
+	local b = theZone.poly[lineIdxA] 
+	local randompercent = math.random()
+	local sourceA = dcsCommon.vLerp (a, b, randompercent)
+	
+	-- now get point on second line 
+	a = theZone.poly[lineIdxB]
+	lineIdxB = lineIdxB + 1 -- get next point in poly and wrap around
+	if lineIdxB > #theZone.poly then lineIdxB = 1 end 
+	b = theZone.poly[lineIdxB] 
+	randompercent = math.random()
+	local sourceB = dcsCommon.vLerp (a, b, randompercent)
+	
+	-- now take a random point on that line that entirely 
+	-- runs through the poly 
+	randompercent = math.random()
+	local polyPoint = dcsCommon.vLerp (sourceA, sourceB, randompercent)
+	return polyPoint, polyPoint.x - p.x, polyPoint.z - p.z -- return loc, dx, dz 
 end
 
 function cfxZones.addZoneToManagedZones(theZone)
@@ -435,6 +519,7 @@ function cfxZones.createRandomZoneInZone(name, inZone, targetRadius, entirelyIns
 	-- create a new circular zone with center placed inside inZone
 	-- if entirelyInside is false, only the zone's center is guaranteed to be inside
 	-- inZone.
+	-- entirelyInside is not guaranteed for polyzones
 	
 --	trigger.action.outText("Zones: creating rZiZ with tr = " .. targetRadius .. " for " .. inZone.name .. " that as r = " .. inZone.radius, 10)
 	
@@ -458,6 +543,8 @@ function cfxZones.createRandomZoneInZone(name, inZone, targetRadius, entirelyIns
 		-- we have a poly zone. the way we do this is simple:
 		-- generate random x, z with ranges of the bounding box 
 		-- until the point falls within the polygon.
+		--[[ replaced by new code 
+		
 		local newPoint = {}
 		local emergencyBrake = 0
 		repeat
@@ -465,11 +552,12 @@ function cfxZones.createRandomZoneInZone(name, inZone, targetRadius, entirelyIns
 			emergencyBrake = emergencyBrake + 1
 			if (emergencyBrake > 100) then 
 				newPoint = cfxZones.copyPoint(inZone.Point)
-				trigger.action.outText("CreateZoneInZone: mergency brake for inZone" .. inZone.name,  10)
+				trigger.action.outText("CreateZoneInZone: emergency brake for inZone" .. inZone.name,  10)
 				break
 			end
 		until cfxZones.isPointInsidePoly(newPoint, inZone.poly)
-		
+		--]]--
+		local newPoint = cfxZones.createRandomPointInPolyZone(inZone)
 		-- construct new zone
 		local newZone = cfxZones.createCircleZone(name, newPoint.x, newPoint.z, targetRadius)
 		return newZone

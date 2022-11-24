@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.2.2"
+cfxOwnedZones.version = "1.2.3"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -47,6 +47,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - no cfxGroundTroop bug (no delay)
 1.2.1 - fix in load to correctly re-establish all attackers for subsequent save 
 1.2.2 - redCap! and blueCap!
+1.2.3 - fix for persistence bug when not using conquered flag 
 
 	  
 --]]--
@@ -901,7 +902,9 @@ function cfxOwnedZones.saveData()
 			zoneData.defenderData = dcsCommon.clone(theZone.defenderData)
 			dcsCommon.synchGroupData(zoneData.defenderData)
 		end 
-		zoneData.conquered = cfxZones.getFlagValue(theZone.conqueredFlag, theZone)
+		if theZone.conqueredFlag then 
+			zoneData.conquered = cfxZones.getFlagValue(theZone.conqueredFlag, theZone)
+		end 
 		zoneData.owner = theZone.owner 
 		zoneData.state = theZone.state -- will prevent immediate spawn
 			-- since new zones are spawned with 'init'
@@ -972,7 +975,9 @@ function cfxOwnedZones.loadData()
 			end
 			theZone.owner = zData.owner 
 			theZone.state = zData.state 
-			cfxZones.setFlagValue(theZone.conqueredFlag, zData.conquered, theZone)
+			if zData.conquered then 
+				cfxZones.setFlagValue(theZone.conqueredFlag, zData.conquered, theZone)
+			end
 			-- update mark in map 
 			cfxOwnedZones.drawZoneInMap(theZone)
 		else 

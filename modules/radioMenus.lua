@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.0.0"
+radioMenu.version = "2.0.1"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -24,6 +24,8 @@ radioMenu.menus = {}
 		  gereric helo type 
 		  generic plane type 
 		  type works with coalition 
+	2.0.1 corrections to installMenu(), as suggested by GumidekCZ
+
 	
 --]]--
 
@@ -198,8 +200,9 @@ function radioMenu.installMenu(theZone)
 	if cfxZones.hasProperty(theZone, "itemB") then 
 		local menuB = cfxZones.getStringFromZoneProperty(theZone, "itemB", "<no B submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
+			theZone.menuB = {}
 			for idx, grp in  pairs(gID) do 
-				theZone.menuB[grp] = missionCommands.addCommandForGroup(grp, menuB, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "B"}) 
+				theZone.menuB[grp] = missionCommands.addCommandForGroup(grp, menuB, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "B", grp}) 
 			end
 		elseif theZone.coalition == 0 then 
 			theZone.menuB = missionCommands.addCommand(menuB, theZone.rootMenu[0], radioMenu.redirectMenuX, {theZone, "B"})
@@ -211,8 +214,9 @@ function radioMenu.installMenu(theZone)
 	if cfxZones.hasProperty(theZone, "itemC") then 
 		local menuC = cfxZones.getStringFromZoneProperty(theZone, "itemC", "<no C submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
+			theZone.menuC = {}
 			for idx, grp in  pairs(gID) do 
-				theZone.menuC[grp] = missionCommands.addCommandForGroup(grp, menuC, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "C"}) 
+				theZone.menuC[grp] = missionCommands.addCommandForGroup(grp, menuC, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "C", grp}) 
 			end
 		elseif theZone.coalition == 0 then 
 			theZone.menuC = missionCommands.addCommand(menuC, theZone.rootMenu[0], radioMenu.redirectMenuX, {theZone, "C"})
@@ -224,8 +228,9 @@ function radioMenu.installMenu(theZone)
 	if cfxZones.hasProperty(theZone, "itemD") then 
 		local menuD = cfxZones.getStringFromZoneProperty(theZone, "itemD", "<no D submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
+			theZone.menuD = {}
 			for idx, grp in  pairs(gID) do 
-				theZone.menuD[grp] = missionCommands.addCommandForGroup(grp, menuD, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "D"}) 
+				theZone.menuD[grp] = missionCommands.addCommandForGroup(grp, menuD, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "D", grp}) 
 			end
 		elseif theZone.coalition == 0 then 
 			theZone.menuD = missionCommands.addCommand(menuD, theZone.rootMenu[0], radioMenu.redirectMenuX, {theZone, "D"})

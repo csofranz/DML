@@ -25,6 +25,7 @@ persistence.requiredLibs = {
 	1.0.3 - no longer always tells " mission saved to"
 		    new 'saveNotification" can be off 
 	1.0.4 - new optional 'root' property 
+	1.0.5 - desanitize check on readConfig to early-abort
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
@@ -419,6 +420,11 @@ function persistence.collectFlagsFromZone(theZone)
 end
 
 function persistence.readConfigZone()
+	if not _G["lfs"] then 
+		trigger.action.outText("+++persistence: DCS not correctly desanitized. Persistence disabled", 30)
+		return 
+	end
+	
 	local theZone = cfxZones.getZoneByName("persistenceConfig") 
 	local hasConfig = true
 	if not theZone then 
