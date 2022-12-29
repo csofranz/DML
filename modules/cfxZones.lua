@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "2.9.2"
+cfxZones.version = "3.0.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -113,6 +113,9 @@ cfxZones.version = "2.9.2"
           - createRandomZoneInZone uses createRandomPointInPolyZone
 		  - new createRandomPointInZone()
 		  - new randomPointInZone()
+- 3.0.0   - support for DCS 2.8 linkUnit attribute, integration with 
+            linedUnit and warning.
+		  - initZoneVerbosity()
 
 
 --]]--
@@ -216,8 +219,18 @@ function cfxZones.readFromDCS(clearfirst)
 			--          so we need to change (x,y) into (x, 0, z). Since Zones have no
 			--          altitude (they are an infinite cylinder) this works. Remember to 
 			--          drop y from zone calculations to see if inside. 
-			newZone.point = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
-			newZone.dcsOrigin = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
+			-- WARNING: ME linked zones have a relative x any y 
+			--          to the linked unit 
+			if dcsZone.linkUnit then 
+				-- calculate the zone's real position by accessing the unit's MX data 
+				-- as precached by dcsCommon
+				local ux, uy = dcsCommon.getUnitStartPosByID(dcsZone.linkUnit)
+				newZone.point = cfxZones.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
+				newZone.dcsOrigin = cfxZones.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
+			else 
+				newZone.point = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
+				newZone.dcsOrigin = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
+			end
 
 			-- start type processing. if zone.type exists, we have a mission 
 			-- created with 2.7 or above, else earlier 
@@ -2319,22 +2332,29 @@ function cfxZones.updateMovingZones()
 end
 
 function cfxZones.initLink(theZone)
+--trigger.action.outText("enter initlink for <" .. theZone.name .. ">", 30)
+--trigger.action.outText("entry verbose check: <" .. theZone.name .. "> is verbose = " .. dcsCommon.bool2YesNo(theZone.verbose), 30)
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 
 	theUnit = Unit.getByName(theZone.linkName)
 	if theUnit then
+		--trigger.action.outText("initlink has link to <" .. theZone.linkName .. "> for <" .. theZone.name .. ">", 30)
 		local dx = 0
 		local dz = 0
 		if theZone.useOffset or theZone.useHeading then 
-			local delta = dcsCommon.vSub(cfxZones.getDCSOrigin(theZone),theUnit:getPoint()) -- delta = B - A 
+			local A = cfxZones.getDCSOrigin(theZone)
+			local B = theUnit:getPoint()
+			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
 		end
 		cfxZones.linkUnitToZone(theUnit, theZone, dx, dz) -- also sets theZone.linkedUnit
+		--trigger.action.outText("verbose check: <" .. theZone.name .. "> is verbose = " .. dcsCommon.bool2YesNo(theZone.verbose), 30)
 		if theZone.verbose then 
 			trigger.action.outText("Link established for zone <" .. theZone.name .. "> to unit <" .. theZone.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		theZone.linkBroken = nil 
+		--trigger.action.outText("done linking <" .. theZone.linkName .. "> to zone <" .. theZone.name .. ">", 30)
 	else 
 		if theZone.verbose then 
 			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
@@ -2343,49 +2363,48 @@ function cfxZones.initLink(theZone)
 end
 
 function cfxZones.startMovingZones()
-	-- read all zoness, and look for a property called 'linkedUnit'
+	-- read all zones, and look for a property called 'linkedUnit'
 	-- which will make them a linked zone if there is a unit that exists
 	-- also suppors 'useOffset' and 'useHeading'
 	for aName,aZone in pairs(cfxZones.zones) do
+		
 		local lU = nil 
-		if cfxZones.hasProperty(aZone, "linkedUnit") then 
+		-- check if DCS zone has the linkUnit new attribute introduced in 
+		-- late 2022 with 2.8
+		if aZone.dcsZone.linkUnit then 
+			local theID = aZone.dcsZone.linkUnit 
+			lU = dcsCommon.getUnitNameByID(theID)
+			if not lU then 
+				trigger.action.outText("WARNING: Zone <" .. aZone.name .. ">: cannot resolve linked unit ID <" .. theID .. ">", 30)
+				lU = "***DML link err***"
+			end
+		elseif cfxZones.hasProperty(aZone, "linkedUnit") then 
 			lU = cfxZones.getZoneProperty(aZone, "linkedUnit")
 		end
+		
+		-- sanity check 
+		if aZone.dcsZone.linkUnit and cfxZones.hasProperty(aZone, "linkedUnit") then 
+			trigger.action.outText("WARNING: Zone <" .. aZone.name .. "> has dual unit link definition. Will use link to unit <" .. lU .. ">", 30)
+		end
+		
 		if lU then 
 			aZone.linkName = lU
 			aZone.useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
 			aZone.useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading", false)
 			
 			cfxZones.initLink(aZone)
---[[--			
-			-- this zone is linked to a unit
-			theUnit = Unit.getByName(lU)
-			local useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
-			if useOffset then aZone.useOffset = true end
-			local useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading")
-			if useHeading then aZone.useHeading = true end 
-			if theUnit then
-				local dx = 0
-				local dz = 0
-				if useOffset or useHeading then 
-					local delta = dcsCommon.vSub(aZone.point,theUnit:getPoint()) -- delta = B - A 
-					dx = delta.x 
-					dz = delta.z
-				end
-				cfxZones.linkUnitToZone(theUnit, aZone, dx, dz)
-				--trigger.action.outText("Link setup: dx=<" .. dx .. ">, dz=<" .. dz .. ">", 30)
-				if useOffset then 
-				end
-			else 
-				trigger.action.outText("Linked unit: no unit to link <" .. aZone.name .. "> to", 30)
-			end
---]]--
+
 		end
+		
+	end
+end
+
+function cfxZones.initZoneVerbosity()
+	for aName,aZone in pairs(cfxZones.zones) do
 		-- support for zone-local verbose flag 
 		aZone.verbose = cfxZones.getBoolFromZoneProperty(aZone, "verbose", false)
 	end
 end
-
 --
 -- init
 --
@@ -2405,6 +2424,9 @@ function cfxZones.init()
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)
 	end
 		
+	-- enable all zone's verbose flags if present
+	-- must be done BEFORE we start the moving zones 
+	cfxZones.initZoneVerbosity()
 	
 	-- now initialize moving zones
 	cfxZones.startMovingZones()

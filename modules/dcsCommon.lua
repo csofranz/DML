@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.7.10"
+dcsCommon.version = "2.8.0"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -118,6 +118,11 @@ dcsCommon.version = "2.7.10"
 	   - randomPointInCircle fixed erroneous local for x, z 
 	   - "scattered" formation repaired
  2.7.10- semaphore groundwork 
+ 2.8.0 - new collectMissionIDs at start-up  
+	   - new getUnitNameByID
+	   - new getGroupNameByID
+	   - bool2YesNo alsco can return NIL
+	   - new getUnitStartPosByID
  
 --]]--
 
@@ -134,6 +139,12 @@ dcsCommon.version = "2.7.10"
 	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50 and Gazelle can't carry troops
 	dcsCommon.coalitionSides = {0, 1, 2}
 	
+	-- lookup tables
+	dcsCommon.groupID2Name = {}
+	dcsCommon.unitID2Name = {}
+	dcsCommon.unitID2X = {}
+	dcsCommon.unitID2Y = {}
+
 	-- verify that a module is loaded. obviously not required
 	-- for dcsCommon, but all higher-order modules
 	function dcsCommon.libCheck(testingFor, requiredLibs)
@@ -147,6 +158,82 @@ dcsCommon.version = "2.7.10"
 		return canRun
 	end
 
+	-- read all groups and units from miz and build a reference table
+	function dcsCommon.collectMissionIDs()
+	-- create cross reference tables to be able to get a group or
+	-- unit's name by ID
+		for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+			local coa_name = coa_name_miz
+			if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
+				coa_name = 'neutral'
+			end
+			-- directly convert coalition into number for easier access later
+			local coaNum = 0
+			if coa_name == "red" then coaNum = 1 end 
+			if coa_name == "blue" then coaNum = 2 end 
+			
+			if type(coa_data) == 'table' then -- coalition = {bullseye, nav_points, name, county}, 
+											  -- with county being an array 
+				if coa_data.country then -- make sure there a country table for this coalition
+					for cntry_id, cntry_data in pairs(coa_data.country) do -- iterate all countries for this 
+						-- per country = {id, name, vehicle, helicopter, plane, ship, static}
+						local countryName = string.lower(cntry_data.name)
+						local countryID = cntry_data.id 
+						if type(cntry_data) == 'table' then	-- filter strings .id and .name 
+							for obj_type_name, obj_type_data in pairs(cntry_data) do
+								-- only look at helos, ships, planes and vehicles
+								if obj_type_name == "helicopter" or 
+								   obj_type_name == "ship" or 
+								   obj_type_name == "plane" or 
+								   obj_type_name == "vehicle" or 
+								   obj_type_name == "static" -- what about "cargo"?
+								then -- (so it's not id or name)
+									local category = obj_type_name
+									if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
+										for group_num, group_data in pairs(obj_type_data.group) do
+											
+											local aName = group_data.name 
+											local aID = group_data.groupId
+											-- store this reference 
+											dcsCommon.groupID2Name[aID] = aName 
+											
+											-- now iterate all units in this group 
+											-- for player into 
+											for unit_num, unit_data in pairs(group_data.units) do
+												if unit_data.name and unit_data.unitId then 
+													-- store this reference 
+													dcsCommon.unitID2Name[unit_data.unitId] = unit_data.name
+													dcsCommon.unitID2X[unit_data.unitId] = unit_data.x
+													dcsCommon.unitID2Y[unit_data.unitId] = unit_data.y
+												end
+											end -- for all units
+										end -- for all groups 
+									end --if has category data 
+								end --if plane, helo etc... category
+							end --for all objects in country 
+						end --if has country data 
+					end --for all countries in coalition
+				end --if coalition has country table 
+			end -- if there is coalition data  
+		end --for all coalitions in mission 
+	end
+
+	function dcsCommon.getUnitNameByID(theID)
+		-- accessor function for later expansion
+		return dcsCommon.unitID2Name[theID]
+	end
+	
+	function dcsCommon.getGroupNameByID(theID)
+		-- accessor function for later expansion 
+		return dcsCommon.groupID2Name[theID]
+	end
+
+	function dcsCommon.getUnitStartPosByID(theID)
+		local x = dcsCommon.unitID2X[theID]
+		local y = dcsCommon.unitID2Y[theID]
+		return x, y
+	end
+	
 	-- returns only positive values, lo must be >0 and <= hi 
 	function dcsCommon.randomBetween(loBound, hiBound)
 		if not loBound then loBound = 1 end 
@@ -2042,7 +2129,10 @@ end
 	end
 	
 	function dcsCommon.bool2YesNo(theBool)
-		if not theBool then theBool = false end 
+		if not theBool then 
+			theBool = false
+			return "NIL"
+		end 
 		if theBool then return "yes" end 
 		return "no"
 	end
@@ -2917,14 +3007,18 @@ function dcsCommon.setUserFlag(flagName, theValue)
 	end
 	trigger.action.setUserFlag(flagName, theValue)
 end
+
 --
 --
 -- INIT
 --
 --
-	-- init any variables the lib requires internally
+	-- init any variables, tables etc that the lib requires internally
 	function dcsCommon.init()
 		cbID = 0
+		-- create ID tables
+		dcsCommon.collectMissionIDs()
+		
 		--dcsCommon.uuIdent = 0
 		if (dcsCommon.verbose) or true then
 		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 10)
@@ -2935,10 +3029,3 @@ end
 -- do init. 
 dcsCommon.init()
 
---[[--
-
-to do: 
-- formation 2Column
-- formation 3Column
-
--]]--

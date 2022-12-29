@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.6.1"
+cloneZones.version = "1.6.3"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -71,7 +71,10 @@ cloneZones.allCObjects = {} -- all clones objects
 		  - cloning with rndLoc supports polygons
 		  - corrected rndLoc without centerOnly to not include individual offsets
 		  - ensure support of recovery tanker resolve cloned group 
-	
+	1.6.2 - optimization to hasLiveUnits()
+	1.6.3 - removed verbosity bug with rndLoc 
+	        uniqueNameGroupData has provisions for naming scheme 
+			new uniqueNameStaticData() for naming scheme
 	
 --]]--
 
@@ -512,13 +515,22 @@ function cloneZones.uniqueID()
 	return uid 
 end
 
-function cloneZones.uniqueNameGroupData(theData)  
+function cloneZones.uniqueNameGroupData(theData, theCloneZone)
 	theData.name = dcsCommon.uuid(theData.name)
 	local units = theData.units 
 	for idx, aUnit in pairs(units) do 
-		aUnit.name = dcsCommon.uuid(aUnit.name)
+		if theCloneZone and theCloneZone.namingScheme then
+		else
+			-- default naming scheme: <name>-<uuid>
+			aUnit.name = dcsCommon.uuid(aUnit.name)
+		end
 	end 
 end 
+
+function cloneZones.uniqueNameStaticData(theData, spawnZone)
+	theData.name = dcsCommon.uuid(theData.name)
+
+end
 
 function cloneZones.uniqueIDGroupData(theData)
 	theData.groupId = cloneZones.uniqueID()
@@ -821,21 +833,12 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		if spawnZone.rndLoc then 
 			-- calculate the entire group's displacement
 			local units = rawData.units
-			--[[
-			local r = math.random() * spawnZone.radius
-			local phi = 6.2831 * math.random() -- that's 2Pi, folx 
-			local dx = r * math.cos(phi)
-			local dy = r * math.sin(phi)
-			--]]
+
 			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
 			
 			for idx, aUnit in pairs(units) do 
 				if not spawnZone.centerOnly then 
 					-- *every unit's displacement is randomized
-					-- r = math.random() * spawnZone.radius
-					-- phi = 6.2831 * math.random() -- that's 2Pi, folx 
-					-- dx = r * math.cos(phi)
-					-- dy = r * math.sin(phi)
 					loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone)
 					aUnit.x = loc.x 
 					aUnit.y = loc.z 
@@ -844,7 +847,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 					aUnit.y = aUnit.y + dy 
 				end
 				if spawnZone.verbose or cloneZones.verbose then 
-					trigger.action.outText("+++clnZ: <" .. spawnZone.name .. "> R = " .. spawnZone.radius .. ":G<" .. rawData.name .. "/" .. aUnit.name .. "> - rndLoc: r = " .. r .. ", dx = " .. dx .. ", dy= " .. dy .. ".", 30)
+					trigger.action.outText("+++clnZ: <" .. spawnZone.name .. "> R = " .. spawnZone.radius .. ":G<" .. rawData.name .. "/" .. aUnit.name .. "> - rndLoc: dx = " .. dx .. ", dy= " .. dy .. ".", 30)
 				end
 
 			end
@@ -923,7 +926,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		dcsCommon.rotateGroupData(rawData, spawnZone.turn + 57.2958 *dHeading, newCenter.x, newCenter.z)
 
 		-- make sure unit and group names are unique 
-		cloneZones.uniqueNameGroupData(rawData)
+		cloneZones.uniqueNameGroupData(rawData, spawnZone)
 		
 		-- see what country we spawn for
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
@@ -1042,7 +1045,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		dcsCommon.rotateUnitData(rawData, spawnZone.turn + 57.2958 * dHeading, newCenter.x, newCenter.z)
 		
 		-- make sure static name is unique and remember original 
-		rawData.name = dcsCommon.uuid(rawData.name)
+		cloneZones.uniqueNameStaticData(rawData, spawnZone)
+		--rawData.name = dcsCommon.uuid(rawData.name)
 		rawData.unitId = cloneZones.uniqueID()  
 		rawData.CZTargetID = rawData.unitId 
 		
@@ -1210,12 +1214,18 @@ function cloneZones.hasLiveUnits(theZone)
 	if theZone.mySpawns then 
 		for idx, aGroup in pairs(theZone.mySpawns) do 
 			if aGroup:isExist() then 
+				-- an easier/faster method would be to invoke 
+				-- aGroup:getSize()
+				local uNum = aGroup:getSize()
+				if uNum > 0 then return true end 
+				--[[
 				local allUnits = aGroup:getUnits()
 				for idy, aUnit in pairs(allUnits) do 
 					if aUnit:isExist() and aUnit:getLife() >= 1 then 
 						return true
 					end
 				end
+				--]]--
 			end
 		end
 	end 
