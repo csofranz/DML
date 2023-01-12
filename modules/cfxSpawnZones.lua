@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.7.1"
+cfxSpawnZones.version = "1.7.2"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -63,6 +63,7 @@ cfxSpawnZones.spawnedGroups = {}
 --   1.7.0 - persistence support 
 --   1.7.1 - improved verbosity 
 --         - spelling check
+--   1.7.2 - baseName now can can be set to zone name by issuing "*"
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -198,6 +199,10 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.rawOwner = coalition.getCountryCoalition(theSpawner.country)
 	--theSpawner.baseName = cfxZones.getZoneProperty(inZone, "baseName")
 	theSpawner.baseName = cfxZones.getStringFromZoneProperty(inZone, "baseName", dcsCommon.uuid("SpwnDflt"))
+	theSpawner.baseName = dcsCommon.trim(theSpawner.baseName)
+	if theSpawner.baseName == "*" then 
+		theSpawner.baseName = inZone.name -- convenience shortcut
+	end
 	
 	theSpawner.cooldown = cfxZones.getNumberFromZoneProperty(inZone, "cooldown", 60)
 	theSpawner.autoRemove = cfxZones.getBoolFromZoneProperty(inZone, "autoRemove", false)

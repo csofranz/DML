@@ -116,6 +116,7 @@ cfxZones.version = "3.0.0"
 - 3.0.0   - support for DCS 2.8 linkUnit attribute, integration with 
             linedUnit and warning.
 		  - initZoneVerbosity()
+- 3.0.1   - updateMovingZones() better tracks linked units by name
 
 
 --]]--
@@ -2304,35 +2305,52 @@ end
 
 function cfxZones.updateMovingZones()
 	cfxZones.updateSchedule = timer.scheduleFunction(cfxZones.updateMovingZones, {}, timer.getTime() + 1/cfxZones.ups)
-	-- simply scan all cfx zones for the linkedUnit property and if there
+	-- simply scan all cfx zones for the linkName property, and if present
 	-- update the zone's points
 	for aName,aZone in pairs(cfxZones.zones) do
-		if aZone.linkBroken then 
-			-- try to relink 
-			cfxZones.initLink(aZone)
-		end
-		if aZone.linkedUnit then 
-			local theUnit = aZone.linkedUnit
-			-- has a link. is link existing?
-			if theUnit:isExist() then 
-				cfxZones.centerZoneOnUnit(aZone, theUnit)
-				local dx = aZone.dx 
-				local dy = aZone.dy -- this is actually z 
-				if aZone.useHeading then 
-					dx, dy = cfxZones.calcHeadingOffset(aZone, theUnit)
+		-- only do this if ther is a linkName property, 
+		-- else this zone isn't linked. link name is harmonized from 
+        -- both linkUnit non-DML and linedUnit DML		
+		if aZone.linkName then 
+			if aZone.linkBroken then 
+				-- try to relink 
+				cfxZones.initLink(aZone)
+			else --if aZone.linkName then  
+				-- always re-acquire linkedUnit via Unit.getByName()
+				-- this way we gloss over any replacements via spawns
+				aZone.linkedUnit = Unit.getByName(aZone.linkName)
+			end
+			
+			if aZone.linkedUnit then 
+				local theUnit = aZone.linkedUnit
+				-- has a link. is link existing?
+				if theUnit:isExist() then 
+					cfxZones.centerZoneOnUnit(aZone, theUnit)
+					local dx = aZone.dx 
+					local dy = aZone.dy -- this is actually z 
+					if aZone.useHeading then 
+						dx, dy = cfxZones.calcHeadingOffset(aZone, theUnit)
+					end
+					cfxZones.offsetZone(aZone, dx, dy)
+				else 
+					-- we lost link (track level)
+					aZone.linkBroken = true 
+					aZone.linkedUnit = nil 
 				end
-				cfxZones.offsetZone(aZone, dx, dy)
 			else 
-				-- we lost link 
+				-- we lost link (top level)
 				aZone.linkBroken = true 
 				aZone.linkedUnit = nil 
 			end
+		else 
+			-- this zone isn't linked
 		end
 	end
 end
 
 function cfxZones.initLink(theZone)
---trigger.action.outText("enter initlink for <" .. theZone.name .. ">", 30)
+--trigger.action.outText("enter initlink for <" .. theZone.name .. ">")
+--if true then return end 
 --trigger.action.outText("entry verbose check: <" .. theZone.name .. "> is verbose = " .. dcsCommon.bool2YesNo(theZone.verbose), 30)
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 

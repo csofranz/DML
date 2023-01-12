@@ -1,10 +1,10 @@
 cfxMX = {}
-cfxMX.version = "1.2.4"
+cfxMX.version = "1.2.5"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
  
- Copyright (c) 2022 by Christian Franz and cf/x AG
+ Copyright (c) 2022, 2023 by Christian Franz and cf/x AG
  
  Version History
    1.0.0 - initial version 
@@ -24,9 +24,11 @@ cfxMX.verbose = false
    1.2.3 - groupTypeByName
 		 - groupCoalitionByName
    1.2.4 - playerUnit2Group cross index 
+   1.2.5 - unitIDbyName index added 
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
+cfxMX.unitIDbyName = {}
 cfxMX.groupDataByName = {}
 cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
 cfxMX.groupCoalitionByName = {}
@@ -234,7 +236,7 @@ function cfxMX.createCrossReferences()
 											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)
 										end
 										-- now iterate all units in this group 
-										-- for player into 
+										-- for unit xref like player info and ID
 										for unit_num, unit_data in pairs(group_data.units) do
 											if unit_data.skill then 
 												if unit_data.skill == "Client" or  unit_data.skill == "Player" then
@@ -244,6 +246,7 @@ function cfxMX.createCrossReferences()
 													cfxMX.playerUnit2Group[unit_data.name] = group_data
 												end -- if unit skill client
 											end -- if has skill
+											cfxMX.unitIDbyName[unit_data.name] = unit_data.unitId 
 										end -- for all units
 									end -- for all groups 
 								end --if has category data 

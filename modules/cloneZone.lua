@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.6.3"
+cloneZones.version = "1.7.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -17,9 +17,14 @@ cloneZones.callbacks = {}
 cloneZones.unitXlate = {}
 cloneZones.groupXlate = {} -- used to translate original groupID to cloned. only holds last spawned group id 
 cloneZones.uniqueCounter = 9200000 -- we start group numbering here 
+cloneZones.lclUniqueCounter = 1 -- zone-local init value, can be config'dHeading
+cloneZones.globalCounter = 1 -- module-global count 
 
 cloneZones.allClones = {} -- all clones spawned, regularly GC'd 
 cloneZones.allCObjects = {} -- all clones objects
+
+cloneZones.respawnOnGroupID = true 
+
 --[[--
 	Clones Groups from ME mission data
 	Copyright (c) 2022 by Christian Franz and cf/x AG
@@ -75,6 +80,17 @@ cloneZones.allCObjects = {} -- all clones objects
 	1.6.3 - removed verbosity bug with rndLoc 
 	        uniqueNameGroupData has provisions for naming scheme 
 			new uniqueNameStaticData() for naming scheme
+	1.6.4 - uniqueCounter is now configurable via config zone 
+			new lclUniqueCounter config, also added to persistence 
+			new globalCount
+	1.7.0 - wildcard "*" for masterOwner 
+		  - identical attribute: makes identical ID and name for unit and group as template
+		  - new sameIDUnitData()
+		  - nameScheme attribute: allow parametric names  
+		  - <o>, <z>, <s> wildcards
+		  - <uid>, <lcl>, <i>, <g> wildcards 
+		  - identical=true overrides nameScheme
+		  - masterOwner "*" convenience shortcut
 	
 --]]--
 
@@ -167,7 +183,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: new cloner <" .. theZone.name ..">", 30)
 	end
-
+	
+	theZone.myUniqueCounter = cloneZones.lclUniqueCounter -- init local counter
+	
 	local localZones = cloneZones.allGroupsInZoneByData(theZone)  
 	local localObjects = cfxZones.allStaticsInZone(theZone, true) -- true = use DCS origin, not moved zone
 	if theZone.verbose then 
@@ -301,7 +319,14 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end
 	
 	if cfxZones.hasProperty(theZone, "masterOwner") then 
-		theZone.masterOwner = cfxZones.getStringFromZoneProperty(theZone, "masterOwner", "<none>")
+		theZone.masterOwner = cfxZones.getStringFromZoneProperty(theZone, "masterOwner", "*")
+		theZone.masterOwner = dcsCommon.trim(theZone.masterOwner)
+		if theZone.masterOwner == "*" then 
+			theZone.masterOwner = theZone.name 
+			if theZone.verbose then 
+				trigger.action.outText("+++clnZ: masterOwner for <" .. theZone.name .. "> successfully to to itself, currently owned by faction <" .. theZone.owner .. ">", 30)
+			end
+		end
 	end
 	
 	theZone.turn = cfxZones.getNumberFromZoneProperty(theZone, "turn", 0)
@@ -326,6 +351,20 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	
 	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
 
+	-- check for name scheme and / or identical 
+	if cfxZones.hasProperty(theZone, "identical") then
+		theZone.identical = cfxZones.getBoolFromZoneProperty(theZone, "identical", false)
+		if theZone.identical == false then theZone.identical = nil end 
+	end 
+	
+	if cfxZones.hasProperty(theZone, "nameScheme") then 
+		theZone.nameScheme = cfxZones.getStringFromZoneProperty(theZone, "nameScheme", "<o>-<uid>") -- default to [<original name> "-" <uuid>] 
+	end
+	
+	if theZone.identical and theZone.nameScheme then
+		trigger.action.outText("+++clnZ: WARNING - clone zone <" .. theZone.name .. "> has both IDENTICAL and NAMESCHEME attributes. nameScheme is ignored.", 30)
+		theZone.nameScheme = nil 
+	end
 	-- we end with clear plate 
 end
 
@@ -509,17 +548,97 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 end
 
 
+function cloneZones.nameFromSchema(schema, inName, theZone, sourceName, i)
+	-- default schema (classic) is "<o>-<uid>"
+	local outName = schema
+	local iter = i 
+
+	-- replace all occurences of <o> with original name
+	outName = outName:gsub("<o>", inName)
+
+	-- replace all occurences of <z> with zone name 
+	outName = outName:gsub("<z>", theZone.name)
+	-- replace all occurences of <s> with source zone name 
+	outName = outName:gsub("<s>", sourceName)
+	
+	-- uid (uuid) with auto-increment
+	local pos = string.find(outName, "<uid>")
+	while (pos and pos > 0) do 
+		local uid = tostring(dcsCommon.numberUUID())
+		outName = outName:gsub("<uid>", uid, 1) -- only first substitution
+		pos = string.find(outName, "<uid>")
+	end
+	
+	-- i (iter) with increment 
+	pos = string.find(outName, "<i>")
+	while (pos and pos > 0) do 
+		local uid = tostring(iter)
+		outName = outName:gsub("<i>", uid, 1) -- only first substitution
+		iter = iter + 1
+		pos = string.find(outName, "<i>")
+	end
+	
+	-- lcl local (zonal) count with increment
+	pos = string.find(outName, "<lcl>")
+	while (pos and pos > 0) do 
+		local uid = tostring(theZone.myUniqueCounter)
+		outName = outName:gsub("<lcl>", uid, 1) -- only first substitution
+		theZone.myUniqueCounter = theZone.myUniqueCounter + 1
+		pos = string.find(outName, "<lcl>")
+	end
+	
+	-- g global (module) count with increment 
+	pos = string.find(outName, "<g>")
+	while (pos and pos > 0) do 
+		local uid = tostring(cloneZones.globalCounter)
+		outName = outName:gsub("<g>", uid, 1) -- only first substitution
+		cloneZones.globalCounter = cloneZones.globalCounter + 1
+		pos = string.find(outName, "<g>")
+	end
+	
+	--if theZone.verbose then 
+	--	trigger.action.outText("+++cln: schema [" .. schema .. "] for unit <" .. inName .. "> in zone <" .. theZone.name .. "> returns <" .. outName .. ">, iter = " .. iter, 30)
+	--end
+	return outName, iter
+end
+
 function cloneZones.uniqueID()
 	local uid = cloneZones.uniqueCounter
 	cloneZones.uniqueCounter = cloneZones.uniqueCounter + 1
 	return uid 
 end
 
-function cloneZones.uniqueNameGroupData(theData, theCloneZone)
+function cloneZones.uniqueNameGroupData(theData, theCloneZone, sourceName)
+	if not sourceName then sourceName = theCloneZone.name end 
 	theData.name = dcsCommon.uuid(theData.name)
 	local units = theData.units 
+	local iterCount = 1 
+	local newName = "none"
+	local allNames = {} -- enforce unique names inside group
 	for idx, aUnit in pairs(units) do 
-		if theCloneZone and theCloneZone.namingScheme then
+		if theCloneZone and theCloneZone.nameScheme then
+			local schema = theCloneZone.nameScheme
+			newName, iterCount = cloneZones.nameFromSchema(schema, aUnit.name, theCloneZone, sourceName, iterCount)
+			
+			-- make sure that this name is has not been generated yet
+			-- inside the same group
+			local hasChanged = false 
+			local schemeName = newName 
+			while dcsCommon.arrayContainsString(allNames, newName) do 
+				newName = newName .. "x"
+				hasChanged = true
+			end
+			if theCloneZone.verbose and hasChanged then 
+				trigger.action.outText("cnlz: nameScheme [" .. theCloneZone.nameScheme .. "] failsafe: changed <" .. schemeName .. "> to <" .. newName .. ">", 30)
+			end
+			
+			table.insert(allNames, newName)
+			
+			if theCloneZone.verbose then 
+				trigger.action.outText("clnZ: zone <" .. theCloneZone.name .. "> unit schema <" .. schema .. ">: <" .. aUnit.name .. "> --> <" .. newName .. ">", 30)
+			end
+			
+			aUnit.name = newName -- dcsCommon.uuid(aUnit.name)
 		else
 			-- default naming scheme: <name>-<uuid>
 			aUnit.name = dcsCommon.uuid(aUnit.name)
@@ -527,9 +646,25 @@ function cloneZones.uniqueNameGroupData(theData, theCloneZone)
 	end 
 end 
 
-function cloneZones.uniqueNameStaticData(theData, spawnZone)
-	theData.name = dcsCommon.uuid(theData.name)
+function cloneZones.uniqueNameStaticData(theData, theCloneZone, sourcename)
+	if not sourceName then sourceName = theCloneZone.name end 
 
+	-- WARNING: unlike GroupData enters with UNIT data 
+	local iterCount = 1 
+	local newName = "none"
+	if theCloneZone and theCloneZone.nameScheme then
+		local schema = theCloneZone.nameScheme
+		newName, iterCount = cloneZones.nameFromSchema(schema, theData.name, theCloneZone, sourceName, iterCount)
+		
+		if theCloneZone.verbose then 
+			trigger.action.outText("clnZ: zone <" .. theCloneZone.name .. "> static schema <" .. schema .. ">: <" .. theData.name .. "> --> <" .. newName .. ">", 30)
+		end
+		
+		theData.name = newName -- dcsCommon.uuid(theData.name)
+	else
+		-- default naming scheme: <name>-<uuid>
+		theData.name = dcsCommon.uuid(theData.name)
+	end
 end
 
 function cloneZones.uniqueIDGroupData(theData)
@@ -543,6 +678,16 @@ function cloneZones.uniqueIDUnitData(theData)
 	for idx, aUnit in pairs(units) do 
 		aUnit.CZorigID = aUnit.unitId 
 		aUnit.unitId = cloneZones.uniqueID()
+		aUnit.CZTargetID = aUnit.unitId
+	end 
+end
+
+function cloneZones.sameIDUnitData(theData)
+	if not theData then return end 
+	if not theData.units then return end
+	local units = theData.units 
+	for idx, aUnit in pairs(units) do 
+		aUnit.CZorigID = aUnit.unitId 
 		aUnit.CZTargetID = aUnit.unitId
 	end 
 end
@@ -750,14 +895,14 @@ end
 
 function cloneZones.handoffTracking(theGroup, theZone)
 	if not groupTracker then 
-		trigger.action.outText("+++clne: <" .. theZone.name .. "> trackWith requires groupTracker module", 30) 
+		trigger.action.outText("+++clnZ: <" .. theZone.name .. "> trackWith requires groupTracker module", 30) 
 		return 
 	end
 	local trackerName = theZone.trackWith
 	--if trackerName == "*" then trackerName = theZone.name end 
 	-- now assemble a list of all trackers
 	if cloneZones.verbose or theZone.verbose then 
-		trigger.action.outText("+++clne: clone pass-off: " .. trackerName, 30)
+		trigger.action.outText("+++clnZ: clone pass-off: " .. trackerName, 30)
 	end 
 	
 	local trackerNames = {}
@@ -771,22 +916,127 @@ function cloneZones.handoffTracking(theGroup, theZone)
 		if theName == "*" then theName = theZone.name end 
 		local theTracker = groupTracker.getTrackerByName(theName)
 		if not theTracker then 
-			trigger.action.outText("+++clne: <" .. theZone.name .. ">: cannot find tracker named <".. theName .. ">", 30) 
+			trigger.action.outText("+++clnZ: <" .. theZone.name .. ">: cannot find tracker named <".. theName .. ">", 30) 
 		else 
 			groupTracker.addGroupToTracker(theGroup, theTracker)
 			 if cloneZones.verbose or theZone.verbose then 
-				trigger.action.outText("+++clne: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
+				trigger.action.outText("+++clnZ: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
 			 end
 		end 
 	end 
+end
+
+function cloneZones.validateSpawnUnitData(aUnit, theZone, unitNames)
+	-- entry with unit data construct
+	-- also used for static objects!
+	if not aUnit then return end 
+	if not theZone then return end 
+	-- we only verify replacement if identical or name sheme attribute 
+	if not (theZone.identical or theZone.nameScheme) then 
+		return 
+	end
+	
+	if unitNames[aUnit.name] then 
+		trigger.action.outText("clnZ: <" .. theZone.name .. "> validation warning - Unit/Object name <" .. aUnit.name .. ">: duplicate name within spawn cycle, will be repaced", 30)
+	else 
+		unitNames[aUnit.name] = true 
+	end		
+	
+	local theUnit = Unit.getByName(aUnit.name) 
+	if theUnit and Unit.isExist(theUnit) then 
+		if cloneZones.verbose or theZone.verbose then 
+			trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> will replace existing UNIT <" .. aUnit.name .. ">", 30)
+		end
+		-- since we are about to replace a unit, we also steal the ID
+		local stolenID = theUnit:getID()
+		aUnit.unitId = stolenID
+	else 
+		-- now check if we are about to grab an MX data ID 
+		-- and ned to steal that	
+		local stolenID = cfxMX.unitIDbyName[aUnit.name]
+		if stolenID then 
+			if cloneZones.verbose or theZone.verbose then 
+				trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> will replace MX UNIT ID <" .. aUnit.name .. "> by appropriating ID <" .. stolenID .. ">", 30)
+			end
+			aUnit.unitId = stolenID
+		end
+	end	
+	
+ 
+	-- check against static objects. 
+	local theStatic = StaticObject.getByName(aUnit.name)	
+	if theStatic and StaticObject.isExist(theStatic) then 
+		trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> will replace existing STATIC <" .. aUnit.name .. ">", 30)
+	end	
+	
+end
+
+function cloneZones.validateSpawnGroupData(theData, theZone, groupNames, unitNames)
+	-- entry with group construct
+	if not theData then return end 
+	if not theZone then return end 
+	-- we only verify replacement if identical or name sheme attribute 
+	if not (theZone.identical or theZone.nameScheme) then 
+		return 
+	end
+	
+	if groupNames[theData.name] then 
+		trigger.action.outText("clnZ: <" .. theZone.name .. "> validation warning - group name <" .. theData.name .. ">: duplicate within spawn, previous spawn will be removed", 30)
+	else 
+		groupNames[theData.name] = true 
+	end
+	
+	local theGroup = Group.getByName(theData.name)
+	if theGroup and Group.isExist(theGroup) and theGroup:getSize() > 0 then 
+		trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> will replace existing GROUP <" .. theData.name .. ">", 30)
+	end
+	
+	if not theData.units then return end 
+	local units = theData.units 
+	for idx, aUnit in pairs(units) do 
+		cloneZones.validateSpawnUnitData(aUnit, theZone, unitNames)	
+	end 
+end
+
+function cloneZones.forcedRespawn(args)
+	local theData = args[1]
+	local spawnedGroups = args[2]
+	local pos = args[3]
+	local verbose = args[4]
+	local rawData = dcsCommon.clone(theData)
+	if verbose then 
+		trigger.action.outText("clnZ: enter forced respawn of <" .. theData.name .. "> to meet ID " .. theData.CZTargetID .. " (currently set for <" .. theData.groupId .. ">)", 30)
+	end
+	-- we now try to spawn again, with hopes of receiving the 
+	-- correct id 
+	local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
+	
+	-- make sure that this time the id matches 
+	local newGroupID = theGroup:getID()
+	if newGroupID == theData.CZTargetID then 
+		if verbose then 
+			trigger.action.outText("GOOD REPLACEMENT new ID <" .. newGroupID .. "> matches target <" .. theData.CZTargetID .. "> for <" .. theData.name .. ">", 30)
+		-- we can now remove the former group 
+		-- and replace it with the new one 
+			trigger.action.outText("will replace table entry at <" .. pos .. "> with new group", 30)
+		end
+		spawnedGroups[pos] = theGroup
+	else 
+		-- we need to try again in one second
+		if verbose then 
+			trigger.action.outText("FAIL: new ID <" .. newGroupID .. "> does not match target <" .. theData.CZTargetID .. "> for <" .. theData.name .. ">. Will re-try in 1s", 30)
+		end
+		spawnedGroups[pos] = theGroup -- replace so we don't fail checks
+		timer.scheduleFunction(cloneZones.forcedRespawn, args, timer.getTime() + 1)
+	end
 end
 
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	if cloneZones.verbose or spawnZone.verbose then 
 		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
 	end
-	-- theZone is the cloner with the template (source)
-	-- spawnZone is the spawner with settings (target location)
+	-- theZone is the cloner with the TEMPLATE (source)
+	-- spawnZone is the spawner with SETTINGS and DESTINATION (target location)
 	local newCenter = cfxZones.getPoint(spawnZone) -- includes zone following updates
 	local oCenter = cfxZones.getDCSOrigin(theZone) -- get original coords on map for cloning offsets 
 	-- calculate zoneDelta, is added to all vectors 
@@ -811,8 +1061,14 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		rawData.CZorigName = rawData.name -- save original group name
 		local origID = rawData.groupId -- save original group ID 
 		rawData.CZorigID = origID 
-		cloneZones.uniqueIDGroupData(rawData) -- assign unique ID we know 
-		cloneZones.uniqueIDUnitData(rawData) -- assign unique ID for units -- saves old unitId as CZorigID
+		if spawnZone.identical then 
+			cloneZones.sameIDUnitData(rawData) -- set up CZTargetID for units to be same as in template
+		else
+			-- only assign new ids when 'identical' flag is not active
+			cloneZones.uniqueIDGroupData(rawData) -- assign unique ID we know 
+			cloneZones.uniqueIDUnitData(rawData) -- assign unique ID for units -- saves old unitId as CZorigID		
+		end
+		
 		rawData.CZTargetID = rawData.groupId -- save 
 		if rawData.name ~= aGroupName then 
 			trigger.action.outText("Clone: FAILED name check", 30)
@@ -823,7 +1079,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		-- update their position if not spawning to exact same location
 		if cloneZones.verbose or theZone.verbose or spawnZone.verbose then 	
-			trigger.action.outText("+++clnZ: tmpl delta x = <" .. math.floor(zoneDelta.x) .. ">, y = <" .. math.floor(zoneDelta.z) .. "> for tmpl <" .. theZone.name  .. "> to cloner <" .. spawnZone.name .. ">", 30)
+			--trigger.action.outText("+++clnZ: tmpl delta x = <" .. math.floor(zoneDelta.x) .. ">, y = <" .. math.floor(zoneDelta.z) .. "> for tmpl <" .. theZone.name  .. "> to cloner <" .. spawnZone.name .. ">", 30)
 		end
 		-- update routes when not spawning same location 
 		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute, rotCenter, spawnZone.turn / 57.2958 +
@@ -925,8 +1181,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- apply turning 
 		dcsCommon.rotateGroupData(rawData, spawnZone.turn + 57.2958 *dHeading, newCenter.x, newCenter.z)
 
-		-- make sure unit and group names are unique 
-		cloneZones.uniqueNameGroupData(rawData, spawnZone)
+		-- make sure unit and group names are unique unless
+		-- we have identical active 
+		if not spawnZone.identical then 
+			cloneZones.uniqueNameGroupData(rawData, spawnZone, theZone.name)
+		end 
 		
 		-- see what country we spawn for
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
@@ -939,6 +1198,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	cloneZones.resolveReferences(theZone, dataToSpawn)
 	
 	-- now spawn all raw data 
+	local groupCollector = {} -- to detect cross-group conflicts
+	local unitCollector = {} -- to detect cross-group conflicts 
 	for idx, rawData in pairs (dataToSpawn) do 
 		-- now spawn and save to clones
 		-- first norm and clone data for later save
@@ -958,6 +1219,12 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theData = dcsCommon.clone(rawData)
 		cloneZones.allClones[rawData.name] = theData 
 		
+		if cloneZones.verbose or spawnZone.verbose then 
+			-- optional spawn validation report before we spawn 
+			cloneZones.validateSpawnGroupData(rawData, spawnZone, groupCollector, unitCollector)
+		end
+		
+		-- SPAWN NOW!!!!
 		local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
 				
@@ -978,7 +1245,15 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 				if uID == aUnit.CZTargetID then 
 					-- all good 
 				else 
-					trigger.action.outText("clnZ: post-clone verification failed for unit <" .. uName .. ">: ÎD mismatch: " .. uID .. " -- " .. aUnit.CZTargetID, 30)
+					-- mismatch. may happen when namingScheme causes 
+					-- unit to be reallocated to existing unit.
+					if spawnZone.verbose then 
+						if spawnZone.nameScheme then
+							trigger.action.outText("clnZ: nameScheme - unit <" .. uName .. ">: ÎD mapped to existing: " .. uID , 30)
+						else
+							trigger.action.outText("clnZ: post-clone verification failed for unit <" .. uName .. ">: ÎD mismatch: " .. uID .. " -- " .. aUnit.CZTargetID, 30)
+						end
+					end 
 				end 
 				cloneZones.unitXlate[aUnit.CZorigID] = uID 
 			else 
@@ -987,11 +1262,28 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end
 		
 		-- check if our assigned ID matches the handed out by 
-		-- DCS
+		-- DCS. Mismatches can happen, and are only noted 
 		if newGroupID == rawData.CZTargetID then 
 			-- we are good
 		else 
-			trigger.action.outText("clnZ: MISMATCH " .. rawData.name .. " target ID " .. rawData.CZTargetID .. " does not match " .. newGroupID, 30)
+			if cloneZones.verbose or spawnZone.verbose then 
+				trigger.action.outText("clnZ: Note: GROUP ID spawn changed for <" .. rawData.name .. ">: target ID " .. rawData.CZTargetID .. " (target) returns " .. newGroupID .. " (actual) in <" .. spawnZone.name .. ">", 30)
+				--trigger.action.outText("Note: theData.groupId is <" .. theData.groupId .. ">", 30)
+				--if spawnZone.identical then 
+				--	trigger.action.outText("(Identical = true detected for this zone)", 30)
+				--end
+			end
+			
+			if cloneZones.respawnOnGroupID then 
+				-- remove last entry in table, will be added later
+				local pos = #spawnedGroups
+				
+				timer.scheduleFunction(cloneZones.forcedRespawn, {theData, spawnedGroups, pos, spawnZone.verbose}, timer.getTime() + 2) -- initial gap: 2 seconds for DCS to sort itself out
+			else 
+				-- we note it in the spawn data for the group so
+				-- persistence works fine 
+				theData.groupId = newGroupID
+			end
 		end 
 
 		cloneZones.invokeCallbacks(spawnZone, "did spawn group", theGroup)
@@ -1019,10 +1311,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			
 		-- randomize if enabled
 		if spawnZone.rndLoc then 
-			--local r = math.random() * spawnZone.radius
-			--local phi = 6.2831 * math.random() -- that's 2Pi, folx 
-			--local dx = r * math.cos(phi)
-			--local dy = r * math.sin(phi)
+
 			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
 			rawData.x = rawData.x + dx
 			rawData.y = rawData.y + dy 
@@ -1044,10 +1333,12 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- apply turning 
 		dcsCommon.rotateUnitData(rawData, spawnZone.turn + 57.2958 * dHeading, newCenter.x, newCenter.z)
 		
-		-- make sure static name is unique and remember original 
-		cloneZones.uniqueNameStaticData(rawData, spawnZone)
-		--rawData.name = dcsCommon.uuid(rawData.name)
-		rawData.unitId = cloneZones.uniqueID()  
+		if not spawnZone.identical then
+			-- make sure static name is unique and remember original 
+			cloneZones.uniqueNameStaticData(rawData, spawnZone, theZone.name)
+			--rawData.name = dcsCommon.uuid(rawData.name)
+			rawData.unitId = cloneZones.uniqueID()
+		end 
 		rawData.CZTargetID = rawData.unitId 
 		
 		-- see what country we spawn for
@@ -1075,6 +1366,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theData = dcsCommon.clone(rawData)
 		cloneZones.allCObjects[rawData.name] = theData 
 		
+		if cloneZones.verbose or spawnZone.verbose then 
+			-- optional spawn validation report before we spawn 
+			cloneZones.validateSpawnUnitData(rawData, spawnZone, unitCollector)
+		end
+		
 		local theStatic = coalition.addStaticObject(ctry, rawData)
 		local newStaticID = tonumber(theStatic:getID()) 
 		table.insert(spawnedStatics, theStatic)
@@ -1082,7 +1378,9 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- statics 
 		if newStaticID == rawData.CZTargetID then 
 		else 
-			trigger.action.outText("Static ID mismatch: " .. newStaticID .. " vs (target) " .. rawData.CZTargetID .. " for " .. rawData.name, 30)
+			if cloneZones.verbose or spawnZone.verbose then 
+				trigger.action.outText("Static ID mismatch: " .. newStaticID .. " vs (target) " .. rawData.CZTargetID .. " for " .. rawData.name, 30)
+			end
 		end
 		cloneZones.unitXlate[origID] = newStaticID -- same as units 
 		
@@ -1096,11 +1394,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			if cfxCargoManager then 
 				cfxCargoManager.addCargo(theStatic)
 				if cloneZones.verbose or spawnZone.verbose then 
-					trigger.action.outText("+++clne: added CARGO " .. theStatic:getName() .. " to cargo manager ", 30)
+					trigger.action.outText("+++clnZ: added CARGO " .. theStatic:getName() .. " to cargo manager ", 30)
 				end
 			else 
 				if cloneZones.verbose or spawnZone.verbose then 
-					trigger.action.outText("+++clne: CARGO " .. theStatic:getName() .. " detected, not managerd", 30)
+					trigger.action.outText("+++clnZ: CARGO " .. theStatic:getName() .. " detected, not managerd", 30)
 				end
 			end
 		end
@@ -1298,7 +1596,7 @@ function cloneZones.doOnStart()
 		if theZone.onStart then 
 			if theZone.isStarted then 
 				if cloneZones.verbose or theZone.verbose then 
-					trigger.action.outText("+++clnz: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)
+					trigger.action.outText("+++clnZ: onStart pre-empted for <" .. theZone.name .. "> by persistence", 30)
 				end
 			else 
 				if cloneZones.verbose or theZone.verbose then 
@@ -1418,6 +1716,8 @@ function cloneZones.saveData()
 	for idx, theCloner in pairs(cloneZones.cloners) do 
 		local cData = {}
 		local cName = theCloner.name 
+		cData.myUniqueCounter = theCloner.myUniqueCounter
+		
 		-- mySpawns: all groups i'm curently observing for empty!
 		-- myStatics: dto for objects 
 		local mySpawns = {}
@@ -1440,11 +1740,13 @@ function cloneZones.saveData()
 	-- save globals 
 	theData.cuid = cloneZones.uniqueCounter -- replace whatever is larger 
     theData.uuid = dcsCommon.simpleUUID -- replace whatever is larger 
+	theData.globalCount = cloneZones.globalCount 
 	
 	-- save to struct and pass back 
 	theData.clones = allCloneData	
 	theData.objects = allSOData
 	theData.cloneZones = cloners 
+	
 	return theData
 end
 
@@ -1503,6 +1805,11 @@ function cloneZones.loadData()
 		local theCloner = cloneZones.getCloneZoneByName(cName)
 		if theCloner then 
 			theCloner.isStarted = true -- ALWAYS TRUE WHEN WE COME HERE! cData.isStarted
+			-- init myUniqueCounter if it exists 
+			if cData.myUniqueCounter then 
+				theCloner.myUniqueCounter = cData.myUniqueCounter
+			end
+			
 			local mySpawns = {}
 			for idx, aName in pairs(cData.mySpawns) do 
 				local theGroup = Group.getByName(aName)
@@ -1536,7 +1843,9 @@ function cloneZones.loadData()
 	if theData.uuiD and theData.uuid > dcsCommon.simpleUUID  then 
 		dcsCommon.simpleUUID  = theData.uuid 
 	end
-	
+	if theData.globalCount and theData.globalCount > cloneZones.globalCount then 
+		cloneZones.globalCount = theData.globalCount
+	end
 end
 
 --
@@ -1550,6 +1859,18 @@ function cloneZones.readConfigZone()
 		end 
 		return 
 	end 
+	
+	if cfxZones.hasProperty(theZone, "uniqueCount") then 
+		cloneZones.uniqueCounter = cfxZones.getNumberFromZoneProperty(theZone, "uniqueCount", cloneZone.uniqueCounter)
+	end
+	
+	if cfxZones.hasProperty(theZone, "localCount") then 
+		cloneZones.lclUniqueCounter = cfxZones.getNumberFromZoneProperty(theZone, "localCount", cloneZone.lclUniqueCounter)
+	end
+	
+	if cfxZones.hasProperty(theZone, "globalCount") then 
+		cloneZones.globalCounter = cfxZones.getNumberFromZoneProperty(theZone, "globalCount", cloneZone.globalCounter)
+	end
 	
 	cloneZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	
@@ -1622,4 +1943,9 @@ end
 	- AFAC 
 		- FAC Assign group 
 	- set freq for unit 
+	
+	-- fixedName: immutable name, no safe renaming. always use ID and name without changing it. very special use case.
+	nameTest - optional safety / debug feature that will name-test each unit that is about to be spawned for replacement. Maybe auto turn on when verbose is set?
+	identical - make a clone of template and do not touch name nor id. will fully replace 
+	make example where transport can be different plane types but have same name 
 --]]--

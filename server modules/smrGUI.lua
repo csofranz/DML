@@ -32,7 +32,7 @@ function smr.restartMission()
 	end
 end
 
--- main update loop, checked once per secon
+-- main update loop, checked once per second
 local lTime = DCS.getModelTime()
 function smr.onSimulationFrame()
 	if lTime + 1 < DCS.getModelTime() then

@@ -691,6 +691,31 @@ dcsCommon.version = "2.8.0"
 	end
 
 	function dcsCommon.bearingFromAtoB(A, B) -- coords in x, z 
+		if not A then 
+			trigger.action.outText("WARNING: no 'A' in bearingFromAtoB", 30)
+			return 0
+		end
+		if not B then
+			trigger.action.outText("WARNING: no 'A' in bearingFromAtoB", 30)
+			return 0
+		end
+		if not A.x then 
+			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
+			return 0
+		end
+		if not A.y then 
+			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
+			return 0
+		end
+		if not B.x then 
+			trigger.action.outText("WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
+			return 0
+		end
+		if not B.y then 
+			trigger.action.outText("WARNING: no 'B.y' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
+			return 0
+		end
+		
 		dx = B.x - A.x
 		dz = B.z - A.z
 		bearing = math.atan2(dz, dx) -- in radiants

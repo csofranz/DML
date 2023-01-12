@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.3.0"
+cfxObjectSpawnZones.version = "1.3.1"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -30,6 +30,8 @@ cfxObjectSpawnZones.verbose = false
 --   1.3.0 - better synonym handling 
 --         - useDelicates link to delicate when spawned 
 -- 		   - spawned single and multi-objects can be made delicates
+--   1.3.1 - baseName can be set to zone's name by giving "*"
+
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
 cfxObjectSpawnZones.allSpawners = {}
@@ -92,6 +94,10 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	
 	theSpawner.rawOwner = coalition.getCountryCoalition(theSpawner.country)
 	theSpawner.baseName = cfxZones.getStringFromZoneProperty(inZone, "baseName", dcsCommon.uuid("objSpwn"))
+	theSpawner.baseName = dcsCommon.trim(theSpawner.baseName)
+	if theSpawner.baseName == "*" then 
+		theSpawner.baseName = inZone.name -- convenience shortcut
+	end
 	--cfxZones.getZoneProperty(inZone, "baseName")
 	theSpawner.cooldown = cfxZones.getNumberFromZoneProperty(inZone, "cooldown", 60)
 	theSpawner.lastSpawnTimeStamp = -10000 -- just init so it will always work
