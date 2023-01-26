@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "1.2.0"
+FARPZones.version = "1.2.1"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -13,6 +13,8 @@ FARPZones.verbose = false
 		- verbose cleanup ("FZ: something happened")
   1.2.0 - persistence 
         - handles contested state
+  1.2.1 - now gracefully handles a FARP Zone that does not 
+          contain a FARP, but is placed beside it
   
   
 --]]--
@@ -120,9 +122,9 @@ function FARPZones.createFARPFromZone(aZone)
 	local theFarp = {}
 	theFarp.zone = aZone 
 	theFarp.name = aZone.name 
-	
+	theFarp.point = cfxZones.getPoint(aZone) -- failsafe 
 	-- find the FARPS that belong to this zone
-	local thePoint = aZone.point
+	local thePoint = cfxZones.getPoint(aZone)
 	local mapFarps = dcsCommon.getAirbasesInRangeOfPoint(
 		thePoint, 
 		aZone.radius, 
@@ -132,25 +134,35 @@ function FARPZones.createFARPFromZone(aZone)
 	theFarp.myFarps = mapFarps 
 	theFarp.owner = 0 -- start with neutral
 	aZone.owner = 0 
-	if #mapFarps == 0 then 
-		trigger.action.outText("***Farp Zones: no FARP found for zone " .. aZone.name, 30)
-	else 
-		--for idx, aFarp in pairs(mapFarps) do 
---			trigger.action.outText("Associated FARP " .. aFarp:getName() .. " with FARP Zone " .. aZone.name, 30)
-		--end
+	if #mapFarps == 0 then
+		if aZone.verbose or FARPZones.verbose then 
+			trigger.action.outText("***Farp Zones: no FARP found inside zone " .. aZone.name .. ", associating closest FARP", 30)
+		end
+		local closest = dcsCommon.getClosestAirbaseTo(thePoint, 1)
+		if not closest then 
+			trigger.action.outText("***FARP Zones: unable to find a FARP to associate zone <" .. aZone.name .. "> with.", 30)
+			return 
+		else
+			if aZone.verbose or FARPZones.verbose then 
+				trigger.action.outText("associated FARP <" .. closest:getName() .. "> with zone <" .. aZone.name .. ">", 30)
+			end
+		end
+		mapFarps[1] = closest
+	end 
+
 		
-		theFarp.mainFarp = theFarp.myFarps[1]
-		theFarp.point = theFarp.mainFarp:getPoint() -- this is FARP, not zone!!!
-		theFarp.owner = theFarp.mainFarp:getCoalition()
-		aZone.owner = theFarp.owner
-	end
+	theFarp.mainFarp = theFarp.myFarps[1]
+	theFarp.point = theFarp.mainFarp:getPoint() -- this is FARP, not zone!!!
+	theFarp.owner = theFarp.mainFarp:getCoalition()
+	aZone.owner = theFarp.owner
+--	end
 	
 	-- get r and phi for defenders 
 	local rPhi = cfxZones.getVectorFromZoneProperty(
 			aZone, 
 			"rPhiHDef", 
 			3)
-	--trigger.action.outText("*** DEF rPhi are " .. rPhi[1] .. " and " .. rPhi[2] .. " heading " .. rPhi[3], 30)
+
 	-- get r and phi for facilities
 	-- create a new defenderzone for this 
 	local r = rPhi[1]

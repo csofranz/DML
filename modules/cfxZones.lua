@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.0"
+cfxZones.version = "3.0.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -97,7 +97,6 @@ cfxZones.version = "3.0.0"
           - isPointInsideZone() returns delta as well
 - 2.9.0   - linked zones can useOffset and useHeading 
 		  - getPoint update 
-		  - new getOrigin()
 		  - pointInZone understands useOrig
 		  - allStaticsInZone supports useOrig 
 		  - dPhi for zones with useHeading 
@@ -117,6 +116,9 @@ cfxZones.version = "3.0.0"
             linedUnit and warning.
 		  - initZoneVerbosity()
 - 3.0.1   - updateMovingZones() better tracks linked units by name
+- 3.0.2   - maxRadius for all zones, only differs from radius in polyZones 
+          - re-factoring zone-base string processing from messenger module
+		  - new processStringWildcards() that does almost all that messenger can 
 
 
 --]]--
@@ -244,6 +246,7 @@ function cfxZones.readFromDCS(clearfirst)
 				-- circular zone 
 				newZone.isCircle = true 
 				newZone.radius = dcsZone.radius
+				newZone.maxRadius = newZone.radius -- same for circular
 	
 			elseif zoneType == 2 then
 				-- polyZone
@@ -254,6 +257,7 @@ function cfxZones.readFromDCS(clearfirst)
 				-- now transfer all point in the poly
 				-- note: DCS in 2.7 misspells vertices as 'verticies'
 				-- correct for this 
+				newZone.maxRadius = 0
 				local verts = {}
 				if dcsZone.verticies then verts = dcsZone.verticies 
 				else 
@@ -265,6 +269,10 @@ function cfxZones.readFromDCS(clearfirst)
 					local dcsPoint = verts[v]
 					local polyPoint = cfxZones.createPointFromDCSPoint(dcsPoint) -- (x, y) --> (x, 0, y-->z)
 					newZone.poly[v] = polyPoint
+					-- measure distance from zone's point, and store maxRadius 
+					-- dcs always saves a point with the poly zone 
+					local dist = dcsCommon.dist(newZone.point, polyPoint)
+					if dist > newZone.maxRadius then newZone.maxRadius = dist end 
 				end
 			else 
 				
@@ -1194,65 +1202,12 @@ function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, 
 	return newGroup, groupDataCopy
 end
 
--- parsing zone names. The first part of the name until the first blank " " 
--- is the prefix and is dropped unless keepPrefix is true. 
--- all others are regarded as key:value pairs and are then added 
--- to the zone 
--- separated by equal sign "=" AND MUST NOT CONTAIN BLANKS
 --
--- example usage "followZone unit=rotary-1 dx=30 dy=25 rotateWithHeading=true
+-- ===============
+-- FLAG PROCESSING 
+-- ===============
 --
--- OLD DEPRECATED TECH -- TO BE DECOMMISSIONED SOON, DO NOT USE
--- 
---[[--
-function cfxZones.parseZoneNameIntoAttributes(theZone, keepPrefix)
---	trigger.action.outText("Parsing zone:  ".. theZone.name, 30)
-	if not keepPrefix then keepPrefix = false end -- simply for clarity
-	-- now split the name into space-separated strings
-	local attributes = dcsCommon.splitString(theZone.name, " ")
-	if not keepPrefix then table.remove(attributes, 1) end -- pop prefix
 
-	-- now parse all substrings and add them as attributes to theZone
-	for i=1, #attributes do 
-		local a = attributes[i]
-		local kvp = dcsCommon.splitString(a, "=")
-		if #kvp == 2 then 
-			-- we have key value pair
-			local theKey = kvp[1]
-			local theValue = kvp[2]
-			theZone[theKey] = theValue 
---			trigger.action.outText("Zone ".. theZone.name .. " parsed: Key = " .. theKey .. ", Value = " .. theValue, 30)
-		else 
---			trigger.action.outText("Zone ".. theZone.name .. ": dropped attribute " .. a, 30)
-		end
-	end 
-end
---]]--
--- OLD DEPRECATED TECH -- TO BE DECOMMISSIONED SOON, DO NOT USE
---[[--
-function cfxZones.processCraterZones ()
-	local craters = cfxZones.zonesStartingWith("crater")
-
-	
-
-	-- all these zones need to be processed and their name infor placed into attributes
-	for cName, cZone in pairs(craters) do
-		cfxZones.parseZoneNameIntoAttributes(cZone)
-		
-		-- blow stuff up at the location of the zone 
-		local cPoint = cZone.point
-		cPoint.y = land.getHeight({x = cPoint.x, y = cPoint.z})  -- compensate for ground level
-		trigger.action.explosion(cPoint, 900)
-		 
-		-- now interpret and act on the crater info 
-		-- to destroy and place fire. 
-		
-		-- fire has small, medium, large 
-		-- eg. fire=large
-		
-	end
-end
---]]--
 --
 -- Flag Pulling 
 --
@@ -1538,8 +1493,6 @@ function cfxZones.isMEFlag(inFlag)
 	trigger.action.outText("+++zne: warning: deprecated isMEFlag", 30)
 	return true 
 	-- returns true if inFlag is a pure positive number
---	inFlag = dcsCommon.trim(inFlag)
---	return dcsCommon.stringIsPositiveNumber(inFlag)
 end
 
 function cfxZones.verifyMethod(theMethod, theZone)
@@ -1579,7 +1532,6 @@ function cfxZones.verifyMethod(theMethod, theZone)
 	local op = string.sub(theMethod, 1, 1) 
 	local remainder = string.sub(theMethod, 2)
 	remainder = dcsCommon.trim(remainder) -- remove all leading and trailing spaces
---	local rNum = tonumber(remainder)
 
 	if true then 
 		-- we have a comparison = ">", "=", "<" followed by a number 
@@ -1898,7 +1850,9 @@ function cfxZones.flagArrayFromString(inString)
 end
 
 --
--- PROPERTY PROCESSING 
+-- ===================
+-- PROPERTY PROCESSING
+-- =================== 
 --
 
 function cfxZones.getAllZoneProperties(theZone, caseInsensitive) -- return as dict 
@@ -2030,9 +1984,7 @@ function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default
 				upperBound = lowerBound
 				lowerBound = temp 
 			end
---			if rndFlags.verbose then 
---			trigger.action.outText("+++Zne: detected range <" .. lowerBound .. ", " .. upperBound .. ">", 30)
---			end
+
 		else
 			-- bounds illegal
 			trigger.action.outText("+++Zne: illegal range  <" .. rangeString .. ">, using " .. default .. "-" .. default, 30)
@@ -2043,7 +1995,7 @@ function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default
 		upperBound = cfxZones.getNumberFromZoneProperty(theZone, theProperty, default) -- between pulses 
 		lowerBound = upperBound
 	end
---	trigger.action.outText("+++Zne: returning <" .. lowerBound .. ", " .. upperBound .. ">", 30)
+
 	return lowerBound, upperBound
 end
 
@@ -2201,7 +2153,290 @@ function cfxZones.getSmokeColorStringFromZoneProperty(theZone, theProperty, defa
 end
 
 --
--- Moving Zones. They contain a link to their unit
+-- Zone-based wildcard processing
+-- 
+
+-- process <z>
+function cfxZones.processZoneStatics(inMsg, theZone)
+	if theZone then 
+		inMsg = inMsg:gsub("<z>", theZone.name)
+	end
+	return inMsg 
+end
+
+-- process <t>, <lat>, <lon>, <ele>, <mgrs> 
+function cfxZones.processSimpleZoneDynamics(inMsg, theZone, timeFormat, imperialUnits)
+	if not inMsg then return "<nil inMsg>" end
+	-- replace <t> with current mission time HMS
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	if not timeFormat then timeFormat = "<:h>:<:m>:<:s>" end 
+	local timeString  = dcsCommon.processHMS(timeFormat, absSecs)
+	local outMsg = inMsg:gsub("<t>", timeString)
+	
+	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
+	-- and <mgrs> with mgrs coords of zone point 
+	local currPoint = cfxZones.getPoint(theZone)
+	local lat, lon = coord.LOtoLL(currPoint)
+	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	local alt = land.getHeight({x = currPoint.x, y = currPoint.z})
+	if imperialUnits then 
+		alt = math.floor(alt * 3.28084) -- feet 
+	else 
+		alt = math.floor(alt) -- meters 
+	end 
+	outMsg = outMsg:gsub("<lat>", lat)
+	outMsg = outMsg:gsub("<lon>", lon)
+	outMsg = outMsg:gsub("<ele>", alt)
+	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
+	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+	outMsg = outMsg:gsub("<mgrs>", mgrs)
+	return outMsg
+end 
+
+-- process <v: flag>, <rsp: flag> <rrnd>
+function cfxZones.processDynamicValues(inMsg, theZone, msgResponses)
+	-- replace all occurences of <v: flagName> with their values 
+	local pattern = "<v:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+	local outMsg = inMsg
+	repeat -- iterate all patterns one by one 
+		local startLoc, endLoc = string.find(outMsg, pattern)
+		if startLoc then 
+			local theValParam = string.sub(outMsg, startLoc, endLoc)
+			-- strip lead and trailer 
+			local param = string.gsub(theValParam, "<v:%s*", "")
+			param = string.gsub(param, ">","")
+			-- param = dcsCommon.trim(param) -- trim is called anyway
+			-- access flag
+			local val = cfxZones.getFlagValue(param, theZone)
+			val = tostring(val)
+			if not val then val = "NULL" end 
+			-- replace pattern in original with new val 
+			outMsg = string.gsub(outMsg, pattern, val, 1) -- only one sub!
+		end
+	until not startLoc
+	
+	-- now process rsp 
+	pattern = "<rsp:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+
+	if msgResponses and (#msgResponses > 0) then -- only if this zone has an array
+		--trigger.action.outText("enter response proccing", 30)
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then 
+				--trigger.action.outText("response: found an occurence", 30)
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<rsp:%s*", "")
+				param = string.gsub(param, ">","")
+				
+				-- access flag
+				local val = cfxZones.getFlagValue(param, theZone)
+				if not val or (val < 1) then val = 1 end 
+				if val > msgResponses then val = msgResponses end 
+				
+				val = msgResponses[val]
+				val = dcsCommon.trim(val)
+				-- replace pattern in original with new val 
+				outMsg = string.gsub(outMsg, pattern, val, 1) -- only one sub!
+			end
+		until not startLoc
+		
+		-- rnd response 
+		local rndRsp = dcsCommon.pickRandom(msgResponses)
+		outMsg = outMsg:gsub ("<rrnd>", rndRsp)
+	end
+	
+	return outMsg
+end
+
+-- process <t: flag>
+function cfxZones.processDynamicTime(inMsg, theZone, timeFormat)
+	if not timeFormat then timeFormat = "<:h>:<:m>:<:s>" end
+	-- replace all occurences of <t: flagName> with their values 
+	local pattern = "<t:%s*[%s%w%*%d%.%-_]+>" -- no list allowed but blanks and * and . and - and _ --> we fail on the other specials to keep this simple 
+	local outMsg = inMsg
+	repeat -- iterate all patterns one by one 
+		local startLoc, endLoc = string.find(outMsg, pattern)
+		if startLoc then 
+			local theValParam = string.sub(outMsg, startLoc, endLoc)
+			-- strip lead and trailer 
+			local param = string.gsub(theValParam, "<t:%s*", "")
+			param = string.gsub(param, ">","")
+			-- access flag
+			local val = cfxZones.getFlagValue(param, theZone)
+			-- use this to process as time value 
+			--trigger.action.outText("time: accessing <" .. param .. "> and received <" .. val .. ">", 30)
+			local timeString  = dcsCommon.processHMS(timeFormat, val)
+			
+			if not timeString then timeString = "NULL" end 
+			-- replace pattern in original with new val 
+			outMsg = string.gsub(outMsg, pattern, timeString, 1) -- only one sub!
+		end
+	until not startLoc
+	return outMsg
+end
+
+-- process <lat/lon/ele/mgrs/lle/latlon/alt/vel/hdg/rhdg/type/player: zone/unit>
+function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
+	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type", "player"}
+	local outMsg = inMsg
+	local uHead = 0
+	for idx, aLocale in pairs(locales) do 
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "")
+				param = string.gsub(param, ">","")
+				-- find zone or unit
+				param = dcsCommon.trim(param)
+				local thePoint = nil 
+				local tZone = cfxZones.getZoneByName(param)
+				local tUnit = Unit.getByName(param)
+				local spd = 0
+				local angels = 0 
+				local theType = "<errType>"
+				local playerName = "Unknown"
+				if tZone then
+					theType = "Zone"
+					playerName = "?zone?"
+					thePoint = cfxZones.getPoint(tZone)
+					if tZone.linkedUnit and Unit.isExist(tZone.linkedUnit) then 
+						local lU = tZone.linkedUnit
+						local masterPoint = lU:getPoint()
+						thePoint.y = masterPoint.y 
+						spd = dcsCommon.getUnitSpeed(lU)
+						spd = math.floor(spd * 3.6)
+						uHead = math.floor(dcsCommon.getUnitHeading(tUnit) * 57.2958) -- to degrees.
+					else 
+						-- since zones always have elevation of 0, 
+						-- now get the elevation from the map 
+						thePoint.y = land.getHeight({x = thePoint.x, y = thePoint.z})
+					end
+				elseif tUnit then 
+					if Unit.isExist(tUnit) then
+						theType = tUnit:getTypeName()
+						if tUnit.getPlayerName and tUnit:getPlayerName() then
+							playerName = tUnit:getPlayerName()
+						end
+						thePoint = tUnit:getPoint()
+						spd = dcsCommon.getUnitSpeed(tUnit)
+						-- convert m/s to km/h 
+						spd = math.floor(spd * 3.6)
+						uHead = math.floor(dcsCommon.getUnitHeading(tUnit) * 57.2958) -- to degrees. 
+					end
+				else 
+					-- nothing to do, remove me.
+				end
+
+				local locString = "err"
+				if thePoint then 
+					-- now that we have a point, we can do locale-specific
+					-- processing. return result in locString
+					local lat, lon, alt = coord.LOtoLL(thePoint)
+					lat, lon = dcsCommon.latLon2Text(lat, lon)
+					angels = math.floor(thePoint.y) 
+					if imperialUnits then 
+						alt = math.floor(alt * 3.28084) -- feet
+						spd = math.floor(spd * 0.539957) -- km/h to knots	
+						angels = math.floor(angels * 3.28084)
+					else 
+						alt = math.floor(alt) -- meters 
+					end 
+					
+					if angels > 1000 then 
+						angels = math.floor(angels / 100) * 100 
+					end
+					
+					if aLocale == "lat" then locString = lat 
+					elseif aLocale == "lon" then locString = lon 
+					elseif aLocale == "ele" then locString = tostring(alt)
+					elseif aLocale == "lle" then locString = lat .. " " .. lon .. " ele " .. tostring(alt) 
+					elseif aLocale == "latlon" then locString = lat .. " " .. lon 
+					elseif aLocale == "alt" then locString = tostring(angels) -- don't confuse alt and angels, bad var naming here
+					elseif aLocale == "vel" then locString = tostring(spd)
+					elseif aLocale == "hdg" then locString = tostring(uHead)
+					elseif aLocale == "type" then locString = theType 
+					elseif aLocale == "player" then locString = playerName 
+					elseif aLocale == "rhdg" and (responses) then 
+						local offset = cfxZones.rspMapper360(uHead, #responses)
+						locString = dcsCommon.trim(responses[offset])
+					else 
+						-- we have mgrs
+						local grid = coord.LLtoMGRS(coord.LOtoLL(thePoint))
+						locString = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+					end
+				end
+				-- replace pattern in original with new val 
+				outMsg = string.gsub(outMsg, pattern, locString, 1) -- only one sub!
+			end -- if startloc
+		until not startLoc
+	end -- for all locales 
+	return outMsg
+end
+
+function cfxZones.rspMapper360(directionInDegrees, numResponses)
+	-- maps responses around a clock. Clock has 12 'responses' (12, 1, .., 11), 
+	-- with the first (12) also mapping to the last half arc 
+	-- this method dynamically 'winds' the responses around 
+	-- a clock and returns the index of the message to display 
+	if numResponses < 1 then numResponses = 1 end 
+	directionInDegrees = math.floor(directionInDegrees) 
+	while directionInDegrees < 0 do directionInDegrees = directionInDegrees + 360 end 
+	while directionInDegrees >= 360 do directionInDegrees = directionInDegrees - 360 end 
+	-- now we have 0..360 
+	-- calculate arc per item 
+	local arcPerItem = 360 / numResponses
+	local halfArc = arcPerItem / 2
+
+	-- we now map 0..360 to (0-halfArc..360-halfArc) by shifting 
+	-- direction by half-arc and clipping back 0..360
+	-- and now we can directly derive the index of the response 
+	directionInDegrees = directionInDegrees + halfArc
+	if directionInDegrees >= 360 then directionInDegrees = directionInDegrees - 360 end 
+	
+	local index = math.floor(directionInDegrees / arcPerItem) + 1 -- 1 .. numResponses 
+	
+	return index 
+end
+
+-- replaces dcsCommon with same name 
+-- timeFormat is optional, default is "<:h>:<:m>:<:s>"
+-- imperialUnits is optional, defaults to meters 
+-- responses is an array of string, defaults to {}
+function cfxZones.processStringWildcards(inMsg, theZone, timeFormat, imperialUnits, responses)
+	if not inMsg then return "<nil inMsg>" end
+	local formerType = type(inMsg)
+	if formerType ~= "string" then inMsg = tostring(inMsg) end
+	if not inMsg then inMsg = "<inMsg is incompatible type " .. formerType .. ">" end
+	local theMsg = inMsg
+	-- process common DCS stuff like /n 
+	theMsg = dcsCommon.processStringWildcards(theMsg) -- call old inherited
+	-- process <z>
+	theMsg = cfxZones.processZoneStatics(theMsg, theZone)
+	-- process <t>, <lat>, <lon>, <ele>, <mgrs>
+	theMsg = cfxZones.processSimpleZoneDynamics(theMsg, theZone, timeFormat, imperialUnits)
+	-- process <v: flag>, <rsp: flag> <rrnd>
+	theMsg = cfxZones.processDynamicValues(theMsg, theZone, responses)
+	-- process <t: flag>
+	theMsg = cfxZones.processDynamicTime(theMsg, theZone, timeFormat)
+	-- process <lat/lon/ele/mgrs/lle/latlon/alt/vel/hdg/rhdg/type/player: zone/unit>
+	theMsg = cfxZones.processDynamicLoc(theMsg, imperialUnits, responses)
+
+	return theMsg
+end
+
+--
+-- ============
+-- MOVING ZONES 
+-- ============ 
+-- 
+-- Moving zones contain a link to their unit
 -- they are always located at an offset (x,z) or delta, phi 
 -- to their master unit. delta phi allows adjustment for heading
 -- The cool thing about moving zones in cfx is that they do not
@@ -2239,13 +2474,7 @@ function cfxZones.getPoint(aZone) -- always works, even linked, returned point c
 	thePos.x = aZone.point.x
 	thePos.y = 0 -- aZone.y 
 	thePos.z = aZone.point.z
-	--[[--
-	if aZone.linkedUnit then 
-		trigger.action.outText("GetPoint: LINKED <".. aZone.name .. "> p = " .. dcsCommon.point2text(thePos) .. ", O = " .. dcsCommon.point2text(cfxZones.getDCSOrigin(aZone)), 30  )
-	else 
-		trigger.action.outText("GetPoint: unlinked <".. aZone.name .. "> p = " .. dcsCommon.point2text(thePos) .. ", O = " .. dcsCommon.point2text(cfxZones.getDCSOrigin(aZone)), 30  )
-	end
-	--]]--
+
 	return thePos 
 end
 
@@ -2259,8 +2488,7 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	local unitHeading = dcsCommon.getUnitHeading(theUnit)
 	local bearingOffset = math.atan2(dy, dx) -- rads 
 	if bearingOffset < 0 then bearingOffset = bearingOffset + 2 * 3.141592 end 
-	--trigger.action.outText("zone <" .. theZone.name .. "> is <" .. math.floor(bearingOffset * 57.2958) .. "> degrees from Unit <" .. theUnit:getName() .. ">", 30)
-	--trigger.action.outText("Unit <" .. theUnit:getName() .. "> has heading .. <" .. math.floor(57.2958 * unitHeading) .. ">", 30)
+
 	local dPhi = bearingOffset - unitHeading
 	if dPhi < 0 then dPhi = dPhi + 2 * 3.141592 end
 	if (theZone.verbose and theZone.useHeading) then 
@@ -2349,14 +2577,12 @@ function cfxZones.updateMovingZones()
 end
 
 function cfxZones.initLink(theZone)
---trigger.action.outText("enter initlink for <" .. theZone.name .. ">")
---if true then return end 
---trigger.action.outText("entry verbose check: <" .. theZone.name .. "> is verbose = " .. dcsCommon.bool2YesNo(theZone.verbose), 30)
+
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 
 	theUnit = Unit.getByName(theZone.linkName)
 	if theUnit then
-		--trigger.action.outText("initlink has link to <" .. theZone.linkName .. "> for <" .. theZone.name .. ">", 30)
+
 		local dx = 0
 		local dz = 0
 		if theZone.useOffset or theZone.useHeading then 
@@ -2367,12 +2593,12 @@ function cfxZones.initLink(theZone)
 			dz = delta.z
 		end
 		cfxZones.linkUnitToZone(theUnit, theZone, dx, dz) -- also sets theZone.linkedUnit
-		--trigger.action.outText("verbose check: <" .. theZone.name .. "> is verbose = " .. dcsCommon.bool2YesNo(theZone.verbose), 30)
+
 		if theZone.verbose then 
 			trigger.action.outText("Link established for zone <" .. theZone.name .. "> to unit <" .. theZone.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		theZone.linkBroken = nil 
-		--trigger.action.outText("done linking <" .. theZone.linkName .. "> to zone <" .. theZone.name .. ">", 30)
+
 	else 
 		if theZone.verbose then 
 			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
@@ -2417,26 +2643,25 @@ function cfxZones.startMovingZones()
 	end
 end
 
+
+--
+-- ===========
+-- INIT MODULE
+-- ===========
+--
+
 function cfxZones.initZoneVerbosity()
 	for aName,aZone in pairs(cfxZones.zones) do
 		-- support for zone-local verbose flag 
 		aZone.verbose = cfxZones.getBoolFromZoneProperty(aZone, "verbose", false)
 	end
 end
---
--- init
---
 
 function cfxZones.init()
 	-- read all zones into my own db
 	cfxZones.readFromDCS(true) -- true: erase old
-	
-	-- now, pre-read zone owner for all zones
-	-- note, all zones with this property are by definition owned zones.
-	-- and hence will be read anyway. this will merely ensure that the 
-	-- ownership is established right away
-	-- unless owned zones module is missing, in which case 
-	-- ownership is still established 
+
+	-- pre-read zone owner for all zones
 	local pZones = cfxZones.zonesWithProperty("owner")
 	for n, aZone in pairs(pZones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)

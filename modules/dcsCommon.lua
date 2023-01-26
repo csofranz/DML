@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.0"
+dcsCommon.version = "2.8.1"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -123,7 +123,10 @@ dcsCommon.version = "2.8.0"
 	   - new getGroupNameByID
 	   - bool2YesNo alsco can return NIL
 	   - new getUnitStartPosByID
- 
+ 2.8.1 - arrayContainsString: type checking for theArray and warning
+	   - processStringWildcards()
+	   - new wildArrayContainsString() 
+	   - fix for stringStartsWith oddity with aircraft types 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1995,9 +1998,56 @@ end
 --
 --
 
+-- as arrayContainsString, except it includes wildcard matches if EITHER 
+-- ends on "*"
+	function dcsCommon.wildArrayContainsString(theArray, theString, caseSensitive) 
+		if not theArray then return false end
+		if not theString then return false end
+		if not caseSensitive then caseSensitive = false end 
+		if type(theArray) ~= "table" then 
+			trigger.action.outText("***arrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
+		end
+		if not caseSensitive then theString = string.upper(theString) end 
+		
+		--trigger.action.outText("wildACS: theString = <" .. theString .. ">, theArray contains <" .. #theArray .. "> elements", 30)
+		local wildIn = dcsCommon.stringEndsWith(theString, "*")
+		if wildIn then dcsCommon.removeEnding(thestring, "*") end 
+		for i = 1, #theArray do 
+			local theElement = theArray[i]
+			if caseSensitive then theElement = string.upper(theElement) end 
+			local wildEle = dcsCommon.stringEndsWith(theElement, "*")
+			if wildEle then theElement = dcsCommon.removeEnding(theElement, "*") end 
+			--trigger.action.outText("matching s=<" .. theString .. "> with e=<" .. theElement .. ">", 30)
+			if wildEle and wildIn then 
+				-- both end on wildcards, partial match for both
+				if dcsCommon.stringStartsWith(theElement. theString) then return true end 
+				if dcsCommon.stringStartsWith(theString, theElement) then return true end 
+				--trigger.action.outText("match e* with s* failed.", 30)
+			elseif wildEle then 
+				-- Element is a wildcard, partial match 
+				if dcsCommon.stringStartsWith(theString, theElement) then return true end
+				--trigger.action.outText("match e* with s failed.", 30)
+			elseif wildIn then
+				-- theString is a wildcard. partial match 
+				if dcsCommon.stringStartsWith(theElement. theString) then return true end
+				--trigger.action.outText("match e with s* failed.", 30)
+			else
+				-- standard: no wildcards, full match
+				if theArray[i] == theString then return true end 
+				--trigger.action.outText("match e with s (straight) failed.", 30)
+			end
+			
+		end
+		return false 
+	end
+
+
 	function dcsCommon.arrayContainsString(theArray, theString) 
 		if not theArray then return false end
 		if not theString then return false end
+		if type(theArray) ~= "table" then 
+			trigger.action.outText("***arrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
+		end
 		for i = 1, #theArray do 
 			if theArray[i] == theString then return true end 
 		end
@@ -2117,7 +2167,35 @@ end
 	
 	function dcsCommon.stringStartsWith(theString, thePrefix)
 		if not theString then return false end 
-		return theString:find(thePrefix) == 1
+		if not thePrefix then return false end 
+		
+		-- new code because old 'string.find' had some really 
+		-- strange results with aircraft types. Prefix "A-10" did not 
+		-- match string "A-10A" etc. 
+		local pl = string.len(thePrefix)
+		if pl > string.len(theString) then return false end
+		if pl < 1 then return false end
+ 		for i=1, pl do 
+		local left =  string.sub(theString, i, i)
+		local right = string.sub(thePrefix, i, i)
+			if left ~= right then 
+				return false
+			end
+		end
+	
+		return true 
+--[[--		trigger.action.outText("---- OK???", 30)
+		-- strange stuff happening with some strings, let's investigate 
+		
+		
+		local res = string.find(theString, thePrefix) == 1
+		if res then
+			trigger.action.outText("startswith: <" .. theString .. "> pre <" .. thePrefix .. "> --> YES", 30)
+		else 
+			trigger.action.outText("startswith: <" .. theString .. "> nojoy pre <" .. thePrefix .. ">", 30)
+		end
+		return res 
+--]]--
 	end
 	
 	function dcsCommon.removePrefix(theString, thePrefix)
@@ -3007,6 +3085,23 @@ function dcsCommon.LSR(a, num)
 	end
 	return a
 end
+
+--
+-- string windcards 
+--
+function dcsCommon.processStringWildcards(inMsg)
+	-- Replace STATIC bits of message like CR and zone name 
+	if not inMsg then return "<nil inMsg>" end
+	local formerType = type(inMsg)
+	if formerType ~= "string" then inMsg = tostring(inMsg) end  
+	if not inMsg then inMsg = "<inMsg is incompatible type " .. formerType .. ">" end 
+	local outMsg = ""
+	-- replace line feeds 
+	outMsg = inMsg:gsub("<n>", "\n")
+
+	return outMsg 
+end
+
 
 --
 -- SEMAPHORES

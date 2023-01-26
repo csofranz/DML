@@ -64,6 +64,7 @@ cfxSpawnZones.spawnedGroups = {}
 --   1.7.1 - improved verbosity 
 --         - spelling check
 --   1.7.2 - baseName now can can be set to zone name by issuing "*"
+--   1.7.3 - ability to hand off to delicates, useDelicates attribute 
 --
 -- new version requires cfxGroundTroops, where they are 
 --
@@ -152,7 +153,14 @@ function cfxSpawnZones.createSpawner(inZone)
 	if cfxZones.hasProperty(inZone, "trackWith:") then 
 		inZone.trackWith = cfxZones.getStringFromZoneProperty(inZone, "trackWith:", "<None>")
 	end
-		
+	
+	-- interface to delicates 
+	if cfxZones.hasProperty(inZone, "useDelicates") then 
+		theSpawner.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>"))
+		if theSpawner.delicateName == "*" then theSpawner.delicateName = inZone.name end 
+	end
+	
+	
 	-- connect with ME if a trigger flag is given 
 	if cfxZones.hasProperty(inZone, "f?") then 
 		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
@@ -409,6 +417,17 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 				aSpawner.paused = true 		
 		end 
 		
+	end
+	
+	-- hand off to delicates 
+	if aSpawner.delicateName and delicates then 
+	-- pass this object to the delicate zone mentioned 
+		local theDeli = delicates.getDelicatesByName(aSpawner.delicateName)
+		if theDeli then 
+			delicates.addGroupToInventoryForZone(theDeli, newTroops)
+		else 
+			trigger.action.outText("+++Spwn: spawner <" .. aZone.name .. "> can't find delicates <" .. aSpawner.delicateName .. ">", 30)
+		end
 	end
 	
 	-- track this if we are have a trackwith attribute 

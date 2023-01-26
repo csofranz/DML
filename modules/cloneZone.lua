@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.7.0"
+cloneZones.version = "1.7.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -91,6 +91,8 @@ cloneZones.respawnOnGroupID = true
 		  - <uid>, <lcl>, <i>, <g> wildcards 
 		  - identical=true overrides nameScheme
 		  - masterOwner "*" convenience shortcut
+	1.7.1 - useDelicates handOff for delicates 
+	      - forcedRespawn passes zone instead of verbose
 	
 --]]--
 
@@ -335,6 +337,15 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if cfxZones.hasProperty(theZone, "trackWith:") then 
 		theZone.trackWith = cfxZones.getStringFromZoneProperty(theZone, "trackWith:", "<None>")
 		--trigger.action.outText("trackwith: " .. theZone.trackWith, 30)
+	end
+
+	-- interface to delicates
+	if cfxZones.hasProperty(theZone, "useDelicates") then 
+		theZone.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(theZone, "useDelicates", "<none>"))
+		if theZone.delicateName == "*" then theZone.delicateName = theZone.name end 
+		if theZone.verbose then 
+			trigger.action.outText("+++clnZ: cloner <" .. theZone.name .."> hands off delicates to <" .. theZone.delicateName .. ">", 30)
+		end
 	end
 
 	-- randomized locations on spawn 
@@ -998,11 +1009,14 @@ function cloneZones.validateSpawnGroupData(theData, theZone, groupNames, unitNam
 	end 
 end
 
+-- forcedRespan respawns a group when the previous spawn of a 
+-- group did not match the ID that it was supposed to match 
 function cloneZones.forcedRespawn(args)
 	local theData = args[1]
 	local spawnedGroups = args[2]
 	local pos = args[3]
-	local verbose = args[4]
+	local theZone = args[4]
+	local verbose = theZone.verbose
 	local rawData = dcsCommon.clone(theData)
 	if verbose then 
 		trigger.action.outText("clnZ: enter forced respawn of <" .. theData.name .. "> to meet ID " .. theData.CZTargetID .. " (currently set for <" .. theData.groupId .. ">)", 30)
@@ -1021,6 +1035,21 @@ function cloneZones.forcedRespawn(args)
 			trigger.action.outText("will replace table entry at <" .. pos .. "> with new group", 30)
 		end
 		spawnedGroups[pos] = theGroup
+		
+		-- since we are now successful, check if we need to apply 
+		-- delicate status 
+		if theZone.delicateName and delicates then 
+			-- pass this object to the delicate zone mentioned 
+			local theDeli = delicates.getDelicatesByName(theZone.delicateName)
+			if theDeli then 
+				delicates.addGroupToInventoryForZone(theDeli, theGroup)
+			else 
+				trigger.action.outText("+++clnZ: spawner <" .. theZone.name .. "> can't find delicates zone <" .. theZone.delicateName .. ">", 30)
+			end
+		elseif theZone.delicateName then 
+			trigger.action.outText("+++clnZ: WARNING - cloner <> requires 'Delicates' module.", 30)
+		end
+		
 	else 
 		-- we need to try again in one second
 		if verbose then 
@@ -1200,6 +1229,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	-- now spawn all raw data 
 	local groupCollector = {} -- to detect cross-group conflicts
 	local unitCollector = {} -- to detect cross-group conflicts 
+	local theGroup = nil -- init to empty, on this level 
 	for idx, rawData in pairs (dataToSpawn) do 
 		-- now spawn and save to clones
 		-- first norm and clone data for later save
@@ -1225,7 +1255,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end
 		
 		-- SPAWN NOW!!!!
-		local theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
+		theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
 				
 		-- update groupXlate table from spawned group
@@ -1261,28 +1291,49 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			end 
 		end
 		
-		-- check if our assigned ID matches the handed out by 
+		-- check if our assigned ID matches the one handed out by 
 		-- DCS. Mismatches can happen, and are only noted 
 		if newGroupID == rawData.CZTargetID then 
-			-- we are good
+			-- we are good, all processing correct 
+			-- add to delicates if set 
+			if spawnZone.delicateName and delicates then 
+				-- pass this object to the delicate zone mentioned 
+				local theDeli = delicates.getDelicatesByName(spawnZone.delicateName)
+				if theDeli then 
+					delicates.addGroupToInventoryForZone(theDeli, theGroup)
+				else 
+					trigger.action.outText("+++clnZ: spawner <" .. spawnZone.name .. "> can't find delicates zone <" .. spawnZone.delicateName .. ">", 30)
+				end
+			end
 		else 
 			if cloneZones.verbose or spawnZone.verbose then 
 				trigger.action.outText("clnZ: Note: GROUP ID spawn changed for <" .. rawData.name .. ">: target ID " .. rawData.CZTargetID .. " (target) returns " .. newGroupID .. " (actual) in <" .. spawnZone.name .. ">", 30)
-				--trigger.action.outText("Note: theData.groupId is <" .. theData.groupId .. ">", 30)
-				--if spawnZone.identical then 
-				--	trigger.action.outText("(Identical = true detected for this zone)", 30)
-				--end
+				
 			end
 			
 			if cloneZones.respawnOnGroupID then 
-				-- remove last entry in table, will be added later
+				-- remember pos in table, will be changed after
+				-- respawn 
 				local pos = #spawnedGroups
 				
-				timer.scheduleFunction(cloneZones.forcedRespawn, {theData, spawnedGroups, pos, spawnZone.verbose}, timer.getTime() + 2) -- initial gap: 2 seconds for DCS to sort itself out
+				timer.scheduleFunction(cloneZones.forcedRespawn, {theData, spawnedGroups, pos, spawnZone}, timer.getTime() + 2) -- initial gap: 2 seconds for DCS to sort itself out
+				-- note that this can in extreme cases result in 
+				-- unitID mismatches, but his is extremely unlikely 
 			else 
 				-- we note it in the spawn data for the group so
 				-- persistence works fine 
 				theData.groupId = newGroupID
+				-- since we keep these, we make them brittle if required
+				if spawnZone.delicateName and delicates then 
+					-- pass this object to the delicate zone mentioned 
+					local theDeli = delicates.getDelicatesByName(spawnZone.delicateName)
+					if theDeli then 
+						delicates.addGroupToInventoryForZone(theDeli, theGroup)
+					else 
+						trigger.action.outText("+++clnZ: spawner <" .. spawnZone.name .. "> can't find delicates zone <" .. spawnZone.delicateName .. ">", 30)
+					end
+				end
+		
 			end
 		end 
 
@@ -1387,8 +1438,20 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		cloneZones.invokeCallbacks(theZone, "did spawn static", theStatic)
 		
 		if cloneZones.verbose or spawnZone.verbose then 
-			trigger.action.outText("Static spawn: spawned " .. aStaticName, 30)
+			trigger.action.outText("+++clnZ: new Static clone " .. aStaticName, 30)
 		end 
+		
+		-- processing for delicates 
+		if spawnZone.delicateName and delicates then 
+			-- pass this object to the delicate zone mentioned 
+			local theDeli = delicates.getDelicatesByName(spawnZone.delicateName)
+			if theDeli then 
+				delicates.addStaticObjectToInventoryForZone(theDeli, theStatic)
+			else 
+				trigger.action.outText("+++cnlZ: cloner <" .. aZone.name .. "> can't find delicates <" .. spawnZone.delicateName .. ">", 30)
+			end
+		end
+		
 		-- processing for cargoManager 
 		if isCargo then 
 			if cfxCargoManager then 

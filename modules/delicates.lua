@@ -1,5 +1,5 @@
 delicates = {}
-delicates.version = "1.1.0"
+delicates.version = "1.1.1"
 delicates.verbose = false 
 delicates.ups = 1 
 delicates.requiredLibs = {
@@ -16,7 +16,8 @@ delicates.inventory = {}
 	      - addStaticObjectInventoryForZone
 		  - blowAll?
 		  - safetyMargin - safety margin. defaults to 10%
-	
+	1.1.1 - addGroupToInventoryForZone
+	      - verbose for zone will show update event from useDelicates
 	
 --]]--
 function delicates.adddDelicates(theZone)
@@ -73,9 +74,10 @@ function delicates.makeZoneInventory(theZone)
 			for idy, anObject in pairs(collector) do
 				local oName = anObject:getName()
 				if type(oName) == 'number' then oName = tostring(oName) end
-				local oLife = anObject:getLife() - anObject:getLife() * theZone.safetyMargin
+				local mLife = anObject:getLife()
+				local oLife = mLife - mLife * theZone.safetyMargin
 				if theZone.verbose or delicates.verbose then
-					trigger.action.outText("+++deli: cat=".. aCat .. ":<" .. oName .. "> Life=" .. oLife, 30)
+					trigger.action.outText("+++deli: cat=".. aCat .. ":<" .. oName .. "> explodes when under " .. oLife .. " of max " .. mLife, 30)
 				end 
 				local uP = anObject:getPoint()
 				if cfxZones.isPointInsideZone(uP, theZone) then 
@@ -83,6 +85,7 @@ function delicates.makeZoneInventory(theZone)
 					local desc = {}
 					desc.cat = aCat
 					desc.oLife = oLife 
+					desc.mLife = mLife
 					desc.theZone = theZone 
 					desc.oName = oName 
 					delicates.inventory[oName] = desc
@@ -102,16 +105,33 @@ function delicates.addStaticObjectToInventoryForZone(theZone, theStatic)
 	
 	local desc = {}
 	desc.cat = theStatic:getCategory()
+	desc.mLife = theStatic:getLife()
 	desc.oLife = theStatic:getLife() - theStatic:getLife() * theZone.safetyMargin
 	if desc.oLife < 0 then desc.oLife = 0 end 
 	desc.theZone = theZone 
 	desc.oName = theStatic:getName() 
+	if theZone.verbose and delicates[desc.oName] then 
+		trigger.action.outText("+++deli: updating existing delicate <" .. desc.oName .. "> with data from zone <" .. theZone.name .. ">", 30)
+	end
 	delicates.inventory[desc.oName] = desc
 	
 	if theZone.verbose or delicates.verbose then 
-		trigger.action.outText("+++deli: added static <" .. desc.oName .. "> to <" .. theZone.name .. "> with minimal life = <" .. desc.oLife .. "/" .. theStatic:getLife() .. "> = safety margin of " .. theZone.safetyMargin * 100 .. "%", 30)
+		trigger.action.outText("+++deli: added <" .. desc.oName .. "> to <" .. theZone.name .. "> blows below life = <" .. desc.oLife .. "> of <" .. desc.mLife .. "> = safety margin " .. theZone.safetyMargin * 100 .. "%", 30)
 	end 
 end 
+
+function delicates.addGroupToInventoryForZone(theZone, theGroup)
+--	trigger.action.outText("enter addGroupToInventoryForZone", 30)
+	if not theZone then return end 
+	if not theGroup then return end 
+--	trigger.action.outText("before itering addGroupToInventoryForZone", 30)
+	local allUnits = theGroup:getUnits() -- warning: we assume all alive
+	for idx, aUnit in pairs (allUnits) do 
+		-- we use 'addStatic' as it also supports units
+		delicates.addStaticObjectToInventoryForZone(theZone, aUnit)
+	end
+
+end
 
 function delicates.createDelicatesWithZone(theZone)
 	theZone.power = cfxZones.getNumberFromZoneProperty(theZone, "power", 10)
@@ -221,14 +241,14 @@ function delicates:onEvent(theEvent)
 		local cLife = theObj:getLife()
 		if cLife < desc.oLife then
 			if desc.theZone.verbose or delicates.verbose then 
-				trigger.action.outText("+++deli: BRITTLE TRIGGER: life <" .. cLife .. "> below safety margin <" .. oDesc.oLife .. ">", 30)
+				trigger.action.outText("+++deli: BRITTLE TRIGGER: life <" .. cLife .. "> below safety margin <" .. desc.oLife .. ">", 30)
 			end
 			delicates.blowUpObject(desc)
 			-- remove it from further searches
 			delicates.inventory[oName] = nil
 		else 
 			if desc.theZone.verbose or delicates.verbose then 
-				trigger.action.outText("+++deli: CLOSE CALL, but life <" .. cLife .. "> within safety margin <" .. oDesc.oLife .. ">", 30)
+				trigger.action.outText("+++deli: CLOSE CALL, but life <" .. cLife .. "> within safety margin <" .. desc.oLife .. ">", 30)
 			end
 		end
 	end
@@ -287,6 +307,9 @@ function delicates.update()
 		
 		if theObj then 
 			local cLife = theObj:getLife()
+			if cLife < oDesc.mLife and cLife >= oDesc.oLife and oDesc.theZone.verbose then 
+				trigger.action.outText("+++Deli: <" .. oName .. "> was hit, <" .. cLife .. "> still above trigger <" .. oDesc.oLife .. ">", 30)
+			end			
 			if cLife >= oDesc.oLife then 
 				-- all well, transfer to next iter 
 				newInventory[oName] = oDesc

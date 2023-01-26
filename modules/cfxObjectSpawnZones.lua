@@ -31,6 +31,7 @@ cfxObjectSpawnZones.verbose = false
 --         - useDelicates link to delicate when spawned 
 -- 		   - spawned single and multi-objects can be made delicates
 --   1.3.1 - baseName can be set to zone's name by giving "*"
+--   1.3.2 - delicateName supports '*' to refer to own zone 
 
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
@@ -123,7 +124,8 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	
 	-- see if the spawn can be made brittle/delicte
 	if cfxZones.hasProperty(inZone, "useDelicates") then 
-		theSpawner.delicateName = cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>")
+		theSpawner.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>"))
+		if theSpawner.delicateName == "*" then theSpawner.delicateName = inZone.name end 
 	end
 	
 	-- see if it is linked to a ship to set realtive orig headiong
