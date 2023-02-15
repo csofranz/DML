@@ -1,37 +1,43 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "2.3.0"
+cfxHeloTroops.version = "2.4.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
 cfxHeloTroops.pickupRange = 100 -- meters 
 --
+--[[--
+ VERSION HISTORY
+ 1.1.3 - repaired forgetting 'wait-' when loading/disembarking
+ 1.1.4 - corrected coalition bug in deployTroopsFromHelicopter 
+ 2.0.0 - added weight change when troops enter and leave the helicopter 
+       - idividual troop capa max per helicopter 
+ 2.0.1 - lib loader verification
+       - uses dcsCommon.isTroopCarrier(theUnit)
+ 2.0.2 - can now deploy from spawners with "requestable" attribute
+ 2.1.0 - supports config zones
+       - check spawner legality by types  
+       - updated types to include 2.7.6 additions to infantry
+       - updated types to include stinger/manpads 
+ 2.2.0 - minor maintenance (dcsCommon)
+       - (re?) connected readConfigZone (wtf?)
+       - persistence support
+       - made legalTroops entrirely optional and defer to dcsComon else
+ 2.3.0 - interface with owned zones and playerScore when 
+       - combat-dropping troops into non-owned owned zone.
+       - prevent auto-load from pre-empting loading csar troops 
+ 2.3.1 - added ability to self-define troopCarriers via config
+ 2.4.0 - added missing support for attackZone orders (destination)
+	   - eliminated cfxPlayer module import and all dependencies
+	   - added support for groupTracker / limbo 
+	   - removed restriction to only apply to helicopters in anticipation of the C-130 Hercules appearing in the game
+
+--]]--
 --
--- VERSION HISTORY
--- 1.1.3 -- repaired forgetting 'wait-' when loading/disembarking
--- 1.1.4 -- corrected coalition bug in deployTroopsFromHelicopter 
--- 2.0.0 -- added weight change when troops enter and leave the helicopter 
-		 -- idividual troop capa max per helicopter 
--- 2.0.1 -- lib loader verification
---       -- uses dcsCommon.isTroopCarrier(theUnit)
--- 2.0.2 -- can now deploy from spawners with "requestable" attribute
--- 2.1.0 -- supports config zones
---       -- check spawner legality by types  
---       -- updated types to include 2.7.6 additions to infantry
---       -- updated types to include stinger/manpads 
--- 2.2.0 -- minor maintenance (dcsCommon)
---       -- (re?) connected readConfigZone (wtf?)
---       -- persistence support
---       -- made legalTroops entrirely optional and defer to dcsComon else
--- 2.3.0 -- interface with owned zones and playerScore when 
---       -- combat-dropping troops into non-owned owned zone.
---       -- prevent auto-load from pre-empting loading csar troops 
---
--- cfxHeloTroops -- a module to pick up and drop infantry. Can be used with any helo,
--- might be used to configure to only certain
--- currently only supports a single helicopter per group 
--- only helicopters that can transport troops will have this feature
--- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
---
+-- cfxHeloTroops -- a module to pick up and drop infantry. 
+-- Can be used with ANY aircraft, configured by default to be 
+-- restricted to troop-carrying helicopters.
+-- might be configure to apply to any type you want using the 
+-- configuration zone.
 
 
 cfxHeloTroops.requiredLibs = {
@@ -39,17 +45,11 @@ cfxHeloTroops.requiredLibs = {
 	             -- pretty stupid to check for this since we 
 				 -- need common to invoke the check, but anyway
 	"cfxZones", -- Zones, of course 
-	"cfxPlayer", -- player events
 	"cfxCommander", -- to make troops do stuff
 	"cfxGroundTroops", -- generic when dropping troops
 }
 
 cfxHeloTroops.unitConfigs = {} -- all configs are stored by unit's name 
-cfxHeloTroops.myEvents = {3, 4, 5} --  3- takeoff, 4 - land, 5 - crash 
-
--- legalTroops now optional, else check against dcsCommon.typeIsInfantry
---cfxHeloTroops.legalTroops = {"Soldier AK", "Infantry AK", "Infantry AK ver2", "Infantry AK ver3", "Infantry AK Ins", "Soldier M249", "Soldier M4 GRG", "Soldier M4", "Soldier RPG", "Paratrooper AKS-74", "Paratrooper RPG-16", "Stinger comm dsr", "Stinger comm", "Soldier stinger", "SA-18 Igla-S comm", "SA-18 Igla-S manpad", "Igla manpad INS", "SA-18 Igla comm", "SA-18 Igla manpad",}
-
 cfxHeloTroops.troopWeight = 100 -- kg average weight per trooper 
 
 -- persistence support 
@@ -59,13 +59,12 @@ function cfxHeloTroops.resetConfig(conf)
 	conf.autoDrop = cfxHeloTroops.autoDrop --if true, will drop troops on-board upon touchdown
 	conf.autoPickup = cfxHeloTroops.autoPickup -- if true will load nearest troops upon touchdown
 	conf.pickupRange = cfxHeloTroops.pickupRange --meters, maybe make per helo?
-	-- maybe set up max seats by type
 	conf.currentState = -1 -- 0 = landed, 1 = airborne, -1 undetermined
 	conf.troopsOnBoardNum = 0 -- if not 0, we have troops and can spawnm/drop
 	conf.troopCapacity = 8 -- should be depending on airframe 
+	-- troopsOnBoard.name contains name of group
+	-- the other fields info for troops picked up 
 	conf.troopsOnBoard = {} -- table with the following
-	
-
 	conf.troopsOnBoard.name = "***reset***"
 	conf.dropFormation = "circle_out" -- may be chosen later?
 end
@@ -78,7 +77,6 @@ function cfxHeloTroops.createDefaultConfig(theUnit)
 	conf.myCommands = nil -- this is where we put all teh commands in 
 	return conf 
 end
-
 
 
 function cfxHeloTroops.getUnitConfig(theUnit) -- will create new config if not existing
@@ -98,70 +96,6 @@ function cfxHeloTroops.getConfigForUnitNamed(aName)
 	return cfxHeloTroops.unitConfigs[aName]
 end
 
-function cfxHeloTroops.removeConfigForUnitNamed(aName) 
-	if cfxHeloTroops.unitConfigs[aName] then cfxHeloTroops.unitConfigs[aName] = nil end
-end
-
-function cfxHeloTroops.setState(theUnit, isLanded)
-	-- called to set the current state of the helicopter (group)
-	-- currently one helicopter per group max
-end
-
-
-
---
--- E V E N T   H A N D L I N G 
--- 
-function cfxHeloTroops.isInteresting(eventID) 
-	-- return true if we are interested in this event, false else 
-	for key, evType in pairs(cfxHeloTroops.myEvents) do 
-		if evType == eventID then return true end
-	end
-	return false 
-end
-
-function cfxHeloTroops.preProcessor(event)
-	-- make sure it has an initiator
-	if not event.initiator then return false end -- no initiator 
-	local theUnit = event.initiator
-	if not dcsCommon.isPlayerUnit(theUnit) then return false end -- not a player unit 
-	local cat = theUnit:getCategory()
-	if cat ~= Group.Category.HELICOPTER then return false end
-
-	return cfxHeloTroops.isInteresting(event.id) 
-end
-
-function cfxHeloTroops.postProcessor(event)
-	-- don't do anything
-end
-
-function cfxHeloTroops.somethingHappened(event)
-	-- when this is invoked, the preprocessor guarantees that
-	-- it's an interesting event
-	-- unit is valid and player 
-	-- airframe category is helicopter 
-	
-	local theUnit = event.initiator
-	local ID = event.id
-	
-	
-	local myType = theUnit:getTypeName()
-	
-	if ID == 4 then 
-		cfxHeloTroops.heloLanded(theUnit)
-	end
-	
-	if ID == 3 then 
-		cfxHeloTroops.heloDeparted(theUnit)
-	end
-	
-	if ID == 5 then 
-		cfxHeloTroops.heloCrashed(theUnit)
-	end
-	
-	cfxHeloTroops.setCommsMenu(theUnit)
-end
-
 --
 --
 -- LANDED
@@ -172,9 +106,8 @@ function cfxHeloTroops.loadClosestGroup(conf)
 	local cat = Group.Category.GROUND
 	local unitsToLoad = dcsCommon.getLivingGroupsAndDistInRangeToPoint(p, conf.pickupRange, conf.unit:getCoalition(), cat) 
 	
-	-- now, the groups may contain units that are not for transport.
-	-- later we can filter this by weight, or other cool stuff
-	-- for now we simply only troopy with legal type strings 
+	-- groups may contain units that are not for transport.
+	-- for now we only load troops with legal type strings 
 	unitsToLoad = cfxHeloTroops.filterTroopsByType(unitsToLoad)
 
 	-- now limit the options to the five closest legal groups
@@ -190,7 +123,7 @@ end
 
 function cfxHeloTroops.heloLanded(theUnit)
 	-- when we have landed, 
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then return end
 	
 	local conf = cfxHeloTroops.getUnitConfig(theUnit)
 	conf.unit = theUnit
@@ -231,7 +164,7 @@ end
 --
 
 function cfxHeloTroops.heloDeparted(theUnit)
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then return end
 	
 	-- when we take off, all that needs to be done is to change the state 
 	-- to airborne, and then set the status flag 
@@ -248,17 +181,40 @@ end
 -- Helo Crashed 
 --
 --
-function cfxHeloTroops.heloCrashed(theUnit)
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
-	
+function cfxHeloTroops.cleanHelo(theUnit)
 	-- clean up 
 	local conf = cfxHeloTroops.getUnitConfig(theUnit)
 	conf.unit = theUnit 
 	conf.troopsOnBoardNum = 0 -- all dead 
 	conf.currentState = -1 -- (we don't know)
-	-- conf.troopsOnBoardTypes = "" -- no troops, remember?
+
+	-- check if we need to interface with groupTracker 
+	if conf.troopsOnBoard.name and groupTracker then 
+		local theName = conf.troopsOnBoard.name
+		-- there was (possibly) a group on board. see if it was tracked
+		local isTracking, numTracking, trackers = groupTracker.groupNameTrackedBy(theName)
+		
+		-- if so, remove it from limbo 
+		if isTracking then 
+			for idx, theTracker in pairs(trackers) do 
+				groupTracker.removeGroupNamedFromTracker(theName, theTracker)
+				if cfxHeloTroops.verbose then 
+					trigger.action.outText("+++Helo: removed group <" .. theName .. "> from tracker <" .. theTracker.name .. ">", 30)
+				end 
+			end 
+		end
+	end
+	
 	conf.troopsOnBoard = {}
-	cfxHeloTroops.removeComms(conf.unit)
+end
+
+function cfxHeloTroops.heloCrashed(theUnit)
+	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then return 
+	end
+	
+	-- clean up 
+	cfxHeloTroops.cleanHelo(theUnit)
+	
 end
 
 --
@@ -332,15 +288,19 @@ function cfxHeloTroops.setCommsMenu(theUnit)
 	if not theUnit:isExist() then return end 
 	
 	-- we only add this menu to troop carriers 
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then
+		if cfxHeloTroops.verbose then 
+			trigger.action.outText("+++heloT - player unit <" .. theUnit:getName() .. "> type <" .. theUnit:getTypeName() .. "> is not legal troop carrier.", 30)
+		end
+		return 
+	end
 	
 	local group = theUnit:getGroup() 
 	local id = group:getID()
-	local conf = cfxHeloTroops.getUnitConfig(theUnit) --cfxHeloTroops.unitConfigs[theUnit:getName()]
+	local conf = cfxHeloTroops.getUnitConfig(theUnit)
 	conf.id = id; -- we do this ALWAYS to it is current even after a crash 
 	conf.unit = theUnit -- link back
 	
-	--local conf = cfxHeloTroops.getUnitConfig(theUnit)
 	-- ok, first, if we don't have an F-10 menu, create one 
 	if not (conf.myMainMenu) then 
 		conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'Airlift Troops') 
@@ -548,6 +508,7 @@ function cfxHeloTroops.filterTroopsByType(unitsToLoad)
 	end
 	return filteredGroups
 end
+
 --
 -- T O G G L E S 
 --
@@ -578,7 +539,6 @@ function cfxHeloTroops.doToggleConfig(args)
 	
 	cfxHeloTroops.setCommsMenu(conf.unit)
 end
-
 
 
 --
@@ -629,7 +589,6 @@ function cfxHeloTroops.doDeployTroops(args)
 	-- set own troops to 0 and erase type string 
 	conf.troopsOnBoardNum = 0
 	conf.troopsOnBoard = {}
---	conf.troopsOnBoardTypes = ""
 	conf.troopsOnBoard.name = "***wasdeployed***"
 	
 	-- reset menu 
@@ -643,11 +602,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local unitTypes = {} -- build type names
 	local theUnit = conf.unit 
 	local p = theUnit:getPoint() 
-	
-	--for i=1, scenario.troopSize[theUnit:getName()] do 
-	--	table.insert(unitTypes, "Soldier M4")
-	--end
-	
+		
 	-- split the conf.troopsOnBoardTypes into an array of types
 	unitTypes = dcsCommon.splitString(conf.troopsOnBoard.types, ",")
 	if #unitTypes < 1 then 
@@ -656,6 +611,9 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	
 	local range = conf.troopsOnBoard.range
 	local orders = conf.troopsOnBoard.orders 
+	local dest = conf.troopsOnBoard.destination
+	local theName = conf.troopsOnBoard.name 
+	
 	if not orders then orders = "guard" end
 	
 	-- order processing: if the orders were pre-pended with "wait-"
@@ -671,7 +629,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local theCoalition = theUnit:getGroup():getCoalition() -- make it choppers COALITION
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 												
-				conf.troopsOnBoard.name, -- dcsCommon.uuid("Assault"), -- maybe use config name as loaded from the group 
+				theName, -- group name, may be tracked 
 				chopperZone, 											
 				unitTypes, 													
 				conf.dropFormation,
@@ -682,14 +640,27 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	troopData.orders = orders -- always set  
 	troopData.side = theCoalition
 	troopData.range = range
+	troopData.destination = dest -- only for attackzone orders 
 	cfxHeloTroops.deployedTroops[theData.name] = troopData 
 	
-	local troop = cfxGroundTroops.createGroundTroops(theGroup, range, orders) -- use default range and orders
-	-- instead of scheduling tasking in one second, we add to 
-	-- ground troops pool, and the troop pool manager will assign some enemies
-	cfxGroundTroops.addGroundTroopsToPool(troop)
+	local troop = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+	troop.destination = dest -- transfer target zone for attackzone oders
+	cfxGroundTroops.addGroundTroopsToPool(troop) -- will schedule move orders
 	trigger.action.outTextForGroup(conf.id, "<" .. theGroup:getName() .. "> have deployed to the ground with orders " .. orders .. "!", 30)
 	
+	-- see if this is tracked by a tracker, and pass them back so 
+	-- they can un-limbo 
+	if groupTracker then 
+		local isTracking, numTracking, trackers = groupTracker.groupNameTrackedBy(theName)
+		if isTracking then 
+			for idx, theTracker in pairs (trackers) do 
+				groupTracker.addGroupToTracker(theGroup, theTracker)
+				if cfxHeloTroops.verbose then 
+					trigger.action.outText("+++Helo: un-limbo and tracking group <" .. theName .. "> with tracker <" .. theTracker.name .. ">", 30)
+				end
+			end
+		end
+	end
 end
 
 
@@ -709,21 +680,38 @@ function cfxHeloTroops.doLoadGroup(args)
 	-- get the size 
 	conf.troopsOnBoardNum = group:getSize()
 	-- and name 
-	conf.troopsOnBoard.name = group:getName()
+	local gName = group:getName()
+	conf.troopsOnBoard.name = gName
 	-- and put it all into the helicopter config 
 	
-	-- now we need to destroy the group. First, remove it from the pool
+	-- now we need to destroy the group. Let's prepare:
+	-- if it was tracked, tell tracker to move it to limbo 
+	-- to remember it even if it's destroyed 
+	if groupTracker then
+		-- only if groupTracker is active
+		local isTracking, numTracking, trackers = groupTracker.groupTrackedBy(group)
+		if isTracking then 
+			-- we need to put them in limbo for every tracker 
+			for idx, aTracker in pairs(trackers) do 
+				if cfxHeloTroops.verbose then 
+					trigger.action.outText("+++Helo: moving group <" .. gName .. "> to limbo for tracker <" .. aTracker.name .. ">", 30)
+				end 
+				groupTracker.moveGroupToLimboForTracker(group, aTracker)
+			end
+		end
+	end 
+	
+	-- then, remove it from the pool
 	local pooledGroup = cfxGroundTroops.getGroundTroopsForGroup(group)
 	if pooledGroup then 
 		-- copy some important info from the troops 
 		-- if they are set 
 		conf.troopsOnBoard.orders = pooledGroup.orders
 		conf.troopsOnBoard.range = pooledGroup.range
-		
+		conf.troopsOnBoard.destination = pooledGroup.destination -- may be nil 
 		cfxGroundTroops.removeTroopsFromPool(pooledGroup)
 		trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' loaded and has orders <" .. conf.troopsOnBoard.orders .. ">", 30)
 	else 
-		--trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' loaded!", 30)
 		if cfxHeloTroops.verbose then 
 			trigger.action.outText("+++heloT: ".. conf.troopsOnBoard.name .." was not committed to ground troops", 30)
 		end
@@ -731,9 +719,8 @@ function cfxHeloTroops.doLoadGroup(args)
 		
 	-- now simply destroy the group
 	-- we'll re-assemble it when we deploy it 
-	-- we currently can't change the weight of the helicopter
 	-- TODO: add weight changing code 
-	-- TODO: ensure compatibility with CSAR module 
+	-- TODO: ensure compatibility with CSAR module
 	group:destroy()
 	
 	-- now immediately run a GC so this group is removed 
@@ -783,47 +770,55 @@ function cfxHeloTroops.doSpawnGroup(args)
 	
 end
 
-
---
--- Player event callbacks
---
-function cfxHeloTroops.playerChangeEvent(evType, description, player, data)
-	if evType == "newGroup" then 
-		theUnit = data.primeUnit
-		cfxHeloTroops.setCommsMenu(theUnit)
-
+-- 
+-- handle events 
+-- 
+function cfxHeloTroops:onEvent(theEvent)
+	local theID = theEvent.id
+	local initiator = theEvent.initiator 
+	if not initiator then return end -- not interested 
+	local theUnit = initiator 
+	local name = theUnit:getName() 
+	-- see if this is a player aircraft 
+	if not theUnit.getPlayerName then return end -- not a player 
+	if not theUnit:getPlayerName() then return end -- not a player 
+	
+	-- only for helicopters -- overridedden by troop carriers
+	-- we don't check for cat any more, so any airframe 
+	-- can be used as long as it's ok with isTroopCarrier()
+	
+	-- only for troop carriers
+	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then 
 		return 
 	end
 	
-	if evType == "removeGroup" then 
---		trigger.action.outText("+++Helo Troops: a group disappeared", 30)
-		-- data.name contains the name of the group. nil the entry in config list, so all
-		-- troops that group was carrying are gone 
-		-- we must remove the comms menu for this group else we try to add another one to this group later
-		-- we assume a one-unit group structure, else the following may fail
-		local conf = cfxHeloTroops.getConfigForUnitNamed(data.primeUnitName)
+	if theID == 4 then -- land 
+		cfxHeloTroops.heloLanded(theUnit)
+	end
+	
+	if theID == 3 then -- take off 
+		cfxHeloTroops.heloDeparted(theUnit)
+	end
+	
+	if theID == 5 then -- crash
+		cfxHeloTroops.heloCrashed(theUnit)
+	end
+	
+	if theID == 20 or  -- player enter 
+	   theID == 15 then -- birth
+	   cfxHeloTroops.cleanHelo(theUnit)
+	end
+	
+	if theID == 21 then -- player leave 
+		cfxHeloTroops.cleanHelo(theUnit)
+		local conf = cfxHeloTroops.getConfigForUnitNamed(name)
 		if conf then 
 			cfxHeloTroops.removeCommsFromConfig(conf)
 		end
-		return
+		return 
 	end
-	
-	if evType == "leave" then 
-		local conf = cfxHeloTroops.getConfigForUnitNamed(player.unitName)
-		if conf then 
-			cfxHeloTroops.resetConfig(conf)
-		end
-	end
-	
-	if evType == "unit" then 
-		-- player changed units. almost never in MP, but possible in solo
-		-- we need to reset the conf so no troops are carried any longer
-		local conf = cfxHeloTroops.getConfigForUnitNamed(data.oldUnitName) 
-		if conf then 
-			cfxHeloTroops.resetConfig(conf)
-		end
-	end
-	
+
+	cfxHeloTroops.setCommsMenu(theUnit)	
 end
 
 --
@@ -883,6 +878,13 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.autoPickup = cfxZones.getBoolFromZoneProperty(theZone, "autoPickup", false)
 	cfxHeloTroops.pickupRange = cfxZones.getNumberFromZoneProperty(theZone, "pickupRange", 100)
 	cfxHeloTroops.combatDropScore = cfxZones.getNumberFromZoneProperty(theZone, "combatDropScore", 200)
+	
+	-- add own troop carriers 
+	if cfxZones.hasProperty(theZone, "troopCarriers") then 
+		local tc = cfxZones.getStringFromZoneProperty(theZone, "troopCarriers", "UH-1D")
+		tc = dcsCommon.splitString(tc, ",")
+		cfxHeloTroops.troopCarriers = dcsCommon.trimArray(tc)
+	end
 end
 
 --
@@ -955,23 +957,12 @@ function cfxHeloTroops.start()
 	-- start housekeeping 
 	cfxHeloTroops.houseKeeping()
 	
-	-- install callbacks for helo-relevant events
-	dcsCommon.addEventHandler(cfxHeloTroops.somethingHappened, cfxHeloTroops.preProcessor, cfxHeloTroops.postProcessor)
-
-	-- now iterate through all player groups and install the Assault Troop Menu
-	allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
-			-- contains per group a player record, use prime unit to access player's unit 
-	for gname, pgroup in pairs(allPlayerGroups) do 
-		local aUnit = pgroup.primeUnit -- get any unit of that group
-		cfxHeloTroops.setCommsMenu(aUnit)
-	end
-	-- now install the new group notifier to install Assault Troops menu
-	
-	cfxPlayer.addMonitor(cfxHeloTroops.playerChangeEvent)
+	world.addEventHandler(cfxHeloTroops)
 	trigger.action.outText("cf/x Helo Troops v" .. cfxHeloTroops.version .. " started", 30)
 	
-	-- now load all save data and populate map with troops that
-	-- we deployed last save. 
+	-- persistence:
+	-- load all save data and populate map with troops that
+	-- we deployed when we last saved. 
 	if persistence then 
 		-- sign up for persistence 
 		callbacks = {}
@@ -990,11 +981,5 @@ if not cfxHeloTroops.start() then
 	cfxHeloTroops = nil 
 end
 
---[[--
-	- interface with spawnable: request troops via comms menu if 
-		- spawnZones defined 
-		- spawners in range and 
-	    - spawner auf 'paused' und 'requestable'
-	  
---]]--
+
 -- TODO: weight when loading troops 

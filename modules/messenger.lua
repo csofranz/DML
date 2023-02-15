@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.2.0"
+messenger.version = "2.2.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -64,6 +64,9 @@ messenger.messengers = {}
 	2.2.0 - <player: unit> 
 	      - made dynamic string gen more portable in prep for move to cfxZones
 		  - refactoring wildcard processing: moved to cfxZones 
+	2.2.1 - when messenger is linked to a unit, it can use the linked
+			unit as reference point for relative wildcards. Always broadcasts to coalition. Can be used to broadcase 'eye in the sky' type information
+		  - fixed verbosity bug 
 	
 --]]--
 
@@ -318,7 +321,7 @@ function messenger.createMessengerWithZone(theZone)
 	-- flag whose value can be read: to be deprecated
 	if cfxZones.hasProperty(theZone, "messageValue?") then 
 		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
-		trigger.action.outText("+++Msg: Warning - zone <" .. theZone.name .. "> uses 'messageValue' attribute. Migrate to <v:<flag> now!")
+		trigger.action.outText("+++Msg: Warning - zone <" .. theZone.name .. "> uses 'messageValue' attribute. Migrate to <v:<flag> now!", 30)
 	end
 	
 	-- time format for new <t: flagname>
@@ -418,6 +421,20 @@ function messenger.isTriggered(theZone)
 			end
 			trigger.action.outSoundForUnit(ID, fileName)
 		end
+	elseif cfxZones.getLinkedUnit(theZone) then 
+		-- this only works if the zone is linked to a unit 
+		-- and not using group or unit 
+		-- the linked unit is then used as reference 
+		-- outputs to all of same coalition as the linked 
+		-- unit 
+		local theUnit = cfxZones.getLinkedUnit(theZone)
+		local ID = theUnit:getID()
+		local coa = theUnit:getCoalition()
+		msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
+		if #msg > 0 or theZone.clearScreen then 
+			trigger.action.outTextForCoalition(coa, msg, theZone.duration, theZone.clearScreen)
+		end
+		trigger.action.outSoundForCoalition(coa, fileName)
 	else 
 		-- out to all 
 		if #msg > 0 or theZone.clearScreen then 
@@ -518,3 +535,8 @@ if not messenger.start() then
 	messenger = nil 
 end
 
+
+--[[--
+Ideas:
+  - when messenger is ties to a unit, that unit can also be base for all relative references. Only checked if neither group nor unit is set
+--]]--

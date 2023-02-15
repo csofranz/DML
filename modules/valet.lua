@@ -1,5 +1,5 @@
 valet = {}
-valet.version = "1.0.0"
+valet.version = "1.0.2"
 valet.verbose = false 
 valet.requiredLibs = {
 	"dcsCommon", -- always
@@ -10,6 +10,9 @@ valet.valets = {}
 --[[--
 	Version History
 	1.0.0 - initial version 
+	1.0.1 - typos in verbosity corrected
+	1.0.2 - also scan birth events 
+	
 --]]--
 
 function valet.addValet(theZone)
@@ -374,16 +377,20 @@ function valet.checkPlayerSpawn(playerName, theUnit)
 end
 
 function valet:onEvent(event)
-	if event.id == 20 then 
+	if (event.id == 20) or (event.id == 15) then 
 		if not event.initiator then return end 
 		local theUnit = event.initiator
-		if not theUnit.getPlayerName then 
-			trigger.action.outText("+++valet: non player event 20(?)", 30)
+		if not theUnit.getPlayerName then
+			if event.id == 20 then 
+				trigger.action.outText("+++valet: non player event 20(?)", 30)
+			end -- 15 (birth can happen to all)
 			return 
 		end 
 		local pName = theUnit:getPlayerName()
 		if not pName then 
-			trigger.action.outText("+++valet: nil player name on event 20 (!)", 30)
+			if event.id == 20 then 
+				trigger.action.outText("+++valet: nil player name on event 20 (!)", 30)
+			end 
 			return 
 		end
 		
@@ -398,7 +405,7 @@ function valet.readConfigZone()
 	local theZone = cfxZones.getZoneByName("valetConfig") 
 	if not theZone then 
 		if valet.verbose then 
-			trigger.action.outText("+++msgr: NO config zone!", 30)
+			trigger.action.outText("+++valet: NO config zone!", 30)
 		end 
 		theZone =  cfxZones.createSimpleZone("valetConfig")
 	end 
@@ -406,7 +413,7 @@ function valet.readConfigZone()
 	valet.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	
 	if valet.verbose then 
-		trigger.action.outText("+++msgr: read config", 30)
+		trigger.action.outText("+++valet: read config", 30)
 	end 
 end
 

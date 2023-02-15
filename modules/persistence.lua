@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.4"
+persistence.version = "1.0.6"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -26,6 +26,7 @@ persistence.requiredLibs = {
 		    new 'saveNotification" can be off 
 	1.0.4 - new optional 'root' property 
 	1.0.5 - desanitize check on readConfig to early-abort
+	1.0.6 - removed potential verbosity bug 
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
@@ -132,7 +133,7 @@ end
 function persistence.saveText(theString, fileName, shared, append)
 	if not persistence.active then return false end 
 	if not fileName then 
-		trigger.action.outText("+++persistence: saveText without fileName")
+		trigger.action.outText("+++persistence: saveText without fileName", 30)
 		return false 
 	end 
 	if not shared then shared = flase end 

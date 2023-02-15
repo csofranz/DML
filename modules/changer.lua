@@ -1,5 +1,5 @@
 changer = {}
-changer.version = "1.0.4"
+changer.version = "1.0.5"
 changer.verbose = false 
 changer.ups = 1 
 changer.requiredLibs = {
@@ -14,6 +14,7 @@ changer.changers = {}
 	1.0.2 - on/off: verbosity 
 	1.0.3 - NOT on/off
 	1.0.4 - a little bit more conversation
+	1.0.5 - fixed a bug in verbosity 
 	
 	Transmogrify an incoming signal to an output signal
 	- not 
@@ -241,7 +242,7 @@ function changer.update()
 			end
 		else 
 			if aZone.verbose then 
-				trigger.action.outText("+++chgr: <" .. aZone.name .. "> is paused.")
+				trigger.action.outText("+++chgr: <" .. aZone.name .. "> is paused.", 30)
 			end	
 		end 
 	end

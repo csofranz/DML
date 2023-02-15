@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.2.3"
+cfxOwnedZones.version = "1.2.4"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -48,6 +48,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 1.2.1 - fix in load to correctly re-establish all attackers for subsequent save 
 1.2.2 - redCap! and blueCap!
 1.2.3 - fix for persistence bug when not using conquered flag 
+1.2.4 - pause? and activate? inputs 
 
 	  
 --]]--
@@ -234,6 +235,23 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	if cfxZones.hasProperty(aZone, "blueCap!") then 
 		aZone.blueCap = cfxZones.getStringFromZoneProperty(aZone, "blueCap!", "none")
 	end
+	
+	-- pause? and activate?
+	if cfxZones.hasProperty(aZone, "pause?") then 
+		aZone.pauseFlag = cfxZones.getStringFromZoneProperty(aZone, "pause?", "none")
+		aZone.lastPauseValue = trigger.misc.getUserFlag(aZone.pauseFlag)
+	end
+	
+	if cfxZones.hasProperty(aZone, "activate?") then 
+		aZone.activateFlag = cfxZones.getStringFromZoneProperty(aZone, "activate?", "none")
+		aZone.lastActivateValue = trigger.misc.getUserFlag(aZone.activateFlag)
+	end
+	
+	aZone.ownedTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
+	if cfxZones.hasProperty(aZone, "ownedTriggerMethod") then 
+		aZone.ownedTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "ownedTriggerMethod", "change")
+	end
+	
 	
 	aZone.unbeatable = cfxZones.getBoolFromZoneProperty(aZone, "unbeatable", false)
 	aZone.untargetable = cfxZones.getBoolFromZoneProperty(aZone, "untargetable", false)
@@ -855,6 +873,16 @@ function cfxOwnedZones.update()
 				cfxOwnedZones.zoneConquered(aZone, 1, currentOwner)
 			end
 		end 
+
+		-- see if pause/unpause was issued
+		-- note that capping a zone will not change pause status
+		if aZone.pauseFlag and cfxZones.testZoneFlag(aZone, aZone.pauseFlag, aZone.ownedTriggerMethod, "lastPauseValue") then
+			aZone.paused = true 
+		end
+		
+		if aZone.activateFlag and cfxZones.testZoneFlag(aZone, aZone.activateFlag, aZone.ownedTriggerMethod, "lastActivateValue") then
+			aZone.paused = false 
+		end
 		
 		-- now, perhaps with their new owner call updateZone()
 		cfxOwnedZones.updateZone(aZone)

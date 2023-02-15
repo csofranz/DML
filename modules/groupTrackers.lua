@@ -29,8 +29,21 @@ groupTracker.trackers = {}
 		  - numUnits output 
 		  - persistence 
 	1.2.1 - allGone! bug removed 
+	1.2.2 - new groupTrackedBy() method
+		  - limbo for storing a unit in limbo so it is 
+		  - not counted as missing when being transported 
 	
 --]]--
+
+-- 'limbo'
+-- is a special storage in tracker indexed by name that is used
+-- to temporarily suspend a groups tracking while it's not in 
+-- the mission, e.g. because it's being transported by heloTroops
+-- in limbo, only the number of units is preserved
+-- addGroup will automatically move a group back from limbo 
+-- to move into limbo, you must use moveGroupToLimboForTracker
+-- to remove a group in limbo, use removeGroupNamedFromTracker
+--
 
 function groupTracker.addTracker(theZone)
 	table.insert(groupTracker.trackers, theZone)
@@ -54,6 +67,8 @@ end
 --
 -- adding a group to a tracker - called by other modules and API
 -- 
+-- addGroupToTracker will automatically also move a group from 
+-- limbo to tracker if it already existed in limbo 
 function groupTracker.addGroupToTracker(theGroup, theTracker)
 	-- check if filtering is enabled for this tracker
 	if theTracker.groupFilter then 
@@ -83,19 +98,30 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 			if gName == theName then exists = true end 
 		end
 	end
+		
 	
 	if not exists then 
 		table.insert(theTracker.trackedGroups, theGroup) 
-
-		-- now bang/invoke addGroup!
-		if theTracker.tAddGroup then 
-			cfxZones.pollFlag(theTracker.tAddGroup, "inc", theTracker)
+		
+		-- see if we merely transfer group back from limbo 
+		-- to tracked
+		if theTracker.limbo[theName] then 
+			-- group of that name is in limbo
+			if theTracker.verbose then 
+				trigger.action.outText("+++gTrk: moving shelved group <" .. theName .. "> back to normal tracking for <" .. theTracker.name .. ">", 30)
+			end
+			theTracker.limbo[theName] = nil -- remove from limbo
+		else 
+			-- now bang/invoke addGroup!
+			if theTracker.tAddGroup then 
+				cfxZones.pollFlag(theTracker.tAddGroup, "inc", theTracker)
+			end
 		end
 	end
 	
 	-- now set numGroups
 	if theTracker.tNumGroups then 
-		cfxZones.setFlagValue(theTracker.tNumGroups, #theTracker.trackedGroups, theTracker)
+		cfxZones.setFlagValue(theTracker.tNumGroups, dcsCommon.getSizeOfTable(theTracker.limbo) + #theTracker.trackedGroups, theTracker)
 	end
 	
 	-- count all units
@@ -105,6 +131,9 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 			totalUnits = totalUnits + aGroup:getSize()
 		end
 	end
+	for idx, limboNum in pairs(theTracker.limbo) do 
+		totalUnits = totalUnits + limboNum
+	end 
 	
 	-- update unit count 
 	if theTracker.tNumUnits then 
@@ -112,6 +141,7 @@ function groupTracker.addGroupToTracker(theGroup, theTracker)
 	end
 	-- invoke callbacks
 end
+
 
 function groupTracker.addGroupToTrackerNamed(theGroup, trackerName)
 	if not trackerName then 
@@ -133,6 +163,93 @@ function groupTracker.addGroupToTrackerNamed(theGroup, trackerName)
 	groupTracker.addGroupToTracker(theGroup, theTracker)
 end
 
+function groupTracker.moveGroupToLimboForTracker(theGroup, theTracker)
+	if not theGroup then return end 
+	if not theTracker then return end 
+	if not Group.isExist(theGroup) then return end 
+	
+	local gName = theGroup:getName()
+	local filtered = {}
+	if theTracker.trackedGroups then 
+		for idx, aGroup in pairs(theTracker.trackedGroups) do 
+			if Group.isExist(aGroup) and aGroup:getName() == gName then 
+				-- move this to limbo 
+				theTracker.limbo[gName] = aGroup:getSize()
+				if theTracker.verbose then 
+					trigger.action.outText("+++gTrk: moved group <" .. gName .. "> to limbo for <" .. theTracker.name .. ">", 30)
+				end
+				-- filtered 
+			else 
+				table.insert(filtered, aGroup)
+			end
+		end
+		theTracker.trackedGroups = filtered
+	end
+end
+
+function groupTracker.removeGroupNamedFromTracker(gName, theTracker)
+	if not gName then return end 
+	if not theTracker then return end 
+	
+	local filteredGroups = {}
+	local foundOne = false 
+	local totalUnits = 0
+	if not theTracker.trackedGroups then theTracker.trackedGroups = {} end 
+	for idx, aGroup in pairs(theTracker.trackedGroups) do 
+		if Group.isExist(aGroup) and aGroup:getName() == gName then 
+			-- skip and remember 
+			foundOne = true 
+		else 
+			table.insert(filteredGroups, aGroup)
+			if Group.isExist(aGroup) then 
+				totalUnits = totalUnits + aGroup:getSize()
+			end
+		end
+	end
+	-- also check limbo 
+	for limboName, limboNum in pairs (theTracker.limbo) do 
+		if gName == limboName then 
+			-- don't count, but remember that it existed
+			foundOne = true 
+			if theTracker.verbose then 
+				trigger.action.outText("+++gTrk: removed group <" .. gName .. "> from limbo for <" .. theTracker.name .. ">", 30)
+			end
+		else 
+			totalUnits = totalUnits + limboNum
+		end		
+	end 
+	-- remove from limbo 
+	theTracker.limbo[gName] = nil 
+	
+	if (not foundOne) and (theTracker.verbose or groupTracker.verbose) then 
+		trigger.action.outText("+++gTrk: Removal Request Note: group <" .. gName .. "> wasn't tracked by <" .. theTracker.name .. ">", 30)
+	end 
+	
+	-- remember the new, cleanded set
+	theTracker.trackedGroups = filteredGroups
+	
+	-- update number of tracked units. do it in any case 
+	if theTracker.tNumUnits then 
+		cfxZones.setFlagValue(theTracker.tNumUnits, totalUnits, theTracker)
+	end
+	
+	if foundOne then 
+		if theTracker.verbose or groupTracker.verbose then 
+			trigger.action.outText("+++gTrk: removed group <" .. gName .. "> from tracker <" .. theTracker.name .. ">", 30)
+		end 
+		
+		-- now bang/invoke removeGroup!
+		if theTracker.tRemoveGroup then 
+			cfxZones.pollFlag(theTracker.tRemoveGroup, "inc", theTracker)
+		end
+	
+		-- now set numGroups
+		if theTracker.tNumGroups then 
+			cfxZones.setFlagValue(theTracker.tNumGroups, dcsCommon.getSizeOfTable(theTracker.limbo) + #theTracker.trackedGroups, theTracker)
+		end
+	end 
+end
+
 function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 	local theTracker = groupTracker.getTrackerByName(trackerName)
 	if not theTracker then return end 
@@ -141,6 +258,8 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 		return 
 	end 
 	
+	groupTracker.removeGroupNamedFromTracker(gName, theTracker)
+--[[--	
 	local filteredGroups = {}
 	local foundOne = false 
 	local totalUnits = 0
@@ -156,6 +275,18 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 			end
 		end
 	end
+	-- also check limbo 
+	for limboName, limboNum in pairs (theTracker.limbo) do 
+		if gName == limboName then 
+			-- don't count, but remember that it existed
+			foundOne = true 
+		else 
+			totalUnits = totalUnits + limboNum
+		end		
+	end 
+	-- remove from limbo 
+	theTracker.limbo[gName] = nil 
+	
 	if (not foundOne) and (theTracker.verbose or groupTracker.verbose) then 
 		trigger.action.outText("+++gTrk: Removal Request Note: group <" .. gName .. "> wasn't tracked by <" .. trackerName .. ">", 30)
 	end 
@@ -180,16 +311,59 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 	
 		-- now set numGroups
 		if theTracker.tNumGroups then 
-			cfxZones.setFlagValue(theTracker.tNumGroups, #theTracker.trackedGroups, theTracker)
+			cfxZones.setFlagValue(theTracker.tNumGroups, dcsCommon.getSizeOfTable(theTracker.limbo) + #theTracker.trackedGroups, theTracker)
 		end
 	end 
+	--]]--
 end
 
+-- groupTrackedBy - return trackers that track group theGroup  
+-- returns 3 values: true/false (is tracking), number of trackers, array of trackers 
+function groupTracker.groupNameTrackedBy(theName) 
+	local isTracking = false 
+	
+	-- now iterate all trackers 
+	local tracking = {}
+	for idx, aTracker in pairs(groupTracker.trackers) do 
+		-- only look at tracked groups if that tracker has an 
+		-- initialized tracker (lazy init)
+		if aTracker.trackedGroups then 
+			for idy, aGroup in pairs (aTracker.trackedGroups) do 
+				if Group.isExist(aGroup) and aGroup:getName() == theName then 
+					table.insert(tracking, aTracker)
+					isTracking = true 
+				end
+			end
+		end
+		
+		for aName, aNum in pairs(aTracker.limbo) do 
+			if aName == theName then 
+				table.insert(tracking, aTracker)
+				isTracking = true
+			end
+		end
+	end 
+	
+	return isTracking, #tracking, tracking
+end
+
+function groupTracker.groupTrackedBy(theGroup)
+	if not theGroup then return false,0, nil end
+	if not Group.isExist(theGroup) then return false, 0, nil end 
+	local theName = theGroup:getName()
+	local isTracking, numTracks, trackers = groupTracker.groupNameTrackedBy(theName)
+	return isTracking, numTracks, trackers 
+
+end
+
+--
 -- read zone 
+--
 function groupTracker.createTrackerWithZone(theZone)
 	-- init group tracking set 
 	theZone.trackedGroups = {}
-
+	theZone.limbo = {} -- name based, for groups that are tracked 
+	                   -- although technically off the map (helo etc)
 
 	theZone.trackerMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
 	if cfxZones.hasProperty(theZone, "trackerMethod") then 
@@ -264,6 +438,10 @@ function groupTracker.destroyAllInZone(theZone)
 			theGroup:destroy()
 		end
 	end
+	for aName, aNum in pairs(theZone.limbo) do 
+		theZone.limbo[aName] = 0 -- <1 is special for 'remove me and detect kill on next checkGroups'
+	end
+	
 	-- we keep all groups in trackedGroups so we 
 	-- generate a host of destroy events when we run through 
 	-- checkGroups next 
@@ -300,12 +478,26 @@ function groupTracker.checkGroups(theZone)
 		end
 		
 	end
+	
+	local newLimbo = {}
+	for aName, aNum in pairs (theZone.limbo) do 
+		if aNum < 1 then
+			if groupTracker.verbose or theZone.verbose then 
+				trigger.action.outText("+++gTrk: dead group <" .. aName .. "> detected in LIMBO for " .. theZone.name .. ", removing.", 30)
+			end 
+		else 
+			newLimbo[aName] = aNum
+			totalUnits = totalUnits + aNum 
+		end 
+	end 
+	theZone.limbo = newLimbo
+	
 	-- now exchange filtered for current
 	theZone.trackedGroups = filteredGroups
 	--set new group value 
 	-- now set numGroups if defined
 	if theZone.tNumGroups then 
-		cfxZones.setFlagValue(theZone.tNumGroups, #filteredGroups, theZone)
+		cfxZones.setFlagValue(theZone.tNumGroups, dcsCommon.getSizeOfTable(theZone.limbo) + #filteredGroups, theZone)
 	end
 	
 	-- and update unit count if defined 
@@ -361,7 +553,7 @@ function groupTracker.update()
 		groupTracker.checkGroups(theZone)
 		
 		-- see if we need to bang on empty!
-		local currCount = #theZone.trackedGroups
+		local currCount = #theZone.trackedGroups + dcsCommon.getSizeOfTable(theZone.limbo)
 		if theZone.allGoneFlag and currCount == 0 and currCount ~= theZone.lastGroupCount then 
 			cfxZones.pollFlag(theZone.allGoneFlag, theZone.trackerMethod, theZone)
 		end 

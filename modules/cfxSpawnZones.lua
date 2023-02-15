@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.7.2"
+cfxSpawnZones.version = "1.7.4"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -20,112 +20,78 @@ cfxSpawnZones.spawnedGroups = {}
 -- Zones that conform with this requirements spawn toops automatically
 --   *** DOES NOT EXTEND ZONES *** LINKED OWNER via masterOwner ***
 -- 
-
+--[[--
 -- version history
---   1.3.0 
---         - maxSpawn
---         - orders
---         - range
---   1.3.1 - spawnWithSpawner correct translation of country to coalition 
---         - createSpawner - corrected reading from properties
---   1.3.2 - createSpawner - correct reading 'owner' from properties, now 
---           directly reads coalition
---   1.4.0 - checks modules 
---         - orders 'train' or 'training' - will make the 
---           ground troops be issued HOLD WEAPS and 
---           not added to any queue. 'Training' troops 
---           are target dummies.
---         - optional heading attribute 
---         - typeMult: repeate type this many time (can produce army in one call)
---   1.4.1 - 'requestable' attribute. will automatically set zone to 
---         - paused, so troops can be produced on call
---         - getRequestableSpawnersInRange 
---   1.4.2 - target attribute. used for
---         - orders: attackZone 
---         - spawner internally copies name from cfxZone used for spawning (convenience only)
---   1.4.3 - can subscribe to callbacks. currently called when spawnForSpawner is invoked, reason is "spawned"
---         - masterOwner to link ownership to other zone 
---   1.4.4 - autoRemove flag to instantly start CD and respawn 
---   1.4.5 - verify that maxSpawns ~= 0 on initial spawn on start-up 
---   1.4.6 - getSpawnerForZoneNamed(aName)
---         - nil-trapping orders before testing for 'training'
---   1.4.7 - defaulting orders to 'guard'
---         - also accept 'dummy' and 'dummies' as substitute for training 
---   1.4.8 - spawnWithSpawner uses getPoint to support linked spawn zones 
---         - update spawn count on initial spawn
---   1.5.0 - f? support to trigger spawn 
---         - spawnWithSpawner made string compatible
---   1.5.1 - relaxed baseName and default to dcsCommon.uuid()
---         - verbose 
---   1.5.2 - activate?, pause? flag 
---   1.5.3 - spawn?, spawnUnits? flags 
---   1.6.0 - trackwith interface for group tracker
---   1.7.0 - persistence support 
---   1.7.1 - improved verbosity 
---         - spelling check
---   1.7.2 - baseName now can can be set to zone name by issuing "*"
---   1.7.3 - ability to hand off to delicates, useDelicates attribute 
---
--- new version requires cfxGroundTroops, where they are 
---
--- How do we recognize a spawn zone?
--- contains a "spawner" attribute
--- a spawner must also have the following attributes
---  - spawner - anything, must be present to signal. put in 'ground' to be able to expand to other types  
---  - types    - type strings, comma separated 
--- see here: https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
---  - typeMult - repeat types n times to create really LOT of troops. optional, defaults to 1
---  - country  - defaults to 2 (usa) -- see here https://wiki.hoggitworld.com/view/DCS_enum_country
---    some important: 0 = Russia, 2 = US, 82 = UN neutral
---    country is converted to coalition and then assigned to
---    Joint Task Force <side> upon spawn
---  - masterOwner - optional name of master cfxZone used to determine whom the surrounding 
---    territory belongs to. Spwaner will only spawn if the owner coalition is the 
---    the same as the coalition my own county belongs to.
---    if not given, spawner spawns even if inside a zone owned by opposing force 
---  - baseName - for naming spawned groups - MUST BE UNIQUE!!!!
---  
--- the following attributes are optional 
---  - cooldown, defaults to 60 (seconds) after troops are removed from zone,
---    then the next group spawns. This means troops will only spawn after 
---    troops are removed and cooldown timed out 
---  - autoRemove - instantly removes spwaned troops, will spawn again 
---    again after colldown 
---  - formation - default is  circle_out; other formations are 
---		- line - left lo right (west-east) facing north
---      - line_V - vertical line, facing north
---      - chevron - west-east, point growing to north 
---      - scattered, random
---      - circle, circle_forward (all fact north)
---		- circle-in (all face in)
---      - circle-out (all face out)
---      - grid, square, rect arrayed in optimal grid
---      - 2deep, 2cols two columns, deep 
---      - 2wide 2 columns wide (2 deep) 
---  - heading in DEGREES (deafult 0 = north ) direction entire group is facing 
---  - destination - zone name to go to, no destination = stay where you are 
---  - paused - defaults to false. If present true, spawning will not happen
---    you can then manually invoke cfxSpawnZones.spawnWithSpawner(spawner) to 
---    spawn the troops as they are described in the spawner 
---  - orders - tell them what to do. "train" makes them dummies, "guard" 
---    "laze", "wait-laze" etc 
---    other orders are as defined by cfxGroundTroops, at least 
---      guard - hold and defend (default)
---      laze - laze targets 
---      wait-xxx for helo troops, stand by until dropped from helo 
---      attackOwnedZone - seek nearest owned zone and attack
---      attackZone - move towards the named cfxZone. will generate error if zone not found 
---      name of zone to attack is in 'target' attribute
---  - target - names a target cfxZone, used for orders. Troops will immediately
---    start moving towards that zone if defined and such a zone exists
---  - maxSpawns - limit number of spawn cycles. omit or -1 is unlimited
---  - requestable - used with heloTroops to determine if spawning can be ordered by 
---    comms when in range
--- respawn currently happens after theSpawn is deleted and cooldown seconds have passed 
+   1.3.0 
+         - maxSpawn
+         - orders
+         - range
+   1.3.1 - spawnWithSpawner correct translation of country to coalition 
+         - createSpawner - corrected reading from properties
+   1.3.2 - createSpawner - correct reading 'owner' from properties, now 
+           directly reads coalition
+   1.4.0 - checks modules 
+         - orders 'train' or 'training' - will make the 
+           ground troops be issued HOLD WEAPS and 
+           not added to any queue. 'Training' troops 
+           are target dummies.
+         - optional heading attribute 
+         - typeMult: repeate type this many time (can produce army in one call)
+   1.4.1 - 'requestable' attribute. will automatically set zone to 
+         - paused, so troops can be produced on call
+         - getRequestableSpawnersInRange 
+   1.4.2 - target attribute. used for
+         - orders: attackZone 
+         - spawner internally copies name from cfxZone used for spawning (convenience only)
+   1.4.3 - can subscribe to callbacks. currently called when spawnForSpawner is invoked, reason is "spawned"
+         - masterOwner to link ownership to other zone 
+   1.4.4 - autoRemove flag to instantly start CD and respawn 
+   1.4.5 - verify that maxSpawns ~= 0 on initial spawn on start-up 
+   1.4.6 - getSpawnerForZoneNamed(aName)
+         - nil-trapping orders before testing for 'training'
+   1.4.7 - defaulting orders to 'guard'
+         - also accept 'dummy' and 'dummies' as substitute for training 
+   1.4.8 - spawnWithSpawner uses getPoint to support linked spawn zones 
+         - update spawn count on initial spawn
+   1.5.0 - f? support to trigger spawn 
+         - spawnWithSpawner made string compatible
+   1.5.1 - relaxed baseName and default to dcsCommon.uuid()
+         - verbose 
+   1.5.2 - activate?, pause? flag 
+   1.5.3 - spawn?, spawnUnits? flags 
+   1.6.0 - trackwith interface for group tracker
+   1.7.0 - persistence support 
+   1.7.1 - improved verbosity 
+         - spelling check
+   1.7.2 - baseName now can can be set to zone name by issuing "*"
+   1.7.3 - ability to hand off to delicates, useDelicates attribute 
+   1.7.4 - wait-attackZone fixes
+
+  
+  - types    - type strings, comma separated 
+ see here: https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
+
+  - country  - defaults to 2 (usa) -- see here https://wiki.hoggitworld.com/view/DCS_enum_country
+    some important: 0 = Russia, 2 = US, 82 = UN neutral
+    country is converted to coalition and then assigned to
+    Joint Task Force <side> upon spawn
+
+  - formation - default is  circle_out; other formations are 
+	- line - left lo right (west-east) facing north
+    - line_V - vertical line, facing north
+    - chevron - west-east, point growing to north 
+    - scattered, random
+    - circle, circle_forward (all fact north)
+	- circle-in (all face in)
+    - circle-out (all face out)
+    - grid, square, rect arrayed in optimal grid
+    - 2deep, 2cols two columns, deep 
+    - 2wide 2 columns wide (2 deep) 
+  --]]--
+  
 cfxSpawnZones.allSpawners = {}
 cfxSpawnZones.callbacks = {} -- signature: cb(reason, group, spawner)
  
-
 --
 -- C A L L B A C K S 
 -- 
@@ -225,14 +191,13 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.formation = "circle_out"
 	theSpawner.formation = cfxZones.getStringFromZoneProperty(inZone, "formation", "circle_out")
 	theSpawner.paused = cfxZones.getBoolFromZoneProperty(inZone, "paused", false)
+	-- orders are always converted to all lower case 
 	theSpawner.orders = cfxZones.getStringFromZoneProperty(inZone, "orders", "guard"):lower() 
-	--theSpawner.orders = cfxZones.getZoneProperty(inZone, "orders")
-	-- used to assign special orders, default is 'guard', use "laze" to make them laze targets. can be 'wait-' which may auto-convert to 'guard' after pick-up by helo, to be handled outside.
+	-- used to assign orders, default is 'guard', use "laze" to make them laze targets. can be 'wait-' which may auto-convert to 'guard' after pick-up by helo, to be handled outside.
 	-- use "train" to tell them to HOLD WEAPONS, don't move and don't participate in loop, so we have in effect target dummies
 	-- can also use order 'dummy' or 'dummies' to switch to train
 	if theSpawner.orders:lower() == "dummy" or theSpawner.orders:lower() == "dummies" then theSpawner.orders = "train" end 
 	if theSpawner.orders:lower() == "training" then theSpawner.orders = "train" end 
-	
 	
 	theSpawner.range = cfxZones.getNumberFromZoneProperty(inZone, "range", 300) -- if we have a range, for example enemy detection for Lasing or engage range
 	theSpawner.maxSpawns = cfxZones.getNumberFromZoneProperty(inZone, "maxSpawns", -1) -- if there is a limit on how many troops can spawn. -1 = endless spawns
@@ -240,10 +205,12 @@ function cfxSpawnZones.createSpawner(inZone)
 	if theSpawner.requestable then 
 		theSpawner.paused = true 
 	end
-	theSpawner.target = cfxZones.getStringFromZoneProperty(inZone, "target", "")
-	if theSpawner.target == "" then -- this is the defaut case 
-		theSpawner.target = nil 
-	end
+	if cfxZones.hasProperty(inZone, "target") then 
+		theSpawner.target = cfxZones.getStringFromZoneProperty(inZone, "target", "")
+		if theSpawner.target == "" then -- this is the defaut case 
+			theSpawner.target = nil 
+		end
+	end 
 	
 	if cfxSpawnZones.verbose or inZone.verbose then 
 		trigger.action.outText("+++spwn: created spawner for <" .. inZone.name .. ">", 30)
@@ -331,10 +298,9 @@ function cfxSpawnZones.verifySpawnOwnership(spawner)
 	
 	if (myCoalition ~= masterZone.owner) then 
 		-- can't spawn, surrounding area owned by enemy
-		--trigger.action.outText("spawner " .. spawner.name .. " - spawn suppressed: area not owned: " .. " master owner is " .. masterZone.owner .. ", we are " .. myCoalition, 30)
 		return false 
 	end
-	--trigger.action.outText("spawner " .. spawner.name .. " good to go: ", 30)
+
 	return true
 end
 
@@ -362,7 +328,6 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	
 	local theCountry = aSpawner.country  
 	local theCoalition = coalition.getCountryCoalition(theCountry)
---	trigger.action.outText("+++ spawn: coal <" .. theCoalition .. "> from country <" .. theCountry .. ">", 30)
 	
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 
@@ -374,16 +339,17 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	aSpawner.theSpawn = theGroup
 	aSpawner.count = aSpawner.count + 1 
 
-	-- isnert into collector for persistence
+	-- insert into collector for persistence
 	local troopData = {}
 	troopData.groupData = theData
-	troopData.orders = aSpawner.orders -- always set  
+	troopData.orders = aSpawner.orders -- always set 
 	troopData.side = theCoalition
 	troopData.target = aSpawner.target -- can be nil!
 	troopData.tracker = theZone.trackWith -- taken from ZONE!!, can be nil
 	troopData.range = aSpawner.range
 	cfxSpawnZones.spawnedGroups[theData.name] = troopData 
 	
+	-- remember: orders are always lower case only 
 	if aSpawner.orders and (
 	   aSpawner.orders:lower() == "training" or 
 	   aSpawner.orders:lower() == "train" )
@@ -403,16 +369,17 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 		cfxGroundTroops.addGroundTroopsToPool(newTroops)
 		
 		-- see if we have defined a target zone as destination
+		-- and set it accordingly 
 		if aSpawner.target then 
 			local destZone = cfxZones.getZoneByName(aSpawner.target)
 			if destZone then
-				newTroops.destination = destZone
-				cfxGroundTroops.makeTroopsEngageZone(newTroops)
+				newTroops.destination = destZone 
 			else 
-				trigger.action.outText("+++ spawner " .. aSpawner.name .. " has illegal target " .. aSpawner.target .. ". Pausing.", 30)
+				trigger.action.outText("+++ spawner " .. aSpawner.name .. " has illegal (unknown) target zone <" .. aSpawner.target .. ">. Pausing.", 30)
 				aSpawner.paused = true 
 			end
-		elseif aSpawner.orders == "attackZone" then 
+		elseif aSpawner.orders == "attackzone" then 
+			-- attackZone command but no zone given
 			trigger.action.outText("+++ spawner " .. aSpawner.name .. " has no target but attackZone command. Pausing.", 30)
 				aSpawner.paused = true 		
 		end 
@@ -459,7 +426,7 @@ function cfxSpawnZones.handoffTracking(theGroup, theZone)
 		return 
 	end
 	local trackerName = theZone.trackWith
-	--if trackerName == "*" then trackerName = theZone.name end 
+
 	-- now assemble a list of all trackers
 	if cfxSpawnZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++spawner: spawn pass-off: " .. trackerName, 30)

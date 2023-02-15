@@ -21,84 +21,90 @@ cfxGroundTroops.requiredLibs = {
 -- module and addTroopsToPool to have them then managed by this 
 -- module 
 
-cfxGroundTroops.deployedTroops = {}
+cfxGroundTroops.deployedTroops = {} -- indexed by group name 
 
--- version history
---   1.3.0 - added "wait-" prefix to have toops do nothing 
---         - added lazing 
---   1.3.1 - sound for lazing msg is "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav"
---         - lazing --> lasing in text 
---   1.3.2 - set ups to 2 
---   1.4.0 - queued updates except for lazers 
---   1.4.1 - makeTroopsEngageZone now issues hold before moving on 5 seconds later
---         - getTroopReport
---		   - include size of group 
---   1.4.2 - uses unitIsInfantry from dcsCommon 
---   1.5.0 - new scheduled updates per troop to reduce processor load 
---         - tiebreak code 
---   1.5.1 - small bugfix in scheduled code 
---   1.5.2 - checkSchedule 
---         - speed warning in scheduler
---         - go off road when speed warning too much 
---   1.5.3 - monitor troops 
---         - managed queue for ground troops 
---         - on second switch to offroad now removed from MQ
---   1.5.4 - removed debugging messages
---   1.5.5 - removed bug in troop report reading nil destination 
---   1.6.0 - check modules 
---   1.6.1 - troopsCallback management so you can be informed if a 
---           troop you have added to the pool is dead or has achieved a goal.
---           callback will list reasons "dead" and "arrived"
---           updateAttackers
---   1.6.2 - also accept 'lase' as 'laze', translate directly 
---   1.7.0 - now can use groundTroopsConfig zone
---   1.7.1 - addTroopsDeadCallback() renamed to addTroopsCallback() 
---         - invokeCallbacksFor also accepts and passes on data block
---         - troops is always passed in data block as .troops 
---   1.7.2 - callback when group is neutralized on guard orders
---         - callback when group is being engaged under guard orders 
---   1.7.3 - callbacks for lase:tracking and lase:stop 
---   1.7.4 - verbose flag, warnings suppressed 
---   1.7.5 - some troop.group hardening with isExist()
---   1.7.6 - fixed switchToOffroad 
---   1.7.7 - no longer case sensitive for orders 
+--[[--
+ version history
+   1.3.0 - added "wait-" prefix to have toops do nothing 
+         - added lazing 
+   1.3.1 - sound for lazing msg is "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav"
+         - lazing --> lasing in text 
+   1.3.2 - set ups to 2 
+   1.4.0 - queued updates except for lazers 
+   1.4.1 - makeTroopsEngageZone now issues hold before moving on 5 seconds later
+         - getTroopReport
+		   - include size of group 
+   1.4.2 - uses unitIsInfantry from dcsCommon 
+   1.5.0 - new scheduled updates per troop to reduce processor load 
+         - tiebreak code 
+   1.5.1 - small bugfix in scheduled code 
+   1.5.2 - checkSchedule 
+         - speed warning in scheduler
+         - go off road when speed warning too much 
+   1.5.3 - monitor troops 
+         - managed queue for ground troops 
+         - on second switch to offroad now removed from MQ
+   1.5.4 - removed debugging messages
+   1.5.5 - removed bug in troop report reading nil destination 
+   1.6.0 - check modules 
+   1.6.1 - troopsCallback management so you can be informed if a 
+           troop you have added to the pool is dead or has achieved a goal.
+           callback will list reasons "dead" and "arrived"
+           updateAttackers
+   1.6.2 - also accept 'lase' as 'laze', translate directly 
+   1.7.0 - now can use groundTroopsConfig zone
+   1.7.1 - addTroopsDeadCallback() renamed to addTroopsCallback() 
+         - invokeCallbacksFor also accepts and passes on data block
+         - troops is always passed in data block as .troops 
+   1.7.2 - callback when group is neutralized on guard orders
+         - callback when group is being engaged under guard orders 
+   1.7.3 - callbacks for lase:tracking and lase:stop 
+   1.7.4 - verbose flag, warnings suppressed 
+   1.7.5 - some troop.group hardening with isExist()
+   1.7.6 - fixed switchToOffroad 
+   1.7.7 - no longer case sensitive for orders 
+   1.7.7 - updateAttackers() now inspects 'moving' status and invokes makeTroopsEngageZone
+         - makeTroopsEngageZone() sets 'moving' status to true
+         - createGroundTroops() sets moving status to false 
+		 - updateZoneAttackers() uses moving  
 
 
--- an entry into the deployed troop has the following attributes
---  - group - the group 
---  - orders: "guard" - will guard the spot and look for enemies in range
---            "patrol" - will walk between way points back and forth 
---            "laze" - will stay in place and try to laze visible vehicles in range
---			  "attackOwnedZone" - interface to cfxOwnedZones module, seeks out
---			  enemy zones to attack and capture them
---            "wait-<some other orders>" do nothing. the "wait" prefix will be removed some time and <some other order> then revealed. Used at least by heloTroops
---            "train" - target dummies. ROE=HOLD, no ground loop 
---            "attack" - transition to destination, once there, stop and 
---            switch to guard. requires destination zone be sez to a valid cfxZone
---  - coalition - the coalition from the group
---  - enemy - if set, the group this group it is engaging. this means the group is fighting and not idle
---  - name - name of group, dan be freely changed
---  - signature - "cfx" to tell apart from dcs groups 
---  - range = range to look for enemies. default is 300m. In "laze" orders, range to laze
---  - lazeTarget - target currently lazing
---  - lazeCode - laser code. default is 1688
+  an entry into the deployed troop table has the following attributes
+  - group - the group 
+  - orders: "guard" - will guard the spot and look for enemies in range
+            "patrol" - will walk between way points back and forth 
+            "laze" - will stay in place and try to laze visible vehicles in range
+			"attackOwnedZone" - interface to cfxOwnedZones module, seeks out
+			  enemy zones to attack and capture them
+            "wait-<some other orders>" do nothing. the "wait" prefix will be removed some time and <some other order> then revealed. Used at least by heloTroops
+            "train" - target dummies. ROE=HOLD, no ground loop 
+            "attack" - transition to destination, once there, stop and 
+            switch to guard. requires destination zone be set to a valid cfxZone
+  - coalition - the coalition from the group
+  - enemy - if set, the group this group it is engaging. this means the group is fighting and not idle
+  - name - name of group, dan be freely changed
+  - signature - "cfx" to tell apart from dcs groups 
+  - range = range to look for enemies. default is 300m. In "laze" orders, range to laze
+  - lazeTarget - target currently lazing
+  - lazeCode - laser code. default is 1688
+  - moving - has been given orders to move somewhere already. used for first movement order with attack orders 
 
--- 
--- usage:
--- take a dcs group of ground troops and create a cfx ground troop record with 
---   createGroundTroops()
--- then add this to the manager with 
---   addGroundTroopsToPool()
--- 
--- you can control what the group is to do by changing the cfx troop attribute orders 
--- you can install a callback that will notify you if a troop reached a goal or
--- was killed with addTroopsCallback() which will also give a reason
--- callback pattern is myCallback(reason, theGroup, orders, data) with troop being the 
--- group, and orders the original orders, and reason a string containing why the 
--- callback was invoked. Currently defined reasons are
---   - "dead" - entire group was killed 
---   - "arrived" - at least a part of group arrived at destination (only with some orders)
---
+ 
+ usage:
+ take a dcs group of ground troops and create a cfx ground troop record with 
+  createGroundTroops()
+ then add this to the manager with 
+  addGroundTroopsToPool()
+ 
+ you can control what the group is to do by changing the cfx troop attribute orders 
+ you can install a callback that will notify you if a troop reached a goal or
+ was killed with addTroopsCallback() which will also give a reason
+ callback pattern is myCallback(reason, theGroup, orders, data) with troop being the 
+ group, and orders the original orders, and reason a string containing why the 
+ callback was invoked. Currently defined reasons are
+   - "dead" - entire group was killed 
+   - "arrived" - at least a part of group arrived at destination (only with some orders)
+--]]--
 
 --
 -- UPDATE MODELS
@@ -129,7 +135,7 @@ function cfxGroundTroops.readConfigZone()
 		if cfxGroundTroops.verbose then 
 			trigger.action.outText("***gndT: NO config zone!", 30) 
 		end
-		return 
+		theZone = cfxZones.createSimpleZone("groundTroopsConfig") 
 	end 
 		
 	-- ok, for each property, load it if it exists
@@ -198,9 +204,10 @@ end
 
 -- create controller commands to attack a group "enemies"
 -- enemies are an attribute of the troop structure
+-- usually called from a group on guard when idling 
 function cfxGroundTroops.makeTroopsEngageEnemies(troop)
 	local group = troop.group
-	if not group:isExist() then 
+	if not Group.isExist(group) then 
 		trigger.action.outText("+++gndT: troup don't exist, dropping", 30)
 		return 
 	end
@@ -214,10 +221,11 @@ function cfxGroundTroops.makeTroopsEngageEnemies(troop)
 	-- we lerp to 2/3 of enemy location
 	there = dcsCommon.vLerp(from, there, 0.66) 
 	
-	local speed = 10 -- m/s = 10 km/h
+	local speed = 10 -- m/s = 10 km/h -- wait. 10 m/s is 36 km/h 
 	cfxCommander.makeGroupGoThere(group, there, speed)
 	local attask = cfxCommander.createAttackGroupCommand(enemies)
 	cfxCommander.scheduleTaskForGroup(group, attask, 0.5)
+	troop.moving = true 
 end
 
 -- make the troops engage a cfxZone passed in the destination 
@@ -225,7 +233,7 @@ end
 function cfxGroundTroops.makeTroopsEngageZone(troop)
 	local group = troop.group
 	if not group:isExist() then 
-		trigger.action.outText("+++gndT: make engage zone: troops do not exist, exiting", 30)
+		trigger.action.outText("+++gndT: make troops engage zone: troops do not exist, exiting", 30)
 		return 
 	end
 	
@@ -234,23 +242,15 @@ function cfxGroundTroops.makeTroopsEngageZone(troop)
 	if not from then return end -- the group died
 	local there = enemyZone.point -- access zone position
 	if not there then return end
-	
-	-- we lerp to 102% of enemy location to force overshoot and engagement
-	--there = dcsCommon.vLerp(from, there, 1.02) 
-	
+		
 	local speed = 14 -- m/s; 10 m/s = 36 km/h
-	-- we prefer going over roads since we don't know 
-	-- what is there 
 	
 	-- make troops stop in 1 second, then start in 5 seconds to give AI respite 
 	cfxCommander.makeGroupHalt(group, 1) -- 1 second delay
 	cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, 5)
-	-- no attack command since we don't know what is there
-	-- but mayhaps we should issue weapons free?
-	-- we'll soon test that by sticking in a troop on the way 
-	
---	local attask = cfxCommander.createAttackGroupCommand(enemies)
---	cfxCommander.scheduleTaskForGroup(group, attask, 0.5)
+
+	-- remember that we have issued a move order 
+	troop.moving = true 	
 end
 
 function cfxGroundTroops.switchToOffroad(troops)
@@ -301,13 +301,11 @@ function cfxGroundTroops.updateZoneAttackers(troop)
 	local newTargetZone = cfxGroundTroops.getClosestEnemyZone(troop)
 	if not newTargetZone then
 		-- all target zones are friendly, go to guard mode
---		trigger.action.outTextForCoalition(troop.side, troop.name .. " holding position", 30)
 		troop.orders = "guard"
 		return 
 	end
 	
 	if newTargetZone ~= troop.destination then 
---		trigger.action.outTextForCoalition(troop.side, troop.name .. " enroute to " .. newTargetZone.name, 30)
 		troop.destination = newTargetZone 
 		cfxGroundTroops.makeTroopsEngageZone(troop)
 		troop.lastOrderDate = timer.getTime()
@@ -315,22 +313,36 @@ function cfxGroundTroops.updateZoneAttackers(troop)
 		return
 	end
 	
+	-- if we get here, we should be under way to our nearest enemy zone
+	if not troop.moving then 
+		cfxGroundTroops.makeTroopsEngageZone(troop)
+		return 
+	end 
+	
 	-- if we get here, we are under way to troop.destination
 	-- check if we are inside the zone, and if so, set variable to true 
 	local p = dcsCommon.getGroupLocation(troop.group)
 	troop.insideDestination = cfxZones.isPointInsideZone(p, troop.destination)
 	
---	if we get here, we need no change 
-
+    -- if we get here, we need no change 
 	
 end
 
--- attackers simply travel to their destination, and then switch to 
+-- attackers simply travel to their destination (zone), and then switch to 
 -- guard orders once they arrive 
 function cfxGroundTroops.updateAttackers(troop) 
 	if not troop then return end 
 	if not troop.destination then return end 
 	if not troop.group:isExist() then return end 
+	
+	-- if we are not moving, we need to issue move oders now
+	-- this can happen if previously, there was a 'wait' command 
+	-- and this now was removed so we end up in the method 
+	if not troop.moving then 
+		cfxGroundTroops.makeTroopsEngageZone(troop)
+		return 
+	end 
+	
 	
 	if cfxZones.isGroupPartiallyInZone(troop.group, troop.destination) then
 		-- we have arrived
@@ -613,21 +625,18 @@ function cfxGroundTroops.update()
 	cfxGroundTroops.updateSchedule = timer.scheduleFunction(cfxGroundTroops.update, {}, timer.getTime() + 1/cfxGroundTroops.ups)
 	-- iterate all my troops and build next 
 	-- versions pool
-	local liveTroops = {}
+	local liveTroops = {} -- filtered table, indexed by name 
 	for idx, troop in pairs(cfxGroundTroops.deployedTroops) do 
 		local group = troop.group 
 		if not dcsCommon.isGroupAlive(group) then 
 			-- group dead. remove from pool
 			-- this happens by not copying it into the poos
-		--	trigger.action.outText("+++ removing ground troops " .. troop.name, 30)
 			cfxGroundTroops.invokeCallbacksFor("dead", troop) -- notify anyone who is interested that we are no longer proccing these 
 		else 
 			-- work with this groop according to its orders
 			cfxGroundTroops.updateTroops(troop)
---			trigger.action.outText("+++ updated troops " .. troop.name, 30)
 			-- since group is alive remember it for next loop
-			--table.insert(liveTroops, troop)
-			liveTroops[idx] = troop -- do NOT use insert as we have indexed table
+			liveTroops[idx] = troop -- do NOT use insert as we have indexed table by name
 		end
 	end
 	-- liveTroops holds all troops that are still alive and will
@@ -958,6 +967,7 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders)
 	newTroops.coalition = inGroup:getCoalition()
 	newTroops.side = newTroops.coalition -- because we'e been using both.
 	newTroops.name = inGroup:getName()
+	newTroops.moving = false -- set to not have received move orders yet 
 	newTroops.signature = "cfx" -- to verify this is groundTroop group, not dcs groups
 	if not range then range = 300 end
 	newTroops.range = range
@@ -985,7 +995,6 @@ function cfxGroundTroops.addGroundTroopsToPool(troops) -- troops MUST be a table
 	if cfxGroundTroops.maxManagedTroops > 0 and dcsCommon.getSizeOfTable(cfxGroundTroops.deployedTroops) >= cfxGroundTroops.maxManagedTroops then 
 		-- we need to queue 
 		table.insert(cfxGroundTroops.troopQueue, troops)
-		-- trigger.action.outText("enqued " .. troops.group:getName() .. " at pos ".. #cfxGroundTroops.troopQueue ..", manage cap surpassed.", 30)
 	else
 		-- add to deployed set
 		cfxGroundTroops.deployedTroops[troops.group:getName()] = troops

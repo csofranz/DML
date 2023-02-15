@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.2"
+cfxZones.version = "3.0.3"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -119,6 +119,9 @@ cfxZones.version = "3.0.2"
 - 3.0.2   - maxRadius for all zones, only differs from radius in polyZones 
           - re-factoring zone-base string processing from messenger module
 		  - new processStringWildcards() that does almost all that messenger can 
+- 3.0.3   - new getLinkedUnit()
+- 3.0.4   - new createRandomPointOnZoneBoundary()
+- 3.0.5   - getPositiveRangeFromZoneProperty() now also supports upper bound (optional)
 
 
 --]]--
@@ -392,6 +395,17 @@ function cfxZones.createRandomPointInsideBounds(bounds)
 	return cfxZones.createPoint(x, 0, z)
 end
 
+function cfxZones.createRandomPointOnZoneBoundary(theZone)
+	if not theZone then return nil end 
+	if theZone.isPoly then 
+		local loc, dx, dy = cfxZones.createRandomPointInPolyZone(theZone, true)
+		return loc, dx, dy 
+	else 
+		local loc, dx, dy = cfxZones.createRandomPointInCircleZone(theZone, true)
+		return loc, dx, dy 
+	end
+end
+
 function cfxZones.createRandomPointInZone(theZone)
 	if not theZone then return nil end 
 	if theZone.isPoly then 
@@ -408,7 +422,7 @@ function cfxZones.randomPointInZone(theZone)
 	return loc, dx, dy 
 end
 
-function cfxZones.createRandomPointInCircleZone(theZone)
+function cfxZones.createRandomPointInCircleZone(theZone, onEdge)
 	if not theZone.isCircle then 
 		trigger.action.outText("+++Zones: warning - createRandomPointInCircleZone called for non-circle zone <" .. theZone.name .. ">", 30)
 		return {x=theZone.point.x, y=0, z=theZone.point.z}
@@ -417,7 +431,10 @@ function cfxZones.createRandomPointInCircleZone(theZone)
 	-- ok, let's first create a random percentage value for the new radius
 	-- now lets get a random degree
 	local degrees = math.random() * 2 * 3.14152 -- radiants. 
-	local r = theZone.radius * math.random() 
+	local r = theZone.radius 
+	if not onEdge then 
+		r = r * math.random()
+	end 
 	local p = cfxZones.getPoint(theZone) -- force update of zone if linked
 	local dx = r * math.cos(degrees)
 	local dz = r * math.sin(degrees)
@@ -426,7 +443,7 @@ function cfxZones.createRandomPointInCircleZone(theZone)
 	return {x=px, y=0, z = pz}, dx, dz -- returns loc and offsets to theZone.point
 end
 
-function cfxZones.createRandomPointInPolyZone(theZone)
+function cfxZones.createRandomPointInPolyZone(theZone, onEdge)
 	if not theZone.isPoly then 
 		trigger.action.outText("+++Zones: warning - createRandomPointInPolyZone called for non-poly zone <" .. theZone.name .. ">", 30)
 		return cfxZones.createPoint(theZone.point.x, 0, theZone.point.z)
@@ -446,6 +463,11 @@ function cfxZones.createRandomPointInPolyZone(theZone)
 	local b = theZone.poly[lineIdxA] 
 	local randompercent = math.random()
 	local sourceA = dcsCommon.vLerp (a, b, randompercent)
+	-- if all we want is a point on an edge, we are done 
+	if onEdge then 
+		local polyPoint = sourceA
+		return polyPoint, polyPoint.x - p.x, polyPoint.z - p.z -- return loc, dx, dz 
+	end 
 	
 	-- now get point on second line 
 	a = theZone.poly[lineIdxB]
@@ -1962,13 +1984,15 @@ function cfxZones.randomDelayFromPositiveRange(minVal, maxVal)
 	return delay 
 end
 
-function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default)
+function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default, defaultmax)
 	-- reads property as string, and interprets as range 'a-b'. 
 	-- if not a range but single number, returns both for upper and lower 
 	--trigger.action.outText("***Zne: enter with <" .. theZone.name .. ">: range for property <" .. theProperty .. ">!", 30)
 	if not default then default = 0 end 
+	if not defaultmax then defaultmax = default end 
+	
 	local lowerBound = default
-	local upperBound = default 
+	local upperBound = defaultmax 
 	
 	local rangeString = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
 	if dcsCommon.containsString(rangeString, "-") then 
@@ -1987,12 +2011,12 @@ function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default
 
 		else
 			-- bounds illegal
-			trigger.action.outText("+++Zne: illegal range  <" .. rangeString .. ">, using " .. default .. "-" .. default, 30)
+			trigger.action.outText("+++Zne: illegal range  <" .. rangeString .. ">, using " .. default .. "-" .. defaultmax, 30)
 			lowerBound = default
-			upperBound = default 
+			upperBound = defaultmax 
 		end
 	else 
-		upperBound = cfxZones.getNumberFromZoneProperty(theZone, theProperty, default) -- between pulses 
+		upperBound = cfxZones.getNumberFromZoneProperty(theZone, theProperty, defaultmax) -- between pulses 
 		lowerBound = upperBound
 	end
 
@@ -2455,11 +2479,18 @@ function cfxZones.getDCSOrigin(aZone)
 	return o
 end
 
+function cfxZones.getLinkedUnit(theZone)
+	if not theZone then return nil end 
+	if not theZone.linkedUnit then return nil end 
+	if not Unit.isExist(theZone.linkedUnit) then return nil end 
+	return theZone.linkedUnit 
+end
+
 function cfxZones.getPoint(aZone) -- always works, even linked, returned point can be reused 
 	if aZone.linkedUnit then 
 		local theUnit = aZone.linkedUnit
 		-- has a link. is link existing?
-		if theUnit:isExist() then 
+		if Unit.isExist(theUnit) then 
 			-- updates zone position 
 			cfxZones.centerZoneOnUnit(aZone, theUnit)
 			local dx = aZone.dx

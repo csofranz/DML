@@ -93,6 +93,7 @@ cloneZones.respawnOnGroupID = true
 		  - masterOwner "*" convenience shortcut
 	1.7.1 - useDelicates handOff for delicates 
 	      - forcedRespawn passes zone instead of verbose
+	1.7.2 - onPerimeter attribute 
 	
 --]]--
 
@@ -361,6 +362,8 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.rndHeading = cfxZones.getBoolFromZoneProperty(theZone, "rndHeading", false)
 	
 	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
+	
+	theZone.onPerimeter = cfxZones.getBoolFromZoneProperty(theZone, "onPerimeter", false)
 
 	-- check for name scheme and / or identical 
 	if cfxZones.hasProperty(theZone, "identical") then
@@ -1119,12 +1122,21 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			-- calculate the entire group's displacement
 			local units = rawData.units
 
-			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+			local loc, dx, dy 
+			if spawnZone.onPerimeter then 
+				loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+			else 
+				loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+			end 
 			
 			for idx, aUnit in pairs(units) do 
 				if not spawnZone.centerOnly then 
 					-- *every unit's displacement is randomized
-					loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone)
+					if spawnZone.onPerimeter then 
+						loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+					else	
+						loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone)
+					end 
 					aUnit.x = loc.x 
 					aUnit.y = loc.z 
 				else 
@@ -1363,9 +1375,14 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- randomize if enabled
 		if spawnZone.rndLoc then 
 
-			local loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
-			rawData.x = rawData.x + dx
-			rawData.y = rawData.y + dy 
+			local loc, dx, dy 
+			if spawnZone.onPerimeter then 
+				loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+			else 
+				loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+			end
+			rawData.x = rawData.x + dx -- might want to use loc 
+			rawData.y = rawData.y + dy -- directly
 		end
 		
 		if spawnZone.rndHeading then 
@@ -1963,7 +1980,7 @@ function cloneZones.start()
 	-- to our watchlist 
 	for k, aZone in pairs(attrZones) do 
 		cloneZones.createClonerWithZone(aZone) -- process attribute and add to zone
-		cloneZones.addCloneZone(aZone) -- remember it so we can smoke it
+		cloneZones.addCloneZone(aZone) 
 	end
 	
 	-- update all cloners and spawned clones from file 

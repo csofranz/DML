@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.3.1"
+pulseFlags.version = "1.3.2"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -37,6 +37,7 @@ pulseFlags.requiredLibs = {
 	        returned onStart, defaulting to true
 	- 1.3.0 persistence
 	- 1.3.1 typos corrected
+	- 1.3.2 removed last pulse's timeID upon entry in doPulse
 	
 --]]--
 
@@ -165,6 +166,7 @@ end
 
 
 function pulseFlags.doPulse(args) 
+
 	local theZone = args[1]
 	-- check if we have been paused. if so, simply 
 	-- exit with no new schedule 
@@ -172,6 +174,8 @@ function pulseFlags.doPulse(args)
 		theZone.pulsing = false 
 		return 
 	end 
+	-- erase old timerID, since we completed that
+	theZone.timerID = nil
 	
 	-- do a poll on flags
 	-- first, we only do an initial pulse if zeroPulse is set
@@ -268,7 +272,7 @@ function pulseFlags.update()
 		-- pausePulseFlag
 		if cfxZones.testZoneFlag(aZone, aZone.pausePulseFlag, aZone.pulseTriggerMethod, "lastPauseValue") then
 			if pulseFlags.verbose or aZone.verbose then 
-					trigger.action.outText("+++pulF: pausing <" .. aZone.name .. ">", 30)
+				trigger.action.outText("+++pulF: pausing <" .. aZone.name .. ">", 30)
 			end 
 			aZone.pulsePaused = true  -- prevents new start 
 			if aZone.timerID then 

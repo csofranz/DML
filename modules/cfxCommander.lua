@@ -4,7 +4,7 @@
 -- *** EXTENDS ZONES: 'pathing' attribute 
 --
 cfxCommander = {}
-cfxCommander.version = "1.1.2"
+cfxCommander.version = "1.1.3"
 --[[-- VERSION HISTORY
  - 1.0.5 - createWPListForGroupToPointViaRoads: detect no road found 
  - 1.0.6 - build in more group checks in assign wp list 
@@ -27,6 +27,9 @@ cfxCommander.version = "1.1.2"
          - makeGroupStopTransmitting
 		 - verbose check before path warning
 		 - added delay defaulting for most scheduling functions 
+ - 1.1.3 - isExist() guard improvements for multiple methods
+         - cleaned up comments
+ 
 --]]--
 
 cfxCommander.requiredLibs = {
@@ -199,7 +202,8 @@ function cfxCommander.doScheduledTask(data)
 	end
 	local theGroup = data.group 
 	if not theGroup then return end 
-	if not theGroup.isExist then return end
+	if not Group.isExist(theGroup) then return end 
+--	if not theGroup.isExist then return end
 	
 	local theController = theGroup:getController()
 	theController:pushTask(data.task)
@@ -290,7 +294,7 @@ function cfxCommander.assignWPListToGroup(group, wpList, delay)
 		group = Group.getByName(group)
 	end
 	if not group then return end 
-	if not group:isExist() then return end 
+	if not Group.isExist(group) then return end 
 	
 	local theTask = cfxCommander.buildTaskFromWPList(wpList)
 	local ctrl = group:getController()
@@ -427,7 +431,6 @@ function cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, delay
 		if oRide and oRide.pathing == "offroad" then 
 			-- yup, override road preference
 			cfxCommander.makeGroupGoThere(group, there, speed, "Off Road", delay)
-			--trigger.action.outText("pathing: override offroad")
 			return 
 		end
 	end
@@ -441,7 +444,7 @@ end
 
 function cfxCommander.makeGroupHalt(group, delay)
 	if not group then return end 
-	if not group:isExist() then return end 
+	if not Group.isExist(group) then return end 
 	if not delay then delay = 0 end 
 	local theTask = {id = 'Hold', params = {}}
 	cfxCommander.scheduleTaskForGroup(group, theTask, delay)

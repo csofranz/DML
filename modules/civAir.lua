@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "1.5.1"
+civAir.version = "1.5.2"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -22,6 +22,7 @@ civAir.version = "1.5.1"
 		  massive simplifications: always between zoned airfieds
 		  exclude list and include list 
 	1.5.1 added depart only and arrive only options for airfields 
+	1.5.2 fixed bugs inb verbosity 
 	
 	
 --]]--
@@ -181,7 +182,7 @@ function civAir.getTwoAirbases()
 	local filteredAB = civAir.filterAirfields(departAB, civAir.excludeAirfields)
 	-- if none left, error
 	if #filteredAB < 1 then 
-		trigger.action.outText("+++civA: too few departure airfields")
+		trigger.action.outText("+++civA: too few departure airfields", 30)
 		return nil, nil 
 	end
 	
@@ -195,7 +196,7 @@ function civAir.getTwoAirbases()
 	
 	-- if one left use it twice, boring flight.
 	if #filteredAB < 1 then 
-		trigger.action.outText("+++civA: too few arrival airfields")
+		trigger.action.outText("+++civA: too few arrival airfields", 30)
 		return nil, nil
 	end
 	

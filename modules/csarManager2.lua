@@ -49,13 +49,15 @@ csarManager.ups = 1
 		 - integration with playerScore 
 		 - score global and per-mission 
 		 - isCSARTarget API 
+ - 2.2.1 - added troopCarriers attribute to config
+		 - passes own troop carriers to dcsCommin.isTroopCarrier()
 		 
  
 --]]--
 -- modules that need to be loaded BEFORE I run 
 csarManager.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
-	"cfxZones", -- zones management foc CSAR and CSAR Mission zones
+	"cfxZones", -- zones management for CSAR and CSAR Mission zones
 	"cfxPlayer", -- player monitoring and group monitoring 
 	"nameStats", -- generic data module for weight 
 	"cargoSuper",
@@ -385,7 +387,7 @@ end
 
 function csarManager.heloLanded(theUnit)
 	-- when we have landed, 
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	local conf = csarManager.getUnitConfig(theUnit)
 	conf.unit = theUnit
 	local theGroup = theUnit:getGroup()
@@ -532,7 +534,7 @@ end
 --
 --
 function csarManager.heloDeparted(theUnit)
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	-- if we have timed extractions (i.e. not instantaneous),
 	-- then we need to check if we take off after the timer runs out 
 	
@@ -555,7 +557,7 @@ end
 --
 
 function csarManager.heloCrashed(theUnit)
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	-- problem: this isn't called on network games. 
 	
 	-- clean up 
@@ -573,7 +575,7 @@ end
 
 function csarManager.airframeCrashed(theUnit)
 	-- called from airframe manager 
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	local conf = csarManager.getUnitConfig(theUnit)
 	conf.unit = theUnit 
 	local theGroup = theUnit:getGroup()
@@ -584,7 +586,7 @@ end
 
 function csarManager.airframeDitched(theUnit)
 	-- called from airframe manager 
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	
 	local conf = csarManager.getUnitConfig(theUnit)
 	conf.unit = theUnit 
@@ -652,7 +654,7 @@ function csarManager.setCommsMenu(theUnit)
 	
 	-- we only add this menu to helicopter troop carriers
 	-- will also filter out all non-helicopters as nice side effect
-	if not dcsCommon.isTroopCarrier(theUnit) then return end
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	
 	local group = theUnit:getGroup() 
 	local id = group:getID()
@@ -822,7 +824,7 @@ end
 function csarManager.playerChangeEvent(evType, description, player, data)
 	if evType == "newGroup" then 
 		local theUnit = data.primeUnit
-		if not dcsCommon.isTroopCarrier(theUnit) then return end 
+		if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end 
 		
 		csarManager.setCommsMenu(theUnit) -- allocates new config
 --		trigger.action.outText("+++csar: added " .. theUnit:getName() .. " to comms menu", 30)
@@ -939,7 +941,7 @@ function csarManager.update() -- every second
 			local uID = uGroup:getID()
 			local uSide = aUnit:getCoalition()
 			local agl = dcsCommon.getUnitAGL(aUnit)
-			if dcsCommon.isTroopCarrier(aUnit) then 
+			if dcsCommon.isTroopCarrier(aUnit, csarManager.troopCarriers) then 
 				-- scan through all available csar missions to see if we are close 
 				-- enough to trigger comms 
 				for idx, csarMission in pairs (csarManager.openMissions) do
@@ -1277,7 +1279,7 @@ function csarManager.readConfigZone()
 	
 	if cfxZones.hasProperty(theZone, "csarDelivered!") then 
 		csarManager.csarDelivered = cfxZones.getStringFromZoneProperty(theZone, "csarDelivered!", "*<none>")
-		--trigger.action.outText("+++csar: will bang csarDelivered: <" .. csarManager.csarDelivered .. ">", 30)
+
 	end
 	
 	csarManager.rescueRadius = cfxZones.getNumberFromZoneProperty(theZone, "rescueRadius", 70) --70 -- must land within 50m to rescue
@@ -1292,6 +1294,19 @@ function csarManager.readConfigZone()
 	
 	csarManager.actionSound = cfxZones.getStringFromZoneProperty(theZone, "actionSound", "Quest Snare 3.wav")
 	csarManager.vectoring = cfxZones.getBoolFromZoneProperty(theZone, "vectoring", true)
+	
+	-- add own troop carriers 
+	if cfxZones.hasProperty(theZone, "troopCarriers") then 
+		local tc = cfxZones.getStringFromZoneProperty(theZone, "troopCarriers", "UH-1D")
+		tc = dcsCommon.splitString(tc, ",")
+		csarManager.troopCarriers = dcsCommon.trimArray(tc)
+		if csarManager.verbose then 
+			trigger.action.outText("+++casr: redefined troop carriers to types:", 30)
+			for idx, aType in pairs(csarManager.troopCarriers) do 
+				trigger.action.outText(aType, 30)
+			end
+		end
+	end
 	
 	if csarManager.verbose then 
 		trigger.action.outText("+++csar: read config", 30)

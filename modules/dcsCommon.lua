@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.1"
+dcsCommon.version = "2.8.2"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -127,6 +127,18 @@ dcsCommon.version = "2.8.1"
 	   - processStringWildcards()
 	   - new wildArrayContainsString() 
 	   - fix for stringStartsWith oddity with aircraft types 
+ 2.8.2 - better fixes for string.find() in stringStartsWith and containsString
+       - dcsCommon.isTroopCarrier(theUnit, carriers) new carriers optional param
+	   - better guards for getUnitAlt and getUnitAGL
+	   - new newPointAtDegreesRange()
+	   - new newPointAtAngleRange()
+	   - new isTroopCarrierType()
+	   - stringStartsWith now supports case insensitive match 
+	   - isTroopCarrier() supports 'any' and 'all'
+	   - made getEnemyCoalitionFor() more resilient 
+	   - fix to smallRandom for negative numbers
+	   - isTroopCarrierType uses wildArrayContainsString
+ 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -139,7 +151,7 @@ dcsCommon.version = "2.8.1"
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50 and Gazelle can't carry troops
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50, Apache and Gazelle can't carry troops
 	dcsCommon.coalitionSides = {0, 1, 2}
 	
 	-- lookup tables
@@ -270,8 +282,12 @@ dcsCommon.version = "2.8.1"
 	-- 50 items (usually some more), and only then one itemis picked from 
 	-- that array with a random number that is from a greater range (0..50+)
 	function dcsCommon.smallRandom(theNum) -- adapted from mist, only support ints
+		theNum = math.floor(theNum)
 		if theNum >= 50 then return math.random(theNum) end
-		
+		if theNum < 1 then
+			trigger.action.outText("smallRandom: invoke with argument < 1 (" .. theNum .. "), using 1", 30)
+			theNum = 1 
+		end 
 		-- for small randoms (<50) 
 		local lowNum, highNum
 		highNum = theNum
@@ -886,6 +902,20 @@ dcsCommon.version = "2.8.1"
 		return thePoint, degrees
 	end
 
+	function dcsCommon.newPointAtDegreesRange(p1, degrees, radius)
+		local rads = degrees * 3.14152 / 180
+		local p2 = dcsCommon.newPointAtAngleRange(p1, rads, radius)
+		return p2 
+	end
+	
+	function dcsCommon.newPointAtAngleRange(p1, angle, radius)
+		local p2 = {}
+		p2.x = p1.x + radius * math.cos(angle)
+		p2.y = p1.y 
+		p2.z = p1.z + radius * math.sin(angle)
+		return p2 
+	end
+
 	-- get group location: get the group's location by 
 	-- accessing the fist existing, alive member of the group that it finds
 	function dcsCommon.getGroupLocation(group)
@@ -1005,13 +1035,14 @@ dcsCommon.version = "2.8.1"
 	end
 
 	function dcsCommon.getEnemyCoalitionFor(aCoalition)
-		if aCoalition == 1 then return 2 end
-		if aCoalition == 2 then return 1 end
 		if type(aCoalition) == "string" then 
 			aCoalition = aCoalition:lower()
 			if aCoalition == "red" then return 2 end
 			if aCoalition == "blue" then return 1 end
+			return nil 
 		end
+		if aCoalition == 1 then return 2 end
+		if aCoalition == 2 then return 1 end
 		return nil
 	end
 
@@ -1818,7 +1849,7 @@ dcsCommon.version = "2.8.1"
 			theUnit.x = theUnit.x + cx -- MOVE BACK 
 			theUnit.y = theUnit.y + cy 				
 
-			-- may also want to increase heading by degreess
+			-- may also want to increase heading by degrees
 			theUnit.heading = theUnit.heading + rads 
 		end
 	end
@@ -1840,7 +1871,7 @@ dcsCommon.version = "2.8.1"
 			theUnit.x = theUnit.x + cx -- MOVE BACK 
 			theUnit.y = theUnit.y + cy 				
 
-			-- may also want to increase heading by degreess
+			-- may also want to increase heading by degrees
 			theUnit.heading = theUnit.heading + rads 
 			-- now kill psi if it existed before 
 			-- theUnit.psi = nil
@@ -2011,29 +2042,30 @@ end
 		
 		--trigger.action.outText("wildACS: theString = <" .. theString .. ">, theArray contains <" .. #theArray .. "> elements", 30)
 		local wildIn = dcsCommon.stringEndsWith(theString, "*")
-		if wildIn then dcsCommon.removeEnding(thestring, "*") end 
-		for i = 1, #theArray do 
-			local theElement = theArray[i]
-			if caseSensitive then theElement = string.upper(theElement) end 
+		if wildIn then dcsCommon.removeEnding(theString, "*") end 
+		for idx, theElement in pairs(theArray) do -- i = 1, #theArray do 
+			--local theElement = theArray[i]
+			--trigger.action.outText("test e <" .. theElement .. "> against s <" .. theString .. ">", 30)
+			if not caseSensitive then theElement = string.upper(theElement) end 
 			local wildEle = dcsCommon.stringEndsWith(theElement, "*")
 			if wildEle then theElement = dcsCommon.removeEnding(theElement, "*") end 
 			--trigger.action.outText("matching s=<" .. theString .. "> with e=<" .. theElement .. ">", 30)
 			if wildEle and wildIn then 
 				-- both end on wildcards, partial match for both
-				if dcsCommon.stringStartsWith(theElement. theString) then return true end 
+				if dcsCommon.stringStartsWith(theElement, theString) then return true end 
 				if dcsCommon.stringStartsWith(theString, theElement) then return true end 
 				--trigger.action.outText("match e* with s* failed.", 30)
 			elseif wildEle then 
 				-- Element is a wildcard, partial match 
 				if dcsCommon.stringStartsWith(theString, theElement) then return true end
-				--trigger.action.outText("match e* with s failed.", 30)
+				--trigger.action.outText("startswith - match e* <" .. theElement .. "> with s <" .. theString .. "> failed.", 30)
 			elseif wildIn then
 				-- theString is a wildcard. partial match 
-				if dcsCommon.stringStartsWith(theElement. theString) then return true end
+				if dcsCommon.stringStartsWith(theElement, theString) then return true end
 				--trigger.action.outText("match e with s* failed.", 30)
 			else
 				-- standard: no wildcards, full match
-				if theArray[i] == theString then return true end 
+				if theElement == theString then return true end 
 				--trigger.action.outText("match e with s (straight) failed.", 30)
 			end
 			
@@ -2165,13 +2197,22 @@ end
 		return false 
 	end
 	
-	function dcsCommon.stringStartsWith(theString, thePrefix)
+	function dcsCommon.stringStartsWith(theString, thePrefix, caseInsensitive)
 		if not theString then return false end 
 		if not thePrefix then return false end 
+		if not caseInsensitive then caseInsensitive = false end 
 		
+		if caseInsensitive then 
+			theString = string.upper(theString)
+			thePrefix = string.upper(theString)
+		end
 		-- new code because old 'string.find' had some really 
 		-- strange results with aircraft types. Prefix "A-10" did not 
 		-- match string "A-10A" etc. 
+		
+		-- superseded: string.find (s, pattern [, init [, plain]]) solves the problem 
+		
+		--[[
 		local pl = string.len(thePrefix)
 		if pl > string.len(theString) then return false end
 		if pl < 1 then return false end
@@ -2184,11 +2225,12 @@ end
 		end
 	
 		return true 
---[[--		trigger.action.outText("---- OK???", 30)
+--]]--		trigger.action.outText("---- OK???", 30)
 		-- strange stuff happening with some strings, let's investigate 
 		
-		
-		local res = string.find(theString, thePrefix) == 1
+		local i, j = string.find(theString, thePrefix, 1, true)
+		return (i == 1)
+--[[--
 		if res then
 			trigger.action.outText("startswith: <" .. theString .. "> pre <" .. thePrefix .. "> --> YES", 30)
 		else 
@@ -2222,7 +2264,7 @@ end
 			what = string.upper(what)
 		end
 		if inString == what then return true end -- when entire match 
-		return string.find(inString, what)
+		return string.find(inString, what, 1, true) -- 1, true means start at 1, plaintext
 	end
 	
 	function dcsCommon.bool2Text(theBool) 
@@ -2441,6 +2483,7 @@ end
 	end
 	
 	function dcsCommon.markPointWithSmoke(p, smokeColor)
+		if not smokeColor then smokeColor = 0 end 
 		local x = p.x 
 		local z = p.z -- do NOT change the point directly
 		-- height-correct
@@ -2628,15 +2671,33 @@ function dcsCommon.isSceneryObject(theUnit)
 	return theUnit.getCoalition == nil -- scenery objects do not return a coalition 
 end
 
-function dcsCommon.isTroopCarrier(theUnit)
-	-- return true if conf can carry troups
-	if not theUnit then return false end 
-	local uType = theUnit:getTypeName()
-	if dcsCommon.arrayContainsString(dcsCommon.troopCarriers, uType) then 
+function dcsCommon.isTroopCarrierType(theType, carriers)
+	if not theType then return false end 
+	if not carriers then carriers = dcsCommon.troopCarriers 
+	end 
+	-- remember that arrayContainsString is case INsensitive by default 
+	if dcsCommon.wildArrayContainsString(carriers, theType) then 
 		-- may add additional tests before returning true
 		return true
 	end
+	
+	-- see if user wanted 'any' or 'all' supported
+	if dcsCommon.arrayContainsString(carriers, "any") then 
+		return true 
+	end 
+	
+	if dcsCommon.arrayContainsString(carriers, "all") then 
+		return true 
+	end 
+	
 	return false
+end
+
+function dcsCommon.isTroopCarrier(theUnit, carriers)
+	-- return true if conf can carry troups
+	if not theUnit then return false end 
+	local uType = theUnit:getTypeName()
+	return dcsCommon.isTroopCarrierType(uType, carriers) 
 end
 
 function dcsCommon.isPlayerUnit(theUnit)
@@ -2664,14 +2725,14 @@ end
 
 function dcsCommon.getUnitAlt(theUnit)
 	if not theUnit then return 0 end
-	if not theUnit:isExist() then return 0 end 
+	if not Unit.isExist(theUnit) then return 0 end -- safer 
 	local p = theUnit:getPoint()
 	return p.y 
 end
 
 function dcsCommon.getUnitAGL(theUnit)
 	if not theUnit then return 0 end
-	if not theUnit:isExist() then return 0 end 
+	if not Unit.isExist(theUnit) then return 0 end -- safe fix
 	local p = theUnit:getPoint()
 	local alt = p.y 
 	local loc = {x = p.x, y = p.z}
