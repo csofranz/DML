@@ -1,5 +1,5 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.5.1"
+limitedAirframes.version = "1.5.3"
 limitedAirframes.verbose = false 
 limitedAirframes.enabled = true -- can be turned off
 limitedAirframes.userCanToggle = true -- F10 menu?
@@ -54,6 +54,8 @@ limitedAirframes.requiredLibs = {
  - 1.5.1 - new "announcer" attribute
  - 1.5.2 - integration with autoCSAR: prevent limitedAF from creating csar 
            when autoCSAR is active 
+ - 1.5.3 - ... but do allow it if not coming from 'ejected' so ditching 
+           a plane will again create CSAR missions
 		   
 --]]--
 
@@ -427,7 +429,7 @@ function limitedAirframes.somethingHappened(event)
 
 -- removed dual 21 detection here 
 	
-	if ID == 21 then 
+	if ID == 21 then -- player left unit 
 		-- remove pilot name from unit name 
 		limitedAirframes.unitFlownByPlayer[unitName] = nil
 		--trigger.action.outText("limAir: 21 -- unit " .. unitName .. " unoccupied", 30)
@@ -539,7 +541,7 @@ function limitedAirframes.handlePlayerLeftUnit(event)
 	end
 	
 	limitedAirframes.updatePlayerInUnit(theUnit, "MIA") -- cosmetic only
-	limitedAirframes.createCSAR(theUnit)
+	limitedAirframes.createCSAR(theUnit, true) -- will never be 31 event, must force now 
 end
 
 
@@ -560,7 +562,7 @@ function limitedAirframes.pilotEjected(event)
 	limitedAirframes.updatePlayerInUnit(theUnit, "MIA") -- cosmetic only
 	-- create CSAR if applicable
 	if not hasLostTheWar then 
-		limitedAirframes.createCSAR(theUnit)
+		limitedAirframes.createCSAR(theUnit) -- not forced, autoCSAR can hande
 	end 
 end
 
@@ -666,9 +668,19 @@ function limitedAirframes.checkPlayerFrameAvailability(event)
 end
 
 
-function limitedAirframes.createCSAR(theUnit)
+function limitedAirframes.createCSAR(theUnit, forced)
+	if not forced then forced = false end 
+	
 	-- override if autoCSAR is installed
-	if autoCSAR then return end 
+	-- and let autoCSAR handle creation of CSAR when pilot's 
+	-- seat hits ground, event 31
+	if (not forced) and autoCSAR then
+		-- csar is going to be created with parachute hitting the ground
+		if limitedAirframes.verbose then 
+			trigger.action.outText("+++limA: aborting CSAR creation: autoCSAR active", 30)
+		end
+		return 
+	end 
 	
 	-- only do this if we have installed CSAR Manager
 	if csarManager and csarManager.createCSARforUnit then 

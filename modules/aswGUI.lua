@@ -1,5 +1,5 @@
 aswGUI = {}
-aswGUI.version = "1.0.0"
+aswGUI.version = "1.0.1"
 aswGUI.verbose = false 
 aswGUI.requiredLibs = {
 	"dcsCommon", -- always
@@ -11,6 +11,7 @@ aswGUI.requiredLibs = {
 --[[--
 	Version History
 	1.0.0 - initial version 
+	1.0.1 - env.info clean-up, verbosity clean-up 
 	
 --]]--
 
@@ -18,7 +19,7 @@ aswGUI.ups = 1 -- = once every second
 aswGUI.aswCraft = {}
 
 --[[--
-::::::::::::::::: ASSUMES SINGLE_UNIT GROUPS ::::::::::::::::::
+::::::::::::::::: ASSUMES SINGLE-UNIT GROUPS ::::::::::::::::::
 --]]--
 
 
@@ -42,7 +43,6 @@ function aswGUI.initUnit(unitName) -- now this unit exists
 	
 	local theGroup = theUnit:getGroup()
 	local asc = {} -- set up player craft config block
-	--local groupData = cfxMX.playerUnit2Group[unitName]
 	asc.groupName = theGroup:getName() -- groupData.name
 	asc.name = unitName
 	asc.groupID = theGroup:getID() -- groupData.groupId
@@ -446,41 +446,36 @@ end
 -- Event handling 
 --
 function aswGUI:onEvent(theEvent)
-	--env.info("> >ENTER aswGUI:onEvent")
 	if not theEvent then 
 		trigger.action.outText("+++aswGUI: nil theEvent", 30)
-		--env.info("< <ABEND aswGUI:onEvent: nil event")
 		return
 	end
 	local theID = theEvent.id
 	if not theID then 
 		trigger.action.outText("+++aswGUI: nil event.ID", 30)
-		--env.info("< <ABEND aswGUI:onEvent: nil event ID")
 		return
 	end 
 	local initiator = theEvent.initiator 
 	if not initiator then 
-		--env.info("< <ABEND aswGUI:onEvent: nil initiator")
 		return 
 	end -- not interested 
 	local theUnit = initiator 
 	if not Unit.isExist(theUnit) then 
-		trigger.action.outText("+++aswGUI: non-unit event filtred.", 30)
-		--env.info("< <ABEND aswGUI:onEvent: theUnit does not exist")
+		if aswGUI.verbose then  
+			trigger.action.outText("+++aswGUI: non-unit event filtered.", 30)
+		end
+		return
 	end
 	local name = theUnit:getName() 
 	if not name then 
 		trigger.action.outText("+++aswGUI: unable to access unit name in onEvent, aborting", 30)
-		--env.info("< <ABEND aswGUI:onEvent: theUnit not a unit/no name")
 		return 
 	end
 	-- see if this is a player aircraft 
 	if not theUnit.getPlayerName then 
-		--env.info("< <LEAVE aswGUI:onEvent: not player unit A")
 		return 
 	end -- not a player 
 	if not theUnit:getPlayerName() then 
-		--env.info("< <LEAVE aswGUI:onEvent: not player unit B")
 		return 
 	end -- not a player 
 	-- this is a player unit. Is it ASW carrier?
@@ -492,12 +487,9 @@ function aswGUI:onEvent(theEvent)
 				trigger.action.outText(aType,30)
 			end
 		end
-		--env.info("< <LEAVE aswGUI:onEvent: not troop carrier")
 		return 
 	end
-	
-	--env.info("> >Proccing aswGUI:onEvent event <" .. theID .. "")
-	
+		
 	-- now let's access it if it was 
 	-- used before 
 	local conf = aswGUI.aswCraft[name]
@@ -530,7 +522,6 @@ function aswGUI:onEvent(theEvent)
 	if theID == 21 then -- player leave 
 		aswGUI.resetConf(conf)
 	end
-	--env.info("< <Proccing complete asw event <" .. theID .. "")
 end
 
 --
@@ -567,7 +558,6 @@ function aswGUI.readConfigZone()
 end
 
 function aswGUI.start()
-	--env.info(">>>ENTER asw GUI start")
 	if not dcsCommon.libCheck then 
 		trigger.action.outText("cfx aswGUI requires dcsCommon", 30)
 		return false 
@@ -584,7 +574,6 @@ function aswGUI.start()
 		
 	-- say Hi
 	trigger.action.outText("cfx ASW GUI v" .. aswGUI.version .. " started.", 30)
-	--env.info("<<<asw GUI started")
 	return true 
 end
 

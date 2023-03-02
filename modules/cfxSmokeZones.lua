@@ -152,8 +152,7 @@ function cfxSmokeZone.checkFlags()
 end
 
 function cfxSmokeZone.start()
-	if not dcsCommon.libCheck("cfx Smoke Zones", 
-		cfxSmokeZone.requiredLibs) then
+	if not dcsCommon.libCheck("cfx Smoke Zones", cfxSmokeZone.requiredLibs) then
 		return false 
 	end
 	

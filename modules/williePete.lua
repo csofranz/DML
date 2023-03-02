@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "1.0.0"
+williePete.version = "1.0.1"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -9,6 +9,12 @@ williePete.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 	"cfxMX",
 }
+--[[--
+	Version History
+	1.0.0 - Initial version 
+	1.0.1 - update to suppress verbosity 
+	
+--]]--
 
 williePete.willies = {}
 williePete.wpZones = {}
@@ -407,7 +413,10 @@ function williePete.isWP(theWeapon)
 	for idx, wpw in pairs(williePete.smokeWeapons) do 
 		if theDesc == wpw then return true end 
 	end
-	trigger.action.outText(theDesc .. " is no wp, ignoring.", 30)
+	if williePete.verbose then 
+		trigger.action.outText(theDesc .. " is no wp, ignoring.", 30)
+	end
+		
 	return false 
 end
 

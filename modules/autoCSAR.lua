@@ -5,7 +5,7 @@ autoCSAR.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 }
 autoCSAR.killDelay = 2 * 60 
-autoCSAR.counter = 31 -- any nuber is good, to kick-off counting
+autoCSAR.counter = 31 -- any number is good, to kick-off counting
 --[[--
 	VERSION HISTORY
 	1.0.0 - Initial Version

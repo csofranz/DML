@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.2"
+dcsCommon.version = "2.8.3"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -138,6 +138,8 @@ dcsCommon.version = "2.8.2"
 	   - made getEnemyCoalitionFor() more resilient 
 	   - fix to smallRandom for negative numbers
 	   - isTroopCarrierType uses wildArrayContainsString
+ 2.8.3 - small optimizations in bearingFromAtoB()
+       - new whichSideOfMine()
  
 --]]--
 
@@ -735,9 +737,9 @@ dcsCommon.version = "2.8.2"
 			return 0
 		end
 		
-		dx = B.x - A.x
-		dz = B.z - A.z
-		bearing = math.atan2(dz, dx) -- in radiants
+		local dx = B.x - A.x
+		local dz = B.z - A.z
+		local bearing = math.atan2(dz, dx) -- in radiants
 		return bearing
 	end
 
@@ -863,6 +865,38 @@ dcsCommon.version = "2.8.2"
 		if direction < 225 then return "drag" end
 		if direction < 315 then return "beam" end 
 		return "hot"
+	end
+	
+	function dcsCommon.whichSideOfMine(theUnit, target) -- returs two values: -1/1 = left/right and "left"/"right" 
+		if not theUnit then return nil end 
+		if not target then return nil end 
+		local uDOF = theUnit:getPosition() -- returns p, x, y, z Vec3
+		-- with x, y, z being the normalised vectors for right, up, forward 
+		local heading = math.atan2(uDOF.x.z, uDOF.x.x) -- returns rads
+		if heading < 0 then
+			heading = heading + 2 * math.pi	-- put heading in range of 0 to 2*pi
+		end
+		-- heading now runs from 0 through 2Pi
+		local A = uDOF.p
+		local B = target:getPoint() 
+		 
+		-- now get bearing from theUnit to target  
+		local dx = B.x - A.x
+		local dz = B.z - A.z
+		local bearing = math.atan2(dz, dx) -- in rads
+		if bearing < 0 then
+			bearing = bearing + 2 * math.pi	-- make bearing 0 to 2*pi
+		end
+
+		-- we now have bearing to B, and own heading. 
+		-- subtract own heading from bearing to see at what 
+		-- bearing target would be if we 'turned the world' so
+		-- that theUnit is heading 0
+		local dBearing = bearing - heading
+		-- if result < 0 or > Pi (=180°), target is left from us
+		if dBearing < 0 or dBearing > math.pi then return -1, "left" end
+		return 1, "right"
+		-- note: no separate case for straight in front or behind
 	end
 	
 	function dcsCommon.randomDegrees()

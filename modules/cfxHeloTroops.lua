@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "2.4.0"
+cfxHeloTroops.version = "2.4.1"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -30,6 +30,8 @@ cfxHeloTroops.pickupRange = 100 -- meters
 	   - eliminated cfxPlayer module import and all dependencies
 	   - added support for groupTracker / limbo 
 	   - removed restriction to only apply to helicopters in anticipation of the C-130 Hercules appearing in the game
+ 2.4.1 - new actionSound attribute, sound plays to group whenever 
+         troops have boarded or disembarked
 
 --]]--
 --
@@ -647,7 +649,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	troop.destination = dest -- transfer target zone for attackzone oders
 	cfxGroundTroops.addGroundTroopsToPool(troop) -- will schedule move orders
 	trigger.action.outTextForGroup(conf.id, "<" .. theGroup:getName() .. "> have deployed to the ground with orders " .. orders .. "!", 30)
-	
+	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
 	-- see if this is tracked by a tracker, and pass them back so 
 	-- they can un-limbo 
 	if groupTracker then 
@@ -711,6 +713,7 @@ function cfxHeloTroops.doLoadGroup(args)
 		conf.troopsOnBoard.destination = pooledGroup.destination -- may be nil 
 		cfxGroundTroops.removeTroopsFromPool(pooledGroup)
 		trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' loaded and has orders <" .. conf.troopsOnBoard.orders .. ">", 30)
+		--trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
 	else 
 		if cfxHeloTroops.verbose then 
 			trigger.action.outText("+++heloT: ".. conf.troopsOnBoard.name .." was not committed to ground troops", 30)
@@ -729,6 +732,7 @@ function cfxHeloTroops.doLoadGroup(args)
 	
 	-- say so 
 	trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' aboard, ready to go!", 30)
+	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
 
 	-- reset menu 
 	cfxHeloTroops.removeComms(conf.unit)
@@ -878,6 +882,8 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.autoPickup = cfxZones.getBoolFromZoneProperty(theZone, "autoPickup", false)
 	cfxHeloTroops.pickupRange = cfxZones.getNumberFromZoneProperty(theZone, "pickupRange", 100)
 	cfxHeloTroops.combatDropScore = cfxZones.getNumberFromZoneProperty(theZone, "combatDropScore", 200)
+	
+	cfxHeloTroops.actionSound = cfxZones.getStringFromZoneProperty(theZone, "actionSound", "Quest Snare 3.wav")
 	
 	-- add own troop carriers 
 	if cfxZones.hasProperty(theZone, "troopCarriers") then 
