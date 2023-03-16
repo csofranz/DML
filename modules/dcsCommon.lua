@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.3"
+dcsCommon.version = "2.8.4"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -140,12 +140,17 @@ dcsCommon.version = "2.8.3"
 	   - isTroopCarrierType uses wildArrayContainsString
  2.8.3 - small optimizations in bearingFromAtoB()
        - new whichSideOfMine()
+ 2.8.4 - new rotatePointAroundOriginRad()
+	   - new rotatePointAroundPointDeg()
+	   - new rotatePointAroundPointRad()
+	   - getClosestAirbaseTo() now supports passing list of air bases
+	   
  
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
 	-- for easy access and simple mission programming
-	-- (c) 2021, 2022 by Chritian Franz and cf/x AG
+	-- (c) 2021 - 2023 by Chritian Franz and cf/x AG
 
 	dcsCommon.verbose = false -- set to true to see debug messages. Lots of them
 	dcsCommon.uuidStr = "uuid-"
@@ -506,9 +511,12 @@ dcsCommon.version = "2.8.3"
 		return nil 
 	end	
 
-	function dcsCommon.getClosestAirbaseTo(thePoint, filterCat, filterCoalition)
+	function dcsCommon.getClosestAirbaseTo(thePoint, filterCat, filterCoalition, allYourBase)
 		local delta = math.huge
-		local allYourBase = dcsCommon.getAirbasesWhoseNameContains("*", filterCat, filterCoalition) -- get em all and filter
+		if not allYourBase then 
+			allYourBase = dcsCommon.getAirbasesWhoseNameContains("*", filterCat, filterCoalition) -- get em all and filter
+		end 
+		
 		local closestBase = nil 
 		for idx, aBase in pairs(allYourBase) do
 			-- iterate them all 
@@ -1857,9 +1865,7 @@ dcsCommon.version = "2.8.3"
 	
 	end;
 	
-	function dcsCommon.rotatePointAroundOrigin(inX, inY, angle) -- angle in degrees
-		local rads =  3.14152 / 180 -- convert to radiants. 
-		angle = angle * rads -- turns into rads
+	function dcsCommon.rotatePointAroundOriginRad(inX, inY, angle) -- angle in degrees
 		local c = math.cos(angle)
 		local s = math.sin(angle)
 		local px
@@ -1867,6 +1873,38 @@ dcsCommon.version = "2.8.3"
 		px = inX * c - inY * s
 		py = inX * s + inY * c
 		return px, py		
+	end
+	
+	function dcsCommon.rotatePointAroundOrigin(inX, inY, angle) -- angle in degrees
+		local rads =  3.14152 / 180 -- convert to radiants. 
+		angle = angle * rads -- turns into rads
+		local px, py = dcsCommon.rotatePointAroundOriginRad(inX, inY, angle)
+		return px, py		
+	end
+	
+	function dcsCommon.rotatePointAroundPointRad(x, y, px, py, angle)
+		x = x - px 
+		y = y - py
+		x, y = dcsCommon.rotatePointAroundOriginRad(x, y, angle)
+		x = x + px 
+		y = y + py 
+		return x, y
+	end
+
+	function dcsCommon.rotatePointAroundPointDeg(x, y, px, py, degrees)
+		x, y = dcsCommon.rotatePointAroundPointRad(x, y, px, py, degrees * 3.14152 / 180)
+		return x, y
+	end
+
+	-- rotates a Vec3-base inPoly on XZ pane around inPoint on XZ pane
+ 	function dcsCommon.rotatePoly3AroundVec3Rad(inPoly, inPoint, rads)
+		local outPoly = {}
+		for idx, aVertex in pairs(inPoly) do 
+			local x, z = dcsCommon.rotatePointAroundPointRad(aVertex.x, aVertex.z, inPoint.x, inPoint.z, rads)		
+			local v3 = {x = x, y = aVertex.y, z = z}
+			outPoly[idx] = v3
+		end 
+		return outPoly 
 	end
 
 	function dcsCommon.rotateUnitData(theUnit, degrees, cx, cz)

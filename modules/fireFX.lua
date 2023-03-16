@@ -12,6 +12,7 @@ fireFX.fx = {}
 	Version History 
 	1.0.0 - Initial version 
 	1.1.0 - persistence
+	1.1.1 - agl attribute 
 
 --]]--
 
@@ -60,6 +61,9 @@ function fireFX.createFXWithZone(theZone)
 
 	theZone.density = cfxZones.getNumberFromZoneProperty(theZone, "density", 0.5)
 
+	theZone.agl = cfxZones.getNumberFromZoneProperty(theZone, "AGL", 0)
+	
+
 	if cfxZones.hasProperty(theZone, "start?") then 
 		theZone.fxStart = cfxZones.getStringFromZoneProperty(theZone, "start?", "*<none>")
 		theZone.fxLastStart = cfxZones.getFlagValue(theZone.fxStart, theZone)
@@ -96,7 +100,7 @@ end
 function fireFX.startTheFire(theZone)
 	if not theZone.burning then 
 		local p = cfxZones.getPoint(theZone)
-		p.y = land.getHeight({x = p.x, y = p.z})
+		p.y = land.getHeight({x = p.x, y = p.z}) + theZone.agl 
 		local preset = theZone.fxCode
 		local density = theZone.density
 		trigger.action.effectSmokeBig(p, preset, density, theZone.name)

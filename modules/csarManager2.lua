@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.2.0"
+csarManager.version = "2.2.3"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -50,9 +50,19 @@ csarManager.ups = 1
 		 - score global and per-mission 
 		 - isCSARTarget API 
  - 2.2.1 - added troopCarriers attribute to config
-		 - passes own troop carriers to dcsCommin.isTroopCarrier()
+		 - passes own troop carriers to dcsCommon.isTroopCarrier()
+ - 2.2.2 - enable CSAR missions in water 
+         - csar name defaults to zone name 
+		 - better randomization of pilot's point in csar mission, 
+		   supports quad zone 
+ - 2.2.3 - better support for red/blue 
+		 - allow neutral pick-up 
+		 - directions to closest safe zone 
+		 - CSARBASE attribute now carries coalition
+		 - deprecated coalition attribute 
+
+	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
 		 
- 
 --]]--
 -- modules that need to be loaded BEFORE I run 
 csarManager.requiredLibs = {
@@ -61,15 +71,14 @@ csarManager.requiredLibs = {
 	"cfxPlayer", -- player monitoring and group monitoring 
 	"nameStats", -- generic data module for weight 
 	"cargoSuper",
---	"cfxCommander", -- needed if you want to hand-create CSAR missions
+--	"cfxCommander", -- needed only if you want to hand-create CSAR missions
 }
--- integrates automatically with playerScore if installed
 
 
 --
 -- OPTIONS
 --
-csarManager.useSmoke = true -- smoke is a performance killer, so you can turn it off 
+csarManager.useSmoke = true  
 csarManager.smokeColor = 4 -- when using smoke
 
 
@@ -82,7 +91,7 @@ csarManager.myEvents = {3, 4, 5} -- 3 = take off, 4 = land, 5 = crash
 -- CASR MISSION
 --
 csarManager.openMissions = {} -- all currently available missions
-csarManager.csarBases = {} -- all bases where we can drop off rescued pilots
+csarManager.csarBases = {} -- all bases where we can drop off rescued pilots. NOT a zone!
 csarManager.csarZones = {} -- zones for spawning 
 
 csarManager.missionID = 1 -- to create uuid
@@ -113,6 +122,10 @@ function csarManager.createDownedPilot(theMission, existingUnit)
 		local aLocation = {}
 		local aHeading = 0 -- in rads
 		local newTargetZone = theMission.zone
+		-- if mission.radius is < 1 we do not randomize location 
+		-- else location is somewhere in the middle of zone 
+		-- csar mission zones randomize by themselves, and pass 
+		-- a radius of <1, this is only for ejecting pilots 
 		if newTargetZone.radius > 1 then 
 			aLocation, aHeading = dcsCommon.randomPointOnPerimeter(newTargetZone.radius / 2 + 3, newTargetZone.point.x, newTargetZone.point.z) 
 		else 
@@ -546,8 +559,6 @@ function csarManager.heloDeparted(theUnit)
 	local theGroup = theUnit:getGroup()
 	conf.id = theGroup:getID()
 	conf.currentState = 1 -- in the air 
-	
-	
 end
 
 --
@@ -555,7 +566,6 @@ end
 -- Helo Crashed 
 --
 --
-
 function csarManager.heloCrashed(theUnit)
 	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	-- problem: this isn't called on network games. 
@@ -698,6 +708,16 @@ function csarManager.setCommsMenu(theUnit)
 				{conf, "unload one"}
 				)
 	table.insert(conf.myCommands, theCommand)
+	
+	commandTxt = "Direction to nearest safe zone"
+	theCommand =  missionCommands.addCommandForGroup(
+				conf.id, 
+				commandTxt,
+				conf.myMainMenu,
+				csarManager.redirectDirections, 
+				{conf, "redirect"}
+				)
+	table.insert(conf.myCommands, theCommand)
 end
 
 
@@ -705,19 +725,32 @@ function csarManager.redirectListCSARRequests(args)
 	timer.scheduleFunction(csarManager.doListCSARRequests, args, timer.getTime() + 0.1)
 end
 
+function csarManager.openMissionsForSide(theSide)
+	local theMissions = {}
+	for idx, aMission in pairs(csarManager.openMissions) do 
+		if aMission.side == theSide or aMission.side == 0 then 
+			table.insert(theMissions, aMission)
+		end
+	end
+	return theMissions
+end
+
 function csarManager.doListCSARRequests(args) 
 	local conf = args[1]
 	local param = args[2]
 	local theUnit = conf.unit 
 	local point = theUnit:getPoint()
+	local theSide = theUnit:getCoalition() 
 	
 	--trigger.action.outText("+++csar: ".. theUnit:getName() .."  issued csar status request", 30)
 	local report = "\nCrews requesting evacuation\n"
-	if #csarManager.openMissions < 1 then 
+	local openMissions = csarManager.openMissionsForSide(theSide)
+	
+	if #openMissions < 1 then 
 		report = report .. "\nNo requests, all crew are safe."
 	else 
 		-- iterate through all troops onboard to get their status
-		for idx, mission in pairs(csarManager.openMissions) do 
+		for idx, mission in pairs(openMissions) do 
 			local d = dcsCommon.distFlat(point, mission.zone.point) * 0.000539957
 			d = math.floor(d * 10) / 10
 			local b = dcsCommon.bearingInDegreesFromAtoB(point, mission.zone.point)
@@ -730,9 +763,9 @@ function csarManager.doListCSARRequests(args)
 			end
 		end
 	end
-	
-	if #csarManager.csarBases < 1 then 
-		report = report .. "\n\nWARNING: NO CSAR BASES TO DELIVER EVACUEES"
+	local myBases = csarManager.getCSARBasesForSide(theSide) 
+	if #myBases < 1 then 
+		report = report .. "\n\nWARNING: NO CSAR BASES TO DELIVER EVACUEES TO"
 	end
 	
 	report = report .. "\n"
@@ -818,6 +851,59 @@ function csarManager.unloadOne(args)
 	end
 	
 end
+
+function csarManager.redirectDirections(args)
+	timer.scheduleFunction(csarManager.directions, args, timer.getTime() + 0.1)
+end
+
+function csarManager.directions(args)
+	local conf = args[1]
+	local param = args[2]
+	local theUnit = conf.unit 
+	local myName = theUnit:getName() 
+	local theSide = theUnit:getCoalition()
+	local report = "Nothing to report."
+	
+	-- get all safe zones 
+	local myBases = csarManager.getCSARBasesForSide(theSide) 
+	if #myBases < 1 then 
+		report = "\n\nWARNING: NO CSAR BASES TO DELIVER EVACUEES TO"
+	else
+		-- find nearest zone 
+		local p = theUnit:getPoint()
+		p.y = 0 
+		local dMin = math.huge 
+		local theBase = nil 
+		local dP = nil
+		for idx, aBase in pairs(myBases) do 
+			local z = aBase.zone 
+			local zp = cfxZones.getPoint(z) 
+			zp.y = 0 
+			local d = dcsCommon.dist(p, zp)
+			if d < dMin then 
+				theBase = aBase
+				dP = zp
+				dMin = d
+			end 
+		end
+		
+		-- see if we are inside 
+		if cfxZones.isPointInsideZone(p, theBase.zone) then 
+			report = "\nYou are inside safe zone " .. theBase.name .. "."
+		else 
+		-- get bearing and distance 
+			dMin = dMin / 1000 * 0.539957 -- in nm 
+			
+			dMin = math.floor(dMin * 10) / 10 
+			local bearing = dcsCommon.bearingInDegreesFromAtoB(p, dP)
+			report = "\nClosest safe zone for " .. myName .. " is " .. theBase.name ..", bearing " .. bearing .. " at " .. dMin .. "nm"
+		end 
+	end
+	
+	report = report .. "\n"
+	trigger.action.outTextForGroup(conf.id, report, 30)
+	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)	
+end
 --
 -- Player event callbacks
 --
@@ -870,14 +956,23 @@ end
 function csarManager.addCSARBase(aZone)
 	local csarBase = {}
 	csarBase.zone = aZone 
+
+--[[--
 	local bName = cfxZones.getStringFromZoneProperty(aZone, "CSARBASE", "XXX")
 	if bName == "XXX" then bName = aZone.name end 
 	csarBase.name =  cfxZones.getStringFromZoneProperty(aZone, "name", bName) 
+--]]--
+	-- CSARBASE now carries the coalition in the CSARBASE attribute
+	csarBase.side = cfxZones.getCoalitionFromZoneProperty(aZone, "CSARBASE", 0) 
+	-- backward-compatibility to older versions. 
+	-- will be deprecated 
+	if cfxZones.hasProperty(aZone, "coalition") then 
+		csarBase.side = cfxZones.getCoalitionFromZoneProperty(aZone, "CSARBASE", 0)
+	end
 	
-	-- read further properties like facilities that may 
-	-- need to be matched 
-	csarBase.side = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0) 
-	
+	-- see if we have provided a name field, default zone name  
+	csarBase.name = cfxZones.getStringFromZoneProperty(aZone, "name", aZone.name) 
+		
 	table.insert(csarManager.csarBases, csarBase)
 	
 	if csarManager.verbose or aZone.verbose then 
@@ -894,6 +989,15 @@ function csarManager.getCSARBaseforZone(aZone)
 	return nil
 end
 
+function csarManager.getCSARBasesForSide(theSide) 
+	local bases = {}
+	for idx, aBase in pairs(csarManager.csarBases) do 
+		if aBase.side == 0 or aBase.side == theSide then 
+			table.insert(bases, aBase)
+		end
+	end
+	return bases
+end
 --
 --
 -- U P D A T E 
@@ -947,7 +1051,8 @@ function csarManager.update() -- every second
 				for idx, csarMission in pairs (csarManager.openMissions) do
 					-- check if we are inside trigger range on the same side
 					local d = dcsCommon.distFlat(uPoint, csarMission.zone.point)
-					if (uSide == csarMission.side) and (d < csarManager.rescueTriggerRange) then 
+					if ((uSide == csarMission.side) or (csarMission.side == 0) )
+					and (d < csarManager.rescueTriggerRange) then 
 						-- we are in trigger distance. if we did not notify before
 						-- do it now 
 						if not dcsCommon.arrayContainsString(csarMission.messagedUnits, uName) then 
@@ -1064,15 +1169,18 @@ function csarManager.update() -- every second
 			-- this should always be true, but you never know
 			local currVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
 			if currVal ~= theZone.lastCSARVal then 
+				-- set up random point in zone 
+				local mPoint = cfxZones.createRandomPointInZone(theZone)
 				local theMission = csarManager.createCSARMissionData(
-						cfxZones.getPoint(theZone), 
-						theZone.csarSide, 
-						theZone.csarFreq, 
-						theZone.csarName, 
-						theZone.numCrew, 
-						theZone.timeLimit, 
-						theZone.csarMapMarker,
-						theZone.radius)
+						mPoint, --cfxZones.getPoint(theZone), -- point
+						theZone.csarSide, -- theSide
+						theZone.csarFreq, -- freq
+						theZone.csarName, -- name 
+						theZone.numCrew, -- numCrew
+						theZone.timeLimit, -- timeLimit
+						theZone.csarMapMarker, -- mapMarker
+						0.1, --theZone.radius) -- radius
+						nil) -- parashoo unit 
 				csarManager.addMission(theMission)
 				theZone.lastCSARVal = currVal
 				if csarManager.verbose then 
@@ -1097,9 +1205,12 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score
 	local csarPoint = dcsCommon.randomPointInCircle(radius, radius/2, point.x, point.z) 
 	
 	-- check the ground- water will kill the pilot 
+	-- not any more! pilot can float 
+	
 	csarPoint.y = csarPoint.z 
 	local surf = land.getSurfaceType(csarPoint)
 	
+	--[[--
 	if surf == 2 or surf == 3 then 
 		if not silent then 
 			trigger.action.outTextForCoalition(coal, "Bad chute! Bad chute! ".. pilotName .. " did not survive ejection out of their " .. theUnit:getTypeName(), 30)
@@ -1107,18 +1218,19 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score
 		end
 		return 
 	end
+	--]]--
 	
 	csarPoint.y = land.getHeight(csarPoint)
 	
 	-- when we get here, the terrain is ok, so let's drop the pilot 
 	local theMission = csarManager.createCSARMissionData(
-		csarPoint, 
-		coal, 
-		nil, 
-		pilotName, 
-		1, 
-		nil, 
-		nil)
+		csarPoint, -- point
+		coal, -- side
+		nil, -- freq 
+		pilotName, -- name 
+		1, -- num crew 
+		nil, -- time limit 
+		nil) -- map mark, inRadius, parashooUnit 
 	theMission.score = score 
 	csarManager.addMission(theMission)
 	if not silent then 
@@ -1130,13 +1242,13 @@ end
 function csarManager.createCSARForParachutist(theUnit, name) -- invoked with parachute guy on ground as theUnit
 	local coa = theUnit:getCoalition()
 	local pos = theUnit:getPoint()
-	-- unit DOES NOT HAVE GROUP!!!
+	-- unit DOES NOT HAVE GROUP!!! (unless water splashdown)
 	-- create a CSAR mission now
 	local theMission = csarManager.createCSARMissionData(pos, coa, nil, name, nil, nil, nil, 0.1, nil)
 	csarManager.addMission(theMission)
 --	if not silent then 
-		trigger.action.outTextForCoalition(coa, "MAYDAY MAYDAY MAYDAY! ".. name ..  " requesting extraction after eject!", 30)
-		trigger.action.outSoundForGroup(coa, csarManager.actionSound) -- "Quest Snare 3.wav")
+	trigger.action.outTextForCoalition(coa, "MAYDAY MAYDAY MAYDAY! ".. name ..  " requesting extraction after eject!", 30)
+	trigger.action.outSoundForGroup(coa, csarManager.actionSound) -- "Quest Snare 3.wav")
 --	end 
 end
 
@@ -1164,6 +1276,7 @@ function csarManager.readCSARZone(theZone)
 	local theSide = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
 	theZone.csarSide = theSide 
 	theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "name", "<none>")
+	theZone.csarName = theZone.name -- default CSAR Name 
 	if cfxZones.hasProperty(theZone, "csarName") then 
 		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "csarName", "<none>")
 	end
@@ -1199,15 +1312,17 @@ function csarManager.readCSARZone(theZone)
 	end
 	
 	if (not deferred) then 
+		local mPoint = cfxZones.createRandomPointInZone(theZone)
 		local theMission = csarManager.createCSARMissionData(
-			theZone.point, 
+			mPoint, 
 			theZone.csarSide, 
 			theZone.csarFreq, 
 			theZone.csarName, 
 			theZone.numCrew, 
 			theZone.timeLimit, 
 			theZone.csarMapMarker,
-			theZone.radius)
+			0.1, -- theZone.radius,
+			nil) -- parashoo unit 
 		csarManager.addMission(theMission)
 	end
 
@@ -1385,4 +1500,8 @@ end
 	- when unloading one by menu, update weight!!!
 	
 	-- allow neutral pick-up
+	
+	-- allow any airfied to be csarsafe by default, no longer requires csarbase
+	-- get vector to closes csarbase 
+	
 --]]--

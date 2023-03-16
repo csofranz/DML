@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.1.1" 
+cfxSmokeZone.version = "1.1.2" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -17,6 +17,7 @@ cfxSmokeZone.requiredLibs = {
 	   - random color support 
  1.1.0 - Watchflag upgrade 
  1.1.1 - stopSmoke? input 
+ 1.1.2 - 'agl', 'alt' synonymous for altitude to keep in line with fireFX
  
 --]]--
 cfxSmokeZone.smokeZones = {}
@@ -36,6 +37,11 @@ function cfxSmokeZone.processSmokeZone(aZone)
 
 	aZone.smokeColor = theColor
 	aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "altitude", 1)
+	if cfxZones.hasProperty(aZone, "alt") then 
+		aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "alt", 1)
+	elseif cfxZones.hasProperty(aZone, "agl") then 
+		aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "agl", 1)
+	end
 	
 	-- paused 
 	aZone.paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)

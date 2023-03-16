@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.3"
+cfxZones.version = "3.0.6"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -122,7 +122,8 @@ cfxZones.version = "3.0.3"
 - 3.0.3   - new getLinkedUnit()
 - 3.0.4   - new createRandomPointOnZoneBoundary()
 - 3.0.5   - getPositiveRangeFromZoneProperty() now also supports upper bound (optional)
-
+- 3.0.6   - new createSimplePolyZone()
+		  - new createSimpleQuadZone()
 
 --]]--
 cfxZones.verbose = false
@@ -366,7 +367,12 @@ function cfxZones.copyPoint(inPoint)
 	local newPoint = {}
 	newPoint.x = inPoint.x
 	newPoint.y = inPoint.y
-	newPoint.z = inPoint.z 
+	-- handle xz only 
+	if inPoint.z then 
+		newPoint.z = inPoint.z 
+	else 
+		newPoint.z = inPoint.y 
+	end
 	return newPoint	
 end
 
@@ -534,6 +540,54 @@ function cfxZones.createCircleZone(name, x, z, radius)
 	cfxZones.calculateZoneBounds(newZone)
 	
 	return newZone
+end
+
+function cfxZones.createSimplePolyZone(name, location, points, addToManaged)
+	if not addToManaged then addToManaged = false end 
+	if not location then 
+		location = {}
+	end
+	if not location.x then location.x = 0 end 
+	if not location.z then location.z = 0 end 
+
+	local newZone = cfxZones.createPolyZone(name, points)
+	
+	if addToManaged then 
+		cfxZones.addZoneToManagedZones(newZone)
+	end
+	return newZone
+end
+
+function cfxZones.createSimpleQuadZone(name, location, points, addToManaged)
+	if not location then 
+		location = {}
+	end
+	if not location.x then location.x = 0 end 
+	if not location.z then location.z = 0 end 
+		
+	-- synthesize 4 points if they don't exist
+	-- remember: in DCS positive x is up, positive z is right 
+	if not points then 
+		points = {} 
+	end
+	if not points[1] then 
+		-- upper left 
+		points[1] = {x = location.x-1, y = 0, z = location.z-1}
+	end
+	if not points[2] then 
+		-- upper right 
+		points[2] = {x = location.x-1, y = 0, z = location.z+1}
+	end
+	if not points[3] then 
+		-- lower right 
+		points[3] = {x = location.x+1, y = 0, z = location.z+1}
+	end
+	if not points[4] then 
+		-- lower left 
+		points[4] = {x = location.x+1, y = 0, z = location.z-1}
+	end
+	
+	return cfxZones.createSimplePolyZone(name, location, points, addToManaged)
 end
 
 function cfxZones.createPolyZone(name, poly) -- poly must be array of point type

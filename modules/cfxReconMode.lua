@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.1.3"
+cfxReconMode.version = "2.1.4"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -84,6 +84,8 @@ VERSION HISTORY
        - <ele> wildcard in message format 
 	   - fix for mgrs bug in message (zone coords, not unit)
  2.1.3 - added cfxReconMode.name to allow direct acces with test zone flag 
+ 2.1.4 - canDetect() also checks if unit has been activated
+         canDetect has strenghtened isExist() guard 
 	   
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -319,7 +321,7 @@ function cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 	-- returns true and pos when detected
 	local allUnits = theGroup:getUnits()
 	for idx, aUnit in pairs(allUnits) do
-		if aUnit:isExist() and aUnit:getLife() >= 1 then 
+		if Unit.isExist(aUnit) and aUnit:isActive() and aUnit:getLife() >= 1 then 
 			local uPos = aUnit:getPoint()
 			uPos.y = uPos.y + 3 -- raise my 3 meters
 			local d = dcsCommon.distFlat(scoutPos, uPos) 
