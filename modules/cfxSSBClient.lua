@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "3.0.0"
+cfxSSBClient.version = "3.0.1"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -47,6 +47,7 @@ Version History
 		- open?
 		- close? 
 		- also persists closed airfield list
+  3.0.1 - ability to detect if an airfield doesn't exist (late activate)
 		
 		
 	
@@ -238,38 +239,46 @@ function cfxSSBClient.setSlotAccessForGroup(theGroup)
 	   -- and leave it as it is. Nothing to do at all now
 		   
 	elseif theMatchingAirfield ~= nil then 
+		local blockState = cfxSSBClient.enabledFlagValue -- we default to ALLOW the block
+		local comment = "available"
 		-- we have found a plane that is tied to an airfield 
 		-- so this group will receive a block/unblock
 		-- we always set all block/unblock every time
-		-- note: since caching, above guard not needed
-		local airFieldSide = theMatchingAirfield:getCoalition()
-		local groupCoalition = theGroup.coaNum
-		local blockState = cfxSSBClient.enabledFlagValue -- we default to ALLOW the block
-		local comment = "available"
-			
-		-- see if airfield is closed 
-		local afName = theMatchingAirfield:getName()
-		if cfxSSBClient.closedAirfields[afName] then 
-			-- airfield is closed. no take-offs 
+
+		-- see if airfield currently exist (might be dead or late activate)
+		if not Object.isExist(theMatchingAirfield) then
+			-- airfield does not exits yet/any more 
 			blockState = cfxSSBClient.disabledFlagValue
-			comment = "!closed airfield!"
-		end
+			comment = "!inactive airfield!"
+		else 
+			local airFieldSide = theMatchingAirfield:getCoalition()
+			local groupCoalition = theGroup.coaNum
 			
-		-- on top of that, check coalitions
-		if groupCoalition ~= airFieldSide then 
-			-- we have a problem. sides don't match 
-			if airFieldSide == 3 
-			or (cfxSSBClient.allowNeutralFields and airFieldSide == 0)
-			then 
-				-- all is well, airfield is contested or neutral and 
-				-- we allow this plane to spawn here
-			else 
-				-- DISALLOWED!!!!
+			-- see if airfield is closed 
+			local afName = theMatchingAirfield:getName()
+			if cfxSSBClient.closedAirfields[afName] then 
+				-- airfield is closed. no take-offs 
 				blockState = cfxSSBClient.disabledFlagValue
-				comment = "!!!BLOCKED!!!"
+				comment = "!closed airfield!"
 			end
+				
+			-- on top of that, check coalitions
+			if groupCoalition ~= airFieldSide then 
+				-- we have a problem. sides don't match 
+				if airFieldSide == 3 
+				or (cfxSSBClient.allowNeutralFields and airFieldSide == 0)
+				then 
+					-- all is well, airfield is contested or neutral and 
+					-- we allow this plane to spawn here
+				else 
+					-- DISALLOWED!!!!
+					blockState = cfxSSBClient.disabledFlagValue
+					comment = "!!!BLOCKED!!!"
+				end
+			end 
 		end 
-		-- set the ssb flag for this group so the server can see it
+		
+		-- now set the ssb flag for this group so the server can see it
 		if cfxSSBClient.verbose then 
 			local lastState = trigger.misc.getUserFlag(theName)
 			if lastState ~= blockState then 

@@ -1,5 +1,5 @@
 delicates = {}
-delicates.version = "1.1.1"
+delicates.version = "1.1.2"
 delicates.verbose = false 
 delicates.ups = 1 
 delicates.requiredLibs = {
@@ -18,7 +18,7 @@ delicates.inventory = {}
 		  - safetyMargin - safety margin. defaults to 10%
 	1.1.1 - addGroupToInventoryForZone
 	      - verbose for zone will show update event from useDelicates
-	
+	1.1.2 - fixed uncaught delayed explosion for nil object 
 --]]--
 function delicates.adddDelicates(theZone)
 	table.insert(delicates.theDelicates, theZone)
@@ -194,7 +194,20 @@ function delicates.scheduledBlow(args)
 		theObject = StaticObject.getByName(oName) 
 	else
 		-- can't handle at the moment
+		if delicates.verbose then
+			trigger.action.outText("+++Deli: can't handle delicate explosion for object cat <" .. desc.cat .. ">, name <" .. desc.oName .. ">", 30)
+		end 
+		return 
 	end 
+	
+	-- now, the object might have been removed by now. catch this before we proceed 
+	if not theObject then 
+		if delicates.verbose then 
+			trigger.action.outText("+++Deli: NIL delicate for object blow at cat <" .. desc.cat .. ">, name <" .. desc.oName .. ">", 30)
+		end
+		return 
+	end
+
 	
 	local theZone = desc.theZone 
 	local p = theObject:getPoint()

@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.2.3"
+csarManager.version = "2.2.4"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -60,6 +60,8 @@ csarManager.ups = 1
 		 - directions to closest safe zone 
 		 - CSARBASE attribute now carries coalition
 		 - deprecated coalition attribute 
+ - 2.2.4 - CSAR attribute value defaults name 
+		 - start? attribute for CSAR as startCSAR? synonym
 
 	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
 		 
@@ -1273,18 +1275,18 @@ end
 function csarManager.readCSARZone(theZone)
 	-- zones have attribute "CSAR" 
 	-- gather data, and then create a mission from this
+	local mName = cfxZones.getStringFromZoneProperty(theZone, "CSAR", "Lt. Unknown")
+	if mName == "" then mName = theZone.name end 
 	local theSide = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
 	theZone.csarSide = theSide 
-	theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "name", "<none>")
-	theZone.csarName = theZone.name -- default CSAR Name 
-	if cfxZones.hasProperty(theZone, "csarName") then 
+	theZone.csarName = mName -- now deprecating name attributes
+	if cfxZones.hasProperty(theZone, "name") then 
+		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "name", "<none>")
+	elseif cfxZones.hasProperty(theZone, "csarName") then 
 		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "csarName", "<none>")
-	end
-	if cfxZones.hasProperty(theZone, "pilotName") then 
+	elseif cfxZones.hasProperty(theZone, "pilotName") then 
 		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "pilotName", "<none>")
-	end
-	
-	if cfxZones.hasProperty(theZone, "victimName") then 
+	elseif cfxZones.hasProperty(theZone, "victimName") then 
 		theZone.csarName = cfxZones.getStringFromZoneProperty(theZone, "victimName", "<none>")
 	end
 	
@@ -1299,6 +1301,11 @@ function csarManager.readCSARZone(theZone)
 	
 	if cfxZones.hasProperty(theZone, "in?") then
 		theZone.startCSAR = cfxZones.getStringFromZoneProperty(theZone, "in?", "*none")
+		theZone.lastCSARVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
+	end 
+	
+	if cfxZones.hasProperty(theZone, "start?") then
+		theZone.startCSAR = cfxZones.getStringFromZoneProperty(theZone, "start?", "*none")
 		theZone.lastCSARVal = cfxZones.getFlagValue(theZone.startCSAR, theZone)
 	end 
 	
@@ -1479,29 +1486,18 @@ end
 	improvements
 	- need to stay on ground for x seconds to load troops 
 	- hot lz
-	- hover recover 
 	- limit on troops aboard for transport
 	- delay for drop-off 
-	
-	- csar when: always, only on eject, 
-	
+		
 	- repair o'clock 
-	
-	- nearest csarBase
-	- red/blue csarbases 
-	- weight 
-	
+		
 	- compatibility: side/owner - make sure it is compatible 
 	  with FARP, and landing on a FARP with opposition ownership 
 	  will not disembark
-	  
-	- suppress multi smoke 
-	
+	  	
 	- when unloading one by menu, update weight!!!
+		
+	-- allow any airfied to be csarsafe by default, no longer *requires* csarbase
 	
-	-- allow neutral pick-up
-	
-	-- allow any airfied to be csarsafe by default, no longer requires csarbase
-	-- get vector to closes csarbase 
-	
+	-- support quad zones and optionally non-random placement
 --]]--

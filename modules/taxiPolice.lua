@@ -1,5 +1,5 @@
 taxiPolice = {}
-taxiPolice.version = "0.0.0"
+taxiPolice.version = "1.0.0"
 taxiPolice.verbose = true 
 taxiPolice.ups = 1 -- checks per second 
 taxiPolice.requiredLibs = {
@@ -7,32 +7,32 @@ taxiPolice.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 }
 --[[--
--- ensure that a player doesn't overspeed on taxiways. uses speedLimit and violateDuration to determine if to fine 
-
--- create runway polys here: https://wiki.hoggitworld.com/view/DCS_func_getRunways
-
--- works as follows: 
--- when a player's plane is not inAir, they are monitored. 
--- when on a runway or too far from airfield (only airfields are monitored) monitoring ends 
--- when monitored and overspeeding, they first receive a warning, and after n warnings they receive retribution 
+  Version History
+  1.0.0 - Initial version 
+ 
 --]]--
+
 taxiPolice.speedLimit = 14 -- m/s . 14 m/s = 50 km/h, 10 m/s = 36 kmh 
 taxiPolice.triggerTime = 3 -- seconds until we register a speeding violation 
 taxiPolice.rwyLeeway = 5 -- meters on each side
 taxiPolice.rwyExtend = 500 -- meters in front and at end 
 taxiPolice.airfieldMaxDist = 3000 -- radius around airfield in which we operate
 taxiPolice.runways = {} -- indexed by airbase name, then by rwName
+                        -- if nil, that base is not policed 
 taxiPolice.suspects = {} -- units that are currently behaving naughty 
 taxiPolice.tickets = {} -- number of warnings per player 
 taxiPolice.maxTickets = 3 -- number of tickes without retribution
-
+taxiPolice.lastMessageTo = {} -- used to suppress messages if too soon
 function taxiPolice.buildRunways()
 	local bases = world.getAirbases()
 	local mId = 0
 	for idb, aBase in pairs (bases) do -- i = 1, #base do
 	   local name = aBase:getName()
 	   local rny = aBase:getRunways()
-	   if rny then 
+	   -- Note that Airbase.Category values are not obtained by calling airbase:getCategory() - that calls Object.getCategory(airbase) and will always return the value Object.Category.BASE. Instead you need to use airbase:getDesc().category to obtain the Airbase.Category!
+	   local cat = aBase:getDesc().category
+	   
+	   if rny and (cat == 0) then 
 			local runways = {}
 			for idx, rwy in pairs(rny) do -- j = 1, #rny do
 				-- calcualte quad that encloses taxiway 
@@ -71,6 +71,7 @@ function taxiPolice.buildRunways()
 			
 			taxiPolice.runways[name] = runways
 			if taxiPolice.verbose then
+				-- mark center of airbase in a red 200x200 square
 				local points = {}
 				local pStart = aBase:getPoint()
 				local pEnd = aBase:getPoint()
@@ -84,6 +85,10 @@ function taxiPolice.buildRunways()
 				points[4] = {y = 0, x = pEnd.x + dx1, z = pEnd.z + dz2}
 				mId = mId + 1
 				trigger.action.quadToAll(-1, mId, points[1], points[2], points[3], points[4], {1, 0, 0, 1}, {1, 0, 0, .5}, 3)
+			end 
+		else 
+			if taxiPolice.verbose then 
+				trigger.action.outText("No runways proccing for base <" .. name .. ">, cat = <" .. cat .. ">", 30)
 			end 
 		end
 	end
@@ -108,6 +113,10 @@ end
 
 function taxiPolice.checkUnit(theUnit, allAirfields)
 	if not theUnit.getPlayerName then return end 
+	local theGroup = theUnit:getGroup() 
+	local cat = theGroup:getCategory()
+	if cat ~= 0 then return end -- not a fixed wing, disregard 
+	
 	local player = theUnit:getPlayerName() 
 	if not player then return end 
 	
@@ -131,14 +140,13 @@ function taxiPolice.checkUnit(theUnit, allAirfields)
 	-- check if we are on a runway 
 	local myRunways = taxiPolice.runways[base:getName()]
 	if not myRunways then 
-		-- this base is turned off
-		--trigger.action.outText("unable to find raunways for <" .. base:getName() .. ">", 30)
+		-- this base is not policed 
+		taxiPolice.suspects[player] = nil 
 		return 
 	end
 	
 	for rwName, aRunway in pairs(myRunways) do 
 		if cfxZones.isPointInsidePoly(p, aRunway) then 
-			--trigger.action.outText("<" .. theUnit:getName() .. "> is on RWY <" .. rwName .. ">", 30)
 			taxiPolice.suspects[player] = nil -- remove watched status
 			return 
 		end		
@@ -184,9 +192,28 @@ end
 ---
 --- UPDATE
 ---
-function taxiPolice.update() -- every second
+
+function taxiPolice.update() -- every second/ups
 	-- schedule next invocation
 	timer.scheduleFunction(taxiPolice.update, {}, timer.getTime() + 1/taxiPolice.ups)
+	
+	--trigger.action.outText("onpatrol flag is " .. taxiPolice.onPatrol .. " with val = " .. trigger.misc.getUserFlag(taxiPolice.onPatrol), 30)
+	-- see if this has been turned on or offDuty
+	if taxiPolice.onPatrol and 
+	   cfxZones.testZoneFlag(taxiPolice, taxiPolice.onPatrol, "change", "lastOnPatrol") then  
+		taxiPolice.active = true
+		local knots = math.floor(taxiPolice.speedLimit * 1.94384)
+		local kmh = math.floor(taxiPolice.speedLimit * 3.6)
+		trigger.action.outText("NOTAM:\ntarmac and taxiway speed limit of " .. knots .. " knots/" .. kmh .. " km/h is enforced on all air fields!", 30)
+	end 
+	
+	if taxiPolice.offDuty and 
+	   cfxZones.testZoneFlag(taxiPolice, taxiPolice.offDuty, "change", "lastOffDuty") then  
+		taxiPolice.active = false
+		trigger.action.outText("NOTAM:\ntarmac and taxiway speed limit rescinded. Taxi responsibly!", 30)
+	end 
+	
+	if not taxiPolice.active then return end 
 	
 	local allAirfields = dcsCommon.getAirbasesWhoseNameContains("*", 0) -- all fixed bases, no FARP nor ships. Pre-collect
 	
@@ -201,6 +228,55 @@ function taxiPolice.update() -- every second
 		end 
 	end
 	
+end
+
+--
+-- ONEVENT
+--
+
+function taxiPolice:onEvent(theEvent)
+	--trigger.action.outText("txP event: <" .. theEvent.id .. ">", 30)
+	if not taxiPolice.greetings then return end -- no warnings 
+	if not taxiPolice.active then return end -- no policing active 
+	
+	local ID = theEvent.id 
+	if not ID then return end 
+	if (ID ~= 15) and (ID ~= 4) then return end -- not birth nor land 
+	local theUnit = theEvent.initiator 
+	if not theUnit then return end 
+	if theUnit:inAir() then return end 
+	
+	-- make sure it's a plane. Helos are ignored 
+	local theGroup = theUnit:getGroup() 
+	local cat = theGroup:getCategory()
+	if cat ~= 0 then return end 
+	
+	if not theUnit.getPlayerName then return end 
+	local pName = theUnit:getPlayerName()
+	if not pName then return end 
+	local base, dist = dcsCommon.getClosestAirbaseTo(theUnit:getPoint(), 0)
+	local bName = base:getName()
+	if dist > taxiPolice.airfieldMaxDist then return end 
+	
+	local UID = theUnit:getID()
+	-- check if this airfield is exempt 
+	local rwys = taxiPolice.runways[bName]
+	local now = timer.getTime()
+	local last = taxiPolice.lastMessageTo[pName] -- remember timestamp
+	if not last then last = 0 end 
+	local tdiff = now - last 
+	-- make sure palyer receives only one such notice within 15 seconds
+	-- but always when now = 0 (mission startup)
+	if (now ~= 0) and (tdiff < 15) then return end -- to soon 
+	taxiPolice.lastMessageTo[pName] = now
+	if not rwys then 
+		trigger.action.outTextForUnit(UID, "Welcome to " .. bName .. ", " .. pName .. "!\nAlthough a general taxiway speed limit is in effect, it does not apply here.", 30)
+		return 
+	end
+	
+	local knots = math.floor(taxiPolice.speedLimit * 1.94384)
+	local kmh = math.floor(taxiPolice.speedLimit * 3.6)
+	trigger.action.outTextForUnit(UID, "Welcome to " .. bName .. ", " .. pName .. "!\nBe advised: a speed limit of " .. knots .. " knots/" .. kmh .. " km/h is enforced on tarmac and taxiways.", 30)
 end
 
 --
@@ -232,6 +308,8 @@ function taxiPolice.readConfigZone()
 			trigger.action.outText("+++txPol: no config zone!", 30)
 		end 
 	end 
+	taxiPolice.name = "taxiPoliceConfig" -- cfxZones compatibility 
+	
 	taxiPolice.verbose = theZone.verbose 
 	
 	taxiPolice.speedLimit = cfxZones.getNumberFromZoneProperty(theZone, "speedLimit", 14) -- 14 -- m/s. 14 m/s = 50 km/h, 10 m/s = 36 kmh 
@@ -240,7 +318,19 @@ function taxiPolice.readConfigZone()
 	taxiPolice.rwyExtend = cfxZones.getNumberFromZoneProperty(theZone, "extend", 500) --500 -- meters in front and at end 
 	taxiPolice.airfieldMaxDist = cfxZones.getNumberFromZoneProperty(theZone, "radius", 3000) -- 3000 -- radius around airfield in which we operate
 	taxiPolice.maxTickets = cfxZones.getNumberFromZoneProperty(theZone, "maxTickets", 3) -- 3
-
+	
+	taxiPolice.active = cfxZones.getBoolFromZoneProperty(theZone, "active", true)
+	taxiPolice.greetings = cfxZones.getBoolFromZoneProperty(theZone, "greetings", true)
+	
+	if cfxZones.hasProperty(theZone, "onPatrol") then 
+		taxiPolice.onPatrol = cfxZones.getStringFromZoneProperty(theZone, "onPatrol", "<none>")
+		taxiPolice.lastOnPatrol = cfxZones.getFlagValue(taxiPolice.onPatrol, taxiPolice)
+	end
+	
+	if cfxZones.hasProperty(theZone, "offDuty") then 
+		taxiPolice.offDuty = cfxZones.getStringFromZoneProperty(theZone, "offDuty", "<none>")
+		taxiPolice.lastOffDuty = cfxZones.getFlagValue(taxiPolice.offDuty, taxiPolice)
+	end
 end
 
 function taxiPolice.start()
@@ -265,6 +355,9 @@ function taxiPolice.start()
 	-- start update 
 	taxiPolice.update()
 	
+	-- install envent handler to greet pilots on airfields 
+	world.addEventHandler(taxiPolice)
+	
 	-- say hi!
 	trigger.action.outText("cfx taxiPolice v" .. taxiPolice.version .. " started.", 30)
 	return true 
@@ -276,5 +369,10 @@ if not taxiPolice.start() then
 	taxiPolice = nil 
 end
 
-
+--[[--
+	Possible improvements
+	- other sanctions on violations like kick, ban etc 
+	- call nearest airfield for open rwys (needs 'commandForUnit' first
+	- ability to persist offenders
+--]]--
 
