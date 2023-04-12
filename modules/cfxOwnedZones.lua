@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.2.4"
+cfxOwnedZones.version = "1.3.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -49,8 +49,19 @@ cfxOwnedZones.name = "cfxOwnedZones"
 1.2.2 - redCap! and blueCap!
 1.2.3 - fix for persistence bug when not using conquered flag 
 1.2.4 - pause? and activate? inputs 
+1.3.0 - new update method
+	  - new fastEval option in config 
+	  - new numCap option in config 
+	  - new numKeep option in config 
+	  - new easyContest option in config
+	  - new logic to keep and lose zones. controlled with numKeep and numCap.
+	  - winSound
+	  - loseSound 
+	  - redLost! zone output 
+	  - blueLost! zone output 
+	  - ownedBy direct zone output 
+	  - neutral! zone output 
 
-	  
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -91,7 +102,7 @@ cfxOwnedZones.conqueredCallbacks = {}
 -- zone attributes when owned
 --  owner: coalition that owns the zone
 --  status: FSM for spawning
---  defendersRED/BLUE - coma separated type string for the group to spawm on defense cycle completion
+--  defendersRED/BLUE - coma separated type string for the group to spawn on defense cycle completion
 --  attackersRED/BLUE - as above for attack cycle. 
 --  timeStamp - time when zone switched into current state 
 --  spawnRadius - overrides zone's radius when placing defenders. can be use to place defenders inside or outside zone itself
@@ -232,8 +243,24 @@ function cfxOwnedZones.addOwnedZone(aZone)
 		aZone.redCap = cfxZones.getStringFromZoneProperty(aZone, "redCap!", "none")
 	end
 	
+	if cfxZones.hasProperty(aZone, "redLost!") then 
+		aZone.redLost = cfxZones.getStringFromZoneProperty(aZone, "redLost!", "none")
+	end
+	
 	if cfxZones.hasProperty(aZone, "blueCap!") then 
 		aZone.blueCap = cfxZones.getStringFromZoneProperty(aZone, "blueCap!", "none")
+	end
+	
+	if cfxZones.hasProperty(aZone, "blueLost!") then 
+		aZone.blueLost = cfxZones.getStringFromZoneProperty(aZone, "blueLost!", "none")
+	end
+	
+	if cfxZones.hasProperty(aZone, "neutral!") then 
+		aZone.neutralCap = cfxZones.getStringFromZoneProperty(aZone, "neutral!", "none")
+	end
+	
+	if cfxZones.hasProperty(aZone, "ownedBy") then 
+		aZone.ownedBy = cfxZones.getStringFromZoneProperty(aZone, "ownedBy", "none")
 	end
 	
 	-- pause? and activate?
@@ -534,17 +561,25 @@ end
 
 function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral 1 = RED 2 = BLUE 
 	local who = "REDFORCE"
-	if theSide == 2 then who = "BLUEFORCE" end
+	if theSide == 2 then who = "BLUEFORCE" 
+	elseif theSide == 0 then who = "NEUTRAL" end
+	
 	if cfxOwnedZones.announcer then 
-		trigger.action.outText(who .. " have secured zone " .. aZone.name, 30)
-		aZone.owner = theSide
+		if theSide == 0 then 
+			trigger.action.outText(aZone.name .. " has become NEUTRAL", 30)
+		else 
+			trigger.action.outText(who .. " have secured zone " .. aZone.name, 30)
+		end
+		aZone.owner = theSide -- just to be sure 
 		-- play different sounds depending on who's won
 		if theSide == 1 then 
-			trigger.action.outSoundForCoalition(1, "Quest Snare 3.wav")
-			trigger.action.outSoundForCoalition(2, "Death BRASS.wav")
+			trigger.action.outSoundForCoalition(1, cfxOwnedZones.winSound)
+			trigger.action.outSoundForCoalition(2, cfxOwnedZones.loseSound)
+		elseif theSide == 2 then  
+			trigger.action.outSoundForCoalition(2, cfxOwnedZones.winSound)
+			trigger.action.outSoundForCoalition(1, cfxOwnedZones.loseSound)
 		else 
-			trigger.action.outSoundForCoalition(2, "Quest Snare 3.wav")
-			trigger.action.outSoundForCoalition(1, "Death BRASS.wav")
+			-- no sound played, new owner is neutral 
 		end
 	end 
 
@@ -556,8 +591,20 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 		cfxZones.pollFlag(aZone.redCap, "inc", aZone)
 	end
 	
+	if formerOwner == 1 and aZone.redLost then 
+		cfxZones.pollFlag(aZone.redLost, "inc", aZone)
+	end
+	
 	if theSide == 2 and aZone.blueCap then 
 		cfxZones.pollFlag(aZone.blueCap, "inc", aZone)
+	end
+	
+	if formerOwner == 2 and aZone.blueLost then 
+		cfxZones.pollFlag(aZone.blueLost, "inc", aZone)
+	end
+	
+	if theSide == 0 and aZone.neutralCap then 
+		cfxZones.pollFlag(aZone.neutralCap, "inc", aZone)
 	end
 	
 	-- invoke callbacks now
@@ -852,7 +899,150 @@ function cfxOwnedZones.GC()
 end
 
 function cfxOwnedZones.update()
+	-- to speed this up we might only want to check the first unit 
+	-- in group, and if inside, count the entire group as inside 
+	-- new. unit counting update 
 	cfxOwnedZones.updateSchedule = timer.scheduleFunction(cfxOwnedZones.update, {}, timer.getTime() + 1/cfxOwnedZones.ups)
+	-- iterate all groups and their units to count how many 
+	-- units are in each zone 
+	for idz, theZone in pairs(cfxOwnedZones.zones) do 
+		theZone.numRed = 0
+		theZone.numBlue = 0 
+		-- count red units
+		local allRed = coalition.getGroups(1, Group.Category.GROUND)
+		for idx, aGroup in pairs(allRed) do 
+			if Group.isExist(aGroup) then 
+				if cfxOwnedZones.fastEval then 
+					-- we only check first unit that is alive
+					local theUnit = dcsCommon.getGroupUnit(aGroup)
+					if theUnit and cfxZones.unitInZone(theUnit, theZone) then
+						theZone.numRed = theZone.numRed + aGroup:getSize()
+					end
+				else 
+					local allUnits = aGroup:getUnits() 
+					for idy, theUnit in pairs(allUnits) do 
+						if cfxZones.unitInZone(theUnit, theZone) then 
+							theZone.numRed = theZone.numRed + 1
+						end
+					end
+				end
+			end
+		end
+		-- count blue units 
+		local allBlue = coalition.getGroups(2, Group.Category.GROUND)
+		for idx, aGroup in pairs(allBlue) do 
+			if Group.isExist(aGroup) then 
+				if cfxOwnedZones.fastEval then 
+					-- we only check first unit that is alive
+					local theUnit = dcsCommon.getGroupUnit(aGroup)
+					if theUnit and cfxZones.unitInZone(theUnit, theZone) then
+						theZone.numBlue = theZone.numBlue + aGroup:getSize()
+					end
+				else 
+					local allUnits = aGroup:getUnits() 
+					for idy, theUnit in pairs(allUnits) do 
+						if cfxZones.unitInZone(theUnit, theZone) then
+							theZone.numBlue = theZone.numBlue + 1
+						end
+					end
+				end
+			end
+		end
+		-- trigger.action.outText(theZone.name .. " blue: " .. theZone.numBlue .. " red " .. theZone.numRed, 30)
+		local lastOwner = theZone.owner
+		local newOwner = 0 -- neutral is default 
+		-- determine new owner 
+		-- step one: no troops here. Become neutral?
+		if theZone.numRed < 1 and theZone.numBlue < 1 then 
+			if cfxOwnedZones.numKeep < 1 then 
+				newOwner = lastOwner -- keep it, else turns neutral
+			else 
+				-- noone here, zone becomes neutral
+				newOwner = 0 -- not strictly required. to be explicit 
+			end
+		elseif theZone.numRed < 1 then 
+			-- only blue here. enough to keep? 
+			if theZone.numBlue >= cfxOwnedZones.numCap then 
+				newOwner = 2 -- blue owns it
+			elseif lastOwner == 2 and theZone.numBlue >= cfxOwnedZones.numKeep then 
+				-- enough to keep if owned before
+				newOwner = 2
+			else 
+				newOwner = 0 -- just to make it explicit
+			end 
+		elseif theZone.numBlue < 1 then 
+			-- only red here. enough to keep?
+			if theZone.numRed >= cfxOwnedZones.numCap then 
+				newOwner = 1 
+			elseif lastOwner == 1 and theZone.numRed >= cfxOwnedZones.numKeep then 
+				newOwner = 1 
+			else 
+				newOwner = 0 
+			end 				
+		else 
+			-- blue and red units here.
+			-- owner keeps hanging on only they have enough 
+			-- units left
+			if cfxOwnedZones.easyContest then 
+				-- this zone is immediately contested
+				newOwner = 0 -- just to be explicit 
+			elseif cfxOwnedZones.numKeep < 1 then 
+				-- old owner keeps it until none left 
+				newOwner = lastOwner
+			else
+				if lastOwner == 1 then 
+					-- red can keep it as long as enough units here 
+					if theZone.numRed >= cfxOwnedZones.numKeep then 
+						newOwner = 1
+					end -- else 0
+				elseif lastOwner == 2 then
+					-- blue can keep it if enough units here
+					if theZone.numBlue >= cfxOwnedZones.numKeep then 
+						newOwner = 2
+					end -- else 0 
+				else -- stay 0 
+				end
+			end
+		end
+	
+		-- now see if owner changed, and react accordingly 
+		if newOwner == lastOwner then 
+			-- nothing happened, do nothing 
+		else 
+			trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
+			if newOwner == 0 then -- zone turned neutral 
+				cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			else
+				cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			end
+		end
+		theZone.owner = newOwner
+		
+		-- production & flags 
+		-- see if pause/unpause was issued
+		-- note that capping a zone will not change pause status
+		if theZone.pauseFlag and cfxZones.testZoneFlag(theZone, theZone.pauseFlag, theZone.ownedTriggerMethod, "lastPauseValue") then
+			theZone.paused = true 
+		end
+		
+		if theZone.activateFlag and cfxZones.testZoneFlag(theZone, theZone.activateFlag, theZone.ownedTriggerMethod, "lastActivateValue") then
+			theZone.paused = false 
+		end
+		
+		-- update ownership flag if exists
+		if theZone.ownedBy then 
+			cfxZones.setFlagValue(theZone.ownedBy, theZone.owner, theZone)
+		end
+		
+		-- now, perhaps with their new owner call updateZone()
+		-- to calcualte production for this zone 
+		cfxOwnedZones.updateZone(theZone)
+	end -- iterating all zones 
+end
+
+
+function cfxOwnedZones.updateOLD()
+	cfxOwnedZones.updateSchedule = timer.scheduleFunction(cfxOwnedZones.updateOLD, {}, timer.getTime() + 1/cfxOwnedZones.ups)
 	
 	-- iterate all zones, and determine their current ownership status 
 	for key, aZone in pairs(cfxOwnedZones.zones) do 
@@ -1065,6 +1255,14 @@ function cfxOwnedZones.readConfigZone(theZone)
 	cfxOwnedZones.attackingTime = cfxZones.getNumberFromZoneProperty(theZone, "attackingTime", 300)
 	cfxOwnedZones.shockTime = cfxZones.getNumberFromZoneProperty(theZone, "shockTime", 200)
 	cfxOwnedZones.repairTime = cfxZones.getNumberFromZoneProperty(theZone, "repairTime", 200)
+	-- numKeep, numCap, fastEval, easyContest
+	cfxOwnedZones.numCap = cfxZones.getNumberFromZoneProperty(theZone, "numCap", 1) -- minimal number of units required to cap zone 
+	cfxOwnedZones.numKeep = cfxZones.getNumberFromZoneProperty(theZone, "numKeep", 0) -- number required to keep zone 
+	cfxOwnedZones.fastEval = cfxZones.getBoolFromZoneProperty(theZone, "fastEval", true)
+	cfxOwnedZones.easyContest = cfxZones.getBoolFromZoneProperty(theZone, "easyContest", false)
+	-- winSound, loseSound 
+	cfxOwnedZones.winSound = cfxZones.getStringFromZoneProperty(theZone, "winSound", "Quest Snare 3.wav" )
+	cfxOwnedZones.loseSound = cfxZones.getStringFromZoneProperty(theZone, "loseSound", "Death BRASS.wav")
 end
 
 function cfxOwnedZones.init()

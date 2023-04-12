@@ -1,5 +1,5 @@
 countDown = {}
-countDown.version = "1.3.0"
+countDown.version = "1.3.1"
 countDown.verbose = false 
 countDown.ups = 1 
 countDown.requiredLibs = {
@@ -9,7 +9,7 @@ countDown.requiredLibs = {
 
 --[[--
 	count down on flags to generate new signal on out 
-	Copyright (c) 2022 by Christian Franz and cf/x AG
+	Copyright (c) 2022, 2023 by Christian Franz and cf/x AG
 	
 	Version History
 	1.0.0 - initial version 
@@ -23,8 +23,11 @@ countDown.requiredLibs = {
 	1.2.1 - disableCounter?
 	1.3.0 - DML & Watchflags upgrade 
 		  - method --> ctdwnMethod
-	
-	
+	1.3.1 - clock? synonym
+		  - new reset? input 
+		  - improved verbosity 
+		  - zone-local verbosity 
+		  
 --]]--
 
 countDown.counters = {}
@@ -47,7 +50,6 @@ function countDown.getCountDownZoneByName(aName)
 	
 	return nil 
 end
-
 
 --
 -- callbacks 
@@ -81,7 +83,6 @@ function countDown.createCountDownWithZone(theZone)
 		trigger.action.outText("+++cntD: initing count down <" .. theZone.name .. "> with " .. theZone.currVal, 30)
 	end
 	
-	
 	-- loop 
 	theZone.loop = cfxZones.getBoolFromZoneProperty(theZone, "loop", false)
 
@@ -94,7 +95,7 @@ function countDown.createCountDownWithZone(theZone)
 		theZone.ctdwnMethod = cfxZones.getStringFromZoneProperty(theZone, "ctdwnMethod", "flip")
 	end
 	
-	-- triggerMethod
+	-- triggerMethod for inputs
 	theZone.ctdwnTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 
 	if cfxZones.hasProperty(theZone, "ctdwnTriggerMethod") then 
@@ -104,16 +105,21 @@ function countDown.createCountDownWithZone(theZone)
 	-- trigger flag "count" / "start?"
 	if cfxZones.hasProperty(theZone, "count?") then 
 		theZone.triggerCountFlag = cfxZones.getStringFromZoneProperty(theZone, "count?", "<none>")
-	end
-
-	
+	elseif cfxZones.hasProperty(theZone, "clock?") then 
+		theZone.triggerCountFlag = cfxZones.getStringFromZoneProperty(theZone, "clock?", "<none>")
 	-- can also use in? for counting. we always use triggerCountFlag 
-	if cfxZones.hasProperty(theZone, "in?") then 
+	elseif cfxZones.hasProperty(theZone, "in?") then 
 		theZone.triggerCountFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "<none>")
 	end
 	
 	if theZone.triggerCountFlag then 
-		theZone.lastCountTriggerValue = cfxZones.getFlagValue(theZone.triggerCountFlag, theZone) -- trigger.misc.getUserFlag(theZone.triggerCountFlag) -- save last value
+		theZone.lastCountTriggerValue = cfxZones.getFlagValue(theZone.triggerCountFlag, theZone) 
+	end
+	
+	-- reset 
+	if cfxZones.hasProperty(theZone, "reset?") then 
+		theZone.resetFlag = cfxZones.getStringFromZoneProperty(theZone, "reset?", "<none>")
+		theZone.resetFlagValue = cfxZones.getFlagValue(theZone.resetFlag, theZone)
 	end
 	
 	-- zero! bang 
@@ -146,10 +152,25 @@ end
 --
 -- Update 
 --
+function countDown.reset(theZone)
+	local val = dcsCommon.randomBetween(theZone.startMinVal, theZone.startMaxVal)
+	if countDown.verbose or theZone.verbose then 
+		trigger.action.outText("+++cntD: resetting <" .. theZone.name .. "> to (" .. val .. ")", 30)
+	end
+	
+	theZone.currVal = val 
+	if theZone.counterOut then 
+		cfxZones.setFlagValue(theZone.counterOut, val, theZone)
+	end
+	-- read and ignore any pulling of the clock flag 
+	local ignore = cfxZones.testZoneFlag(theZone, theZone.triggerCountFlag, theZone.ctdwnTriggerMethod, "lastCountTriggerValue")
+	-- simply updates lastTriggerValue to current clock value 
+end
+
 function countDown.isTriggered(theZone)
 	-- this module has triggered 
 	local val = theZone.currVal - 1 -- decrease counter 
-	if countDown.verbose then 
+	if countDown.verbose or theZone.verbose then 
 		trigger.action.outText("+++cntD: enter triggered: val now: " .. val, 30)
 	end
 	local tMinus = false 
@@ -165,8 +186,8 @@ function countDown.isTriggered(theZone)
 		tMinus = true 
 		-- see if we need to bang Tminus 
 		if theZone.tMinusFlag then 
-			if countDown.verbose then 
-				trigger.action.outText("+++cntD: TMINUTS", 30)
+			if countDown.verbose or theZone.verbose then 
+				trigger.action.outText("+++cntD: <" .. theZone.name .. "> TMINUTS on flag <" .. theZone.tMinusFlag .. ">", 30)
 			end
 			cfxZones.pollFlag(theZone.tMinusFlag, theZone.ctdwnMethod, theZone)
 		end
@@ -175,8 +196,8 @@ function countDown.isTriggered(theZone)
 		-- reached zero 
 		zero = true 
 		if theZone.zeroFlag then 
-			if countDown.verbose then 
-				trigger.action.outText("+++cntD: ZERO", 30)
+			if countDown.verbose or theZone.verbose then 
+				trigger.action.outText("+++cntD: ZERO <" .. theZone.name .. "> on flag <" .. theZone.zeroFlag .. ">", 30)
 			end
 			cfxZones.pollFlag(theZone.zeroFlag, theZone.ctdwnMethod, theZone)
 		end
@@ -184,17 +205,17 @@ function countDown.isTriggered(theZone)
 		if theZone.loop then 
 			-- restart time
 			looping = true 
-			if countDown.verbose then 
-				trigger.action.outText("+++cntD: Looping", 30)
-			end
 			val = dcsCommon.randomBetween(theZone.startMinVal, theZone.startMaxVal)
+			if countDown.verbose or theZone.verbose then 
+				trigger.action.outText("+++cntD: Looping <" .. theZone.name .. ">, start val is (" .. val .. ")", 30)
+			end
 		end 
 		
 	else 
 		-- below zero
 		belowZero = true 
 		if theZone.belowZero and theZone.zeroFlag then
-			if countDown.verbose then 
+			if countDown.verbose or theZone.verbose then 
 				trigger.action.outText("+++cntD: Below Zero", 30)
 			end
 			cfxZones.pollFlag(theZone.zeroFlag, theZone.ctdwnMethod, theZone)
@@ -207,7 +228,6 @@ function countDown.isTriggered(theZone)
 	
 	-- update & return 
 	theZone.currVal = val 
-	
 end
 
 function countDown.update()
@@ -215,8 +235,17 @@ function countDown.update()
 	timer.scheduleFunction(countDown.update, {}, timer.getTime() + 1/countDown.ups)
 		
 	for idx, aZone in pairs(countDown.counters) do
+		if aZone.resetFlag then 
+			if cfxZones.testZoneFlag(aZone, aZone.resetFlag, aZone.ctdwnTriggerMethod, "resetFlagValue") then 
+				-- reset pulled, reset the timer to start condition
+				countDown.reset(aZone)
+			end
+		end
+		
 		-- make sure to re-start before reading time limit
-		if (not aZone.counterDisabled) and cfxZones.testZoneFlag(aZone, aZone.triggerCountFlag, aZone.ctdwnTriggerMethod, "lastCountTriggerValue") 
+		-- if reset, lastTriggerValue is updated and will not trigger
+		if (not aZone.counterDisabled) and 
+		   cfxZones.testZoneFlag(aZone, aZone.triggerCountFlag, aZone.ctdwnTriggerMethod, "lastCountTriggerValue") 
 		then
 			if countDown.verbose then 
 				trigger.action.outText("+++cntD: triggered on in?", 30)
@@ -224,20 +253,6 @@ function countDown.update()
 			countDown.isTriggered(aZone)
 		end
 		
-		-- old colde 
-		--[[--
-		if aZone.triggerCountFlag and not aZone.counterDisabled then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerCountFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerCountFlag)
-			if currTriggerVal ~= aZone.lastCountTriggerValue
-			then 
-				if countDown.verbose then 
-					trigger.action.outText("+++cntD: triggered on in?", 30)
-				end
-				countDown.isTriggered(aZone)
-				aZone.lastCountTriggerValue = cfxZones.getFlagValue(aZone.triggerCountFlag, aZone) -- trigger.misc.getUserFlag(aZone.triggerCountFlag) -- save last value
-			end
-		end
-		--]]--
 		if cfxZones.testZoneFlag(aZone, aZone.disableCounterFlag, aZone.ctdwnTriggerMethod, "disableCounterFlagVal") then
 			if countDown.verbose then 
 				trigger.action.outText("+++cntD: disabling counter " .. aZone.name, 30)
@@ -245,18 +260,6 @@ function countDown.update()
 			aZone.counterDisabled = true 
 		end
 		
-		-- old code
-		--[[--
-		if aZone.disableCounterFlag then 
-			local currVal = cfxZones.getFlagValue(aZone.disableCounterFlag, aZone)
-			if currVal ~= aZone.disableCounterFlagVal then 
-				if countDown.verbose then 
-					trigger.action.outText("+++cntD: disabling counter " .. aZone.name, 30)
-				end
-				aZone.counterDisabled = true 
-			end
-		end
-		--]]--
 	end
 end
 
@@ -273,8 +276,6 @@ function countDown.readConfigZone()
 	end 
 	
 	countDown.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 1)
-	-- slowest is once avery 1000 seconds = 17 minutes, doesn't make much sense slower than 1/second anyway 
-	
 	if countDown.ups < 0.001 then countDown.ups = 0.001 end 
 	
 	countDown.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
@@ -303,7 +304,6 @@ function countDown.start()
 		countDown.createCountDownWithZone(aZone) -- process attributes
 		countDown.addCountDown(aZone) -- add to list
 	end
-	
 	
 	-- start update 
 	countDown.update()

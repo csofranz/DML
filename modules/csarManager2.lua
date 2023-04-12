@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.2.4"
+csarManager.version = "2.2.5"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -62,6 +62,7 @@ csarManager.ups = 1
 		 - deprecated coalition attribute 
  - 2.2.4 - CSAR attribute value defaults name 
 		 - start? attribute for CSAR as startCSAR? synonym
+ - 2.2.5 - manual freq for CSAR was off by a factor of 10 - Corrected
 
 	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
 		 
@@ -758,10 +759,10 @@ function csarManager.doListCSARRequests(args)
 			local b = dcsCommon.bearingInDegreesFromAtoB(point, mission.zone.point)
 			local status = "alive"
 			if csarManager.vectoring then 
-				report = report .. "\n".. mission.name .. ", bearing " .. b .. ", " ..d .."nm, " .. " ADF " .. mission.freq .. "0 kHz - " .. status
+				report = report .. "\n".. mission.name .. ", bearing " .. b .. ", " ..d .."nm, " .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
 			else 
 				-- leave out vectoring 
-				report = report .. "\n".. mission.name .. " ADF " .. mission.freq .. "0 kHz - " .. status
+				report = report .. "\n".. mission.name .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
 			end
 		end
 	end
@@ -1291,7 +1292,10 @@ function csarManager.readCSARZone(theZone)
 	end
 	
 	theZone.csarFreq = cfxZones.getNumberFromZoneProperty(theZone, "freq", 0)
-	if theZone.csarFreq == 0 then theZone.csarFreq = nil end 
+	-- since freqs are set in 10kHz multiplier by DML
+	-- we have to divide the feq given here by 10 
+	theZone.csarFreq = theZone.csarFreq / 10
+	if theZone.csarFreq < 0.01 then theZone.csarFreq = nil end 
 	theZone.numCrew = 1 
 	theZone.csarMapMarker = nil 
 	theZone.timeLimit = cfxZones.getNumberFromZoneProperty(theZone, "timeLimit", 0)

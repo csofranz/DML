@@ -39,7 +39,7 @@ cfxPlayerScore.requiredLibs = {
 	"cfxZones", -- zones for config 
 }
 cfxPlayerScore.playerScore = {} -- init to empty
-
+cfxPlayerScore.deferred = false -- on deferred, we only award after landing, and erase on any form of re-slot
 -- typeScore: dictionary sorted by typeString for score 
 -- extend to add more types. It is used by unitType2score to 
 -- determine the base unit score  
@@ -153,8 +153,10 @@ function cfxPlayerScore.getPlayerScore(playerName)
 		thePlayerScore.name = playerName
 		thePlayerScore.score = 0 -- score
 		thePlayerScore.killTypes = {} -- the type strings killed, dict <typename> <numkilla>
+		thePlayerScore.killQueue = {} -- when using deferred
 		thePlayerScore.totalKills = 0 -- number of kills total 
 		thePlayerScore.featTypes = {} -- dict <featname> <number> of other things player did 
+		thePlayerScore.featQueue = {} -- when using deferred 
 		thePlayerScore.totalFeats = 0		
 	end
 	return thePlayerScore

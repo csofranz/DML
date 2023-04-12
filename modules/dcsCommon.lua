@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.4"
+dcsCommon.version = "2.8.5"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -144,6 +144,7 @@ dcsCommon.version = "2.8.4"
 	   - new rotatePointAroundPointDeg()
 	   - new rotatePointAroundPointRad()
 	   - getClosestAirbaseTo() now supports passing list of air bases
+ 2.8.5 - better guard in getGroupUnit()
 	   
  
 --]]--
@@ -999,7 +1000,7 @@ dcsCommon.version = "2.8.4"
 
 		-- iterate through all members of group until one is alive and exists
 		for index, theUnit in pairs(allUnits) do 
-			if (theUnit:isExist() and theUnit:getLife() > 0) then 
+			if Unit.isExist(theUnit) and theUnit:getLife() > 0 then 
 				return theUnit
 			end;
 		end

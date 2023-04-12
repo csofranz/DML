@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "1.3.2"
+pulseFlags.version = "1.3.3"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -38,6 +38,7 @@ pulseFlags.requiredLibs = {
 	- 1.3.0 persistence
 	- 1.3.1 typos corrected
 	- 1.3.2 removed last pulse's timeID upon entry in doPulse
+	- 1.3.3 removed 'pulsing' when pausing, so we can restart
 	
 --]]--
 
@@ -275,6 +276,7 @@ function pulseFlags.update()
 				trigger.action.outText("+++pulF: pausing <" .. aZone.name .. ">", 30)
 			end 
 			aZone.pulsePaused = true  -- prevents new start 
+			aZone.pulsing = false -- we are stopped 
 			if aZone.timerID then 
 				 timer.removeFunction(aZone.timerID)
 				 aZone.timerID = nil 

@@ -1,5 +1,5 @@
 cfxNDB = {}
-cfxNDB.version = "1.2.0"
+cfxNDB.version = "1.2.1"
 
 --[[--
 	cfxNDB:
@@ -22,6 +22,10 @@ cfxNDB.version = "1.2.0"
 		  - startNDB() can accept string 
 		  - stopNDB() can accept string
 	1.2.0 - DML full integration 
+	1.2.1 - height correction for NDB on creation 
+	      - update only when moving and delta > maxDelta 
+		  - zone-local verbosity support
+		  - better config defaulting 
 		  
 --]]--
 
@@ -47,7 +51,7 @@ function cfxNDB.startNDB(theNDB)
 	
 	if not theNDB.freq then 
 		-- this zone is not an NDB. Exit 
-		if cfxNDB.verbose then 
+		if cfxNDB.verbose or theNDB.verbose then 
 			trigger.action.outText("+++ndb: start() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
 		end
 		return 
@@ -60,10 +64,12 @@ function cfxNDB.startNDB(theNDB)
 	local modulation = 0
 	if theNDB.fm then modulation = 1 end 
 	
-	local loc = cfxZones.getPoint(theNDB)
+	local loc = cfxZones.getPoint(theNDB) -- y === 0
+	loc.y = land.getHeight({x = loc.x, y = loc.z}) -- get y from land 
 	trigger.action.radioTransmission(fileName, loc, modulation, true, theNDB.freq, theNDB.power, theNDB.ndbID)
+	theNDB.lastLoc = loc -- save for delta comparison
 	
-	if cfxNDB.verbose then 
+	if cfxNDB.verbose or theNDB.verbose then 
 		local dsc = ""
 		if theNDB.linkedUnit then 
 			dsc = " (linked to ".. theNDB.linkedUnit:getName() .. "!, r=" .. theNDB.ndbRefresh .. ") "
@@ -72,7 +78,7 @@ function cfxNDB.startNDB(theNDB)
 	end
 	theNDB.paused = false 
 	
-	if cfxNDB.verbose then 
+	if cfxNDB.verbose or theNDB.verbose then 
 		trigger.action.outText("+++ndb: " .. theNDB.name .. " started", 30) 
 	end
 end
@@ -84,7 +90,7 @@ function cfxNDB.stopNDB(theNDB)
 	
 	if not theNDB.freq then 
 		-- this zone is not an NDB. Exit 
-		if cfxNDB.verbose then 
+		if cfxNDB.verbose or theNDB.verbose then 
 			trigger.action.outText("+++ndb: stop() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
 		end
 		return 
@@ -92,7 +98,7 @@ function cfxNDB.stopNDB(theNDB)
 	
 	trigger.action.stopRadioTransmission(theNDB.ndbID)
 	theNDB.paused = true 
-	if cfxNDB.verbose then 
+	if cfxNDB.verbose or theNDB.verbose then 
 		trigger.action.outText("+++ndb: " .. theNDB.name .. " stopped", 30) 
 	end
 end
@@ -159,8 +165,19 @@ function cfxNDB.update()
 			-- yupp, need to update
 			if (not theNDB.paused) and 
 			(now > theNDB.ndbRefreshTime) then 
-				cfxNDB.stopNDB(theNDB) -- also pauses
-				cfxNDB.startNDB(theNDB) -- turns off pause 
+				-- optimization: check that it moved far enough 
+				-- to merit update.
+				if not theNDB.lastLoc then 
+					cfxNDB.startNDB(theNDB) -- never was started 
+				else 
+					local loc = cfxZones.getPoint(theNDB) -- y === 0
+					loc.y = land.getHeight({x = loc.x, y = loc.z}) -- get y from land
+					local delta = dcsCommon.dist(loc, theNDB.lastLoc)
+					if delta > cfxNDB.maxDist then 
+						cfxNDB.stopNDB(theNDB) 
+						cfxNDB.startNDB(theNDB) 
+					end
+				end
 			end
 		end
 		
@@ -185,14 +202,13 @@ end
 function cfxNDB.readConfig()
 	local theZone = cfxZones.getZoneByName("ndbConfig") 
 	if not theZone then 
-		if cfxNDB.verbose then 
-			trigger.action.outText("***ndb: NO config zone!", 30) 
-		end
-		return 
+		theZone = cfxZones.createSimpleZone("ndbConfig")
 	end 
 	
 	cfxNDB.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 	
 	cfxNDB.ndbRefresh = cfxZones.getNumberFromZoneProperty(theZone, "ndbRefresh", 10)
+	
+	cfxNDB.maxDist = cfxZones.getNumberFromZoneProperty(theZone, "maxDist", 50) -- max 50m error for movement
 	
 	if cfxNDB.verbose then 
 		trigger.action.outText("***ndb: read config", 30) 
@@ -218,6 +234,7 @@ function cfxNDB.start()
 	-- start update 
 	cfxNDB.update()
 	
+	trigger.action.outText("cf/x NDB version " .. cfxNDB.version .. " started", 30)
 	return true 
 end
 

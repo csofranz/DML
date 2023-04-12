@@ -124,7 +124,7 @@ cfxZones.version = "3.0.6"
 - 3.0.5   - getPositiveRangeFromZoneProperty() now also supports upper bound (optional)
 - 3.0.6   - new createSimplePolyZone()
 		  - new createSimpleQuadZone()
-
+- 3.0.7   - getPoint() can also get land y when passing true as second param
 --]]--
 cfxZones.verbose = false
 cfxZones.caseSensitiveProperties = false -- set to true to make property names case sensitive 
@@ -2540,7 +2540,9 @@ function cfxZones.getLinkedUnit(theZone)
 	return theZone.linkedUnit 
 end
 
-function cfxZones.getPoint(aZone) -- always works, even linked, returned point can be reused 
+function cfxZones.getPoint(aZone, getHeight) -- always works, even linked, returned point can be reused
+-- returned y (when using getHeight) is that of the land, else 0 
+	if not getHeight then getHeight = false end 
 	if aZone.linkedUnit then 
 		local theUnit = aZone.linkedUnit
 		-- has a link. is link existing?
@@ -2557,9 +2559,13 @@ function cfxZones.getPoint(aZone) -- always works, even linked, returned point c
 	end
 	local thePos = {}
 	thePos.x = aZone.point.x
-	thePos.y = 0 -- aZone.y 
 	thePos.z = aZone.point.z
-
+	if not getHeight then 
+		thePos.y = 0 -- aZone.y 
+	else 
+		thePos.y = land.getHeight({x = thePos.x, y = thePos.z})
+	end
+	
 	return thePos 
 end
 
