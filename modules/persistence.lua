@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.6"
+persistence.version = "1.0.7"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -26,7 +26,8 @@ persistence.requiredLibs = {
 		    new 'saveNotification" can be off 
 	1.0.4 - new optional 'root' property 
 	1.0.5 - desanitize check on readConfig to early-abort
-	1.0.6 - removed potential verbosity bug 
+	1.0.6 - removed potential verbosity bug
+    1.0.7 - correct abort for sanitized DCS, when non-verbose	
 		  
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
@@ -513,24 +514,24 @@ function persistence.start()
 	if not dcsCommon.libCheck("persistence", persistence.requiredLibs) then
 		return false 
 	end
-	
+		
 	-- read config 
 	persistence.saveFileName = dcsCommon.getMissionName() .. " Data.txt"
 	persistence.readConfigZone()
 	
 	-- let's see it lfs and io are online 
 	persistence.active = false 
-	if not _G["lfs"] then 
+	if (not _G["lfs"]) or (not lfs) then 
 		if persistence.verbose then 
 			trigger.action.outText("+++persistence requires 'lfs'", 30)
-			return false
 		end
+		return false
 	end
 	if not _G["io"] then 
 		if persistence.verbose then 
 			trigger.action.outText("+++persistence requires 'io'", 30)
-			return false
 		end
+		return false
 	end
 	
 --	local mainDir = lfs.writedir() .. persistence.serverDir

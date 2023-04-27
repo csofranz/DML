@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.6"
+cfxZones.version = "3.0.8"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -125,6 +125,8 @@ cfxZones.version = "3.0.6"
 - 3.0.6   - new createSimplePolyZone()
 		  - new createSimpleQuadZone()
 - 3.0.7   - getPoint() can also get land y when passing true as second param
+- 3.0.8   - new cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
+
 --]]--
 cfxZones.verbose = false
 cfxZones.caseSensitiveProperties = false -- set to true to make property names case sensitive 
@@ -1139,6 +1141,15 @@ end
 function cfxZones.markZoneWithSmokePolarRandom(theZone, radius, smokeColor)
 	local degrees = math.random(360)
 	cfxZones.markZoneWithSmokePolar(theZone, radius, degrees, smokeColor)
+end
+
+function cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
+	if not zoneArray then zoneArray = cfxZones.zones end 
+	for idx, theZone in pairs(zoneArray) do 
+		local isIn, percent, dist = cfxZones.pointInZone(thePoint, theZone, useOrig)
+		if isIn then return isIn, percent, dist, theZone end 
+	end
+	return false, 0, 0, nil 
 end
 
 

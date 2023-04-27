@@ -145,7 +145,9 @@ dcsCommon.version = "2.8.5"
 	   - new rotatePointAroundPointRad()
 	   - getClosestAirbaseTo() now supports passing list of air bases
  2.8.5 - better guard in getGroupUnit()
-	   
+ 2.8.6 - phonetic helpers 
+		 new spellString()
+ 
  
 --]]--
 
@@ -3221,7 +3223,7 @@ function dcsCommon.LSR(a, num)
 end
 
 --
--- string windcards 
+-- string wildcards 
 --
 function dcsCommon.processStringWildcards(inMsg)
 	-- Replace STATIC bits of message like CR and zone name 
@@ -3236,6 +3238,82 @@ function dcsCommon.processStringWildcards(inMsg)
 	return outMsg 
 end
 
+--
+-- phonetic alphabet 
+--
+dcsCommon.alphabet = {
+    a = "alpha",
+    b = "bravo",
+    c = "charlie",
+    d = "delta",
+    e = "echo",
+    f = "foxtrot",
+    g = "golf",
+    h = "hotel",
+    i = "india",
+    j = "juliet",
+    k = "kilo",
+    l = "lima",
+    m = "mike",
+    n = "november",
+    o = "oscar",
+    p = "papa",
+    q = "quebec",
+    r = "romeo",
+    s = "sierra",
+    t = "tango",
+    u = "uniform",
+    v = "victor",
+    w = "whiskey",
+    x = "x-ray",
+    y = "yankee",
+    z = "zulu",
+["0"] = "zero",
+["1"] = "wun",
+["2"] = "too",
+["3"] = "tree",
+["4"] = "fower",
+["5"] = "fife" ,
+["6"] = "six",
+["7"] = "seven",
+["8"] = "att",
+["9"] = "niner",
+[" "] = "break",
+}
+
+function dcsCommon.letter(inChar)
+	local theChar = ""
+	if type(inChar == "string") then 
+		if #inChar < 1 then return "#ERROR0#" end
+		inChar = string.lower(inChar)
+		theChar = string.sub(inChar, 1, 1)
+	elseif type(inChar == "number") then 
+		if inChar > 255 then return "#ERROR>#" end 
+		if inChar < 0 then return "#ERROR<#" end 
+		theChar = char(inChar)
+	else 
+		return "#ERRORT#"
+	end
+--	trigger.action.outText("doing <" .. theChar .. ">", 30)
+	local a = dcsCommon.alphabet[theChar]
+	if a == nil then a = "#ERROR?#" end 
+	return a 
+end
+
+function dcsCommon.spellString(inString)
+	local res = ""
+	local first = true 
+	for i = 1, #inString do
+		local c = inString:sub(i,i)
+		if first then 
+			res = dcsCommon.letter(c)
+			first = false 
+		else 
+			res = res .. " " .. dcsCommon.letter(c)
+		end
+	end
+	return res 
+end
 
 --
 -- SEMAPHORES

@@ -1,5 +1,5 @@
 countDown = {}
-countDown.version = "1.3.1"
+countDown.version = "1.3.2"
 countDown.verbose = false 
 countDown.ups = 1 
 countDown.requiredLibs = {
@@ -27,7 +27,8 @@ countDown.requiredLibs = {
 		  - new reset? input 
 		  - improved verbosity 
 		  - zone-local verbosity 
-		  
+	1.3.2 - enableCounter? to balande disableCounter?
+	
 --]]--
 
 countDown.counters = {}
@@ -141,12 +142,18 @@ function countDown.createCountDownWithZone(theZone)
 		theZone.counterOut = cfxZones.getStringFromZoneProperty(theZone, "counterOut!", "<none>")
 	end
 	
-	-- disableFlag 
+	-- disableFlag/enableFlag 
 	theZone.counterDisabled = false 
 	if cfxZones.hasProperty(theZone, "disableCounter?") then 
 		theZone.disableCounterFlag = cfxZones.getStringFromZoneProperty(theZone, "disableCounter?", "<none>")
 		theZone.disableCounterFlagVal = cfxZones.getFlagValue(theZone.disableCounterFlag, theZone)
 	end
+	
+	if cfxZones.hasProperty(theZone, "enableCounter?") then 
+		theZone.enableCounterFlag = cfxZones.getStringFromZoneProperty(theZone, "enableCounter?", "<none>")
+		theZone.enableCounterFlagVal = cfxZones.getFlagValue(theZone.enableCounterFlag, theZone)
+	end
+	
 end
 
 --
@@ -260,6 +267,12 @@ function countDown.update()
 			aZone.counterDisabled = true 
 		end
 		
+		if cfxZones.testZoneFlag(aZone, aZone.enableCounterFlag, aZone.ctdwnTriggerMethod, "enableCounterFlagVal") then
+			if countDown.verbose then 
+				trigger.action.outText("+++cntD: ENabling counter " .. aZone.name, 30)
+			end
+			aZone.counterDisabled = false 
+		end
 	end
 end
 
