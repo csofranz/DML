@@ -1,5 +1,5 @@
 asw = {}
-asw.version = "1.0.0"
+asw.version = "1.0.1"
 asw.verbose = false 
 asw.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,6 +15,7 @@ asw.fixes = {} -- all subs that we have a fix on. indexed by sub name
 --[[--
 	Version History
 	1.0.0 - initial version 
+	1.0.1 - integration with playerScore 
 	
 --]]--
 
@@ -36,6 +37,10 @@ function asw.createTorpedoForUnit(theUnit)
 	local t = asw.createTorpedo()
 	t.coalition = theUnit:getCoalition()
 	t.point = theUnit:getPoint()
+	t.droppedBy = theUnit 
+	if theUnit.getPlayerName and theUnit:getPlayerName() ~= nil then 
+		t.playerName = theUnit:getPlayerName()
+	end
 	return t 
 end
 
@@ -716,6 +721,7 @@ function asw.updateTorpedo(theTorpedo, allSubs)
 		end
 		
 		if dist < 1.2 * displacement then 
+			theTorpedo.target = theSub
 			theTorpedo.state = 99 -- go boom
 		end
 		markTorpedo(theTorpedo)
@@ -762,10 +768,26 @@ function asw.updateTorpedo(theTorpedo, allSubs)
 		return true 
 	elseif theTorpedo.state == 99 then -- go boom 
 		if Unit.isExist(theTorpedo.target) then 
+			if asw.verbose then 
+				trigger.action.outText("99 torpedoes have target", 30)
+			end
+			
+			-- interface to playerScore 
+			if cfxPlayerScore then 
+				asw.doScore(theTorpedo)
+			else 
+				if asw.verbose then 
+					trigger.action.outText("No playerScore present", 30)
+				end
+			end
 			Unit.destroy(theTorpedo.target)
+		else 
+			if asw.verbose then 
+				trigger.action.outText("t99 no target exist", 30)
+			end
 		end
 		-- impact!
-		trigger.action.outTextForCoalition(theTorpedo.coalition, "Impact for  " .. theTorpedo.name .. "! We have confirmed hit on submerged contact!", 30)
+		trigger.action.outTextForCoalition(theTorpedo.coalition, "Impact for " .. theTorpedo.name .. "! We have confirmed hit on submerged contact!", 30)
 		if theTorpedo.coalition == 1 then 
 			if asw.redKill then 
 				cfxZones.pollFlag(asw.redKill, asw.method, asw) 
@@ -794,6 +816,86 @@ function asw.updateTorpedo(theTorpedo, allSubs)
 	
 	-- return true if it should be kept in array
 	return true 
+end
+
+-- PlayerScore interface 
+function processFeat(inMsg, playerUnit, victim, timeFormat)
+	if not inMsg then return "<nil inMsg>" end
+	-- replace <t> with current mission time HMS
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	if not timeFormat then timeFormat = "<:h>:<:m>:<:s>" end 
+	-- <t>
+	local timeString  = dcsCommon.processHMS(timeFormat, absSecs)
+	local outMsg = inMsg:gsub("<t>", timeString)
+	-- <n>
+	outMsg = dcsCommon.processStringWildcards(outMsg) -- <n>
+	-- <unit, type, player etc>
+	outMsg = cfxPlayerScore.preprocessWildcards(outMsg, playerUnit, victim)
+	return outMsg
+end
+
+function asw.doScore(theTorpedo)
+	if asw.verbose then 
+		trigger.action.outText("asw: enter doScore", 30)
+	end
+	-- make sure that this is a player-dropped torpedo 
+	if not theTorpedo then 
+		if asw.verbose then 
+			trigger.action.outText("no torpedo", 30)
+		end 
+		return 
+	end 
+	local theUnit = theTorpedo.target
+	if not theTorpedo.playerName then 
+		if asw.verbose then 
+			trigger.action.outText("no torpedo", 30)
+		end 
+		return 
+	end 
+	local pName = theTorpedo.playerName 
+	-- make sure that the player's original unit still exists 
+	if not (theTorpedo.droppedBy and Unit.isExist(theTorpedo.droppedBy)) then 
+		if asw.verbose then 
+			trigger.action.outText("torpedo dropper dead", 30)
+		end 
+		return -- torpedo-dropping unit did not survive 
+	end 
+	
+	local fratricide = (theTorpedo.coalition == theUnit:getCoalition())
+	if fratricide then 
+		if asw.verbose then 
+			trigger.action.outText("+++asw: fratricide detected", 30)
+		end
+	end
+	
+	if asw.killScore > 0 then 
+		-- award score 
+		local score = asw.killScore
+		if fratricide then score = -1 * score end 
+		cfxPlayerScore.logKillForPlayer(pName, theUnit)
+		cfxPlayerScore.awardScoreTo(theTorpedo.coalition, score, pName)
+		if asw.verbose then 
+			trigger.action.outText("updated score (" .. score .. ") for player <" .. pName .. ">", 30)
+		end 
+	else 
+		if asw.verbose then 
+			trigger.action.outText("no score num defined", 30)
+		end 
+	end 
+	
+	if asw.killFeat and (not fratricide) then 
+		-- we treat killFeat as boolean 
+		local theFeat = "Killed type <type> submerged vessel <unit> at <t>"
+		theFeat = processFeat(theFeat, theTorpedo.droppedBy, theUnit)
+		cfxPlayerScore.logFeatForPlayer(pName, theFeat)
+	else 
+		if asw.verbose then 
+			trigger.action.outText("no feat defined or fratricide", 30)
+		end 
+	end
 end
 
 --
@@ -940,10 +1042,17 @@ function asw.readConfigZone()
 	
 	asw.smokeColor = cfxZones.getSmokeColorStringFromZoneProperty(theZone, "smokeColor", "red")
 	asw.smokeColor = dcsCommon.smokeColor2Num(asw.smokeColor)
+
+	asw.killScore = cfxZones.getNumberFromZoneProperty(theZone, "killScore", 0)
+	
+	if cfxZones.hasProperty(theZone, "killFeat") then 
+		asw.killFeat = cfxZones.getStringFromZoneProperty(theZone, "killFeat", "Sub Kill")
+	end	
 	
 	if asw.verbose then 
 		trigger.action.outText("+++asw: read config", 30)
 	end 
+
 end
 
 function asw.start()

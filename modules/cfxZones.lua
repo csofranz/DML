@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.8"
+cfxZones.version = "3.0.9"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -126,6 +126,7 @@ cfxZones.version = "3.0.8"
 		  - new createSimpleQuadZone()
 - 3.0.7   - getPoint() can also get land y when passing true as second param
 - 3.0.8   - new cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
+- 3.0.9   - new getFlareColorStringFromZoneProperty()
 
 --]]--
 cfxZones.verbose = false
@@ -2240,6 +2241,30 @@ function cfxZones.getSmokeColorStringFromZoneProperty(theZone, theProperty, defa
 
 	return default 
 end
+
+function cfxZones.getFlareColorStringFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
+	if not default then default = "red" end 
+	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
+	s = s:lower()
+	s = dcsCommon.trim(s)
+	-- check numbers 
+	if (s == "rnd") then return "random" end 
+	if (s == "0") then return "green" end
+	if (s == "1") then return "red" end
+	if (s == "2") then return "white" end
+	if (s == "3") then return "yellow" end
+	if (s == "-1") then return "random" end  
+	
+	if s == "green" or
+	   s == "red" or
+	   s == "white" or
+	   s == "yellow" or 
+	   s == "random" then
+	return s end
+
+	return default 
+end
+
 
 --
 -- Zone-based wildcard processing

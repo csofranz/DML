@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "1.0.1"
+williePete.version = "1.0.2"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -12,7 +12,8 @@ williePete.requiredLibs = {
 --[[--
 	Version History
 	1.0.0 - Initial version 
-	1.0.1 - update to suppress verbosity 
+	1.0.1 - update to suppress verbosity
+    1.0.2 - added Gazelle WP	
 	
 --]]--
 
@@ -23,7 +24,7 @@ williePete.blastedObjects = {} -- used when we detonate something
 
 -- recognizes WP munitions. May require regular update when new
 -- models come out. 
-williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM"}
+williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM", "SNEB_TYPE254_H1_GREEN", "SNEB_TYPE254_H1_RED", "SNEB_TYPE254_H1_YELLOW"}
 
 function williePete.addWillie(theWillie)
 	table.insert(williePete.willies, theWillie)

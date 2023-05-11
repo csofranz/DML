@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.5"
+dcsCommon.version = "2.8.7"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -147,7 +147,9 @@ dcsCommon.version = "2.8.5"
  2.8.5 - better guard in getGroupUnit()
  2.8.6 - phonetic helpers 
 		 new spellString()
- 
+ 2.8.7 - new flareColor2Num()
+       - new flareColor2Text()
+       - new iteratePlayers()
  
 --]]--
 
@@ -2545,6 +2547,15 @@ end
 		return ("unknown: " .. smokeColor)
 	end
 	
+	function dcsCommon.flareColor2Text(flareColor)
+		if (flareColor == 0) then return "Green" end
+		if (flareColor == 1) then return "Red" end
+		if (flareColor == 2) then return "White" end
+		if (flareColor == 3) then return "Yellow" end
+		if (flareColor < 0) then return "Random" end 
+		return ("unknown: " .. flareColor)
+	end
+	
 	function dcsCommon.smokeColor2Num(smokeColor)
 		if not smokeColor then smokeColor = "green" end 
 		if type(smokeColor) ~= "string" then return 0 end 
@@ -2556,6 +2567,20 @@ end
 		if (smokeColor == "blue") then return 4 end 
 		return 0
 	end
+
+	function dcsCommon.flareColor2Num(flareColor)
+		if not flareColor then flareColor = "green" end 
+		if type(flareColor) ~= "string" then return 0 end 
+		flareColor = flareColor:lower()
+		if (flareColor == "green") then return 0 end 
+		if (flareColor == "red") then return 1 end 
+		if (flareColor == "white") then return 2 end 
+		if (flareColor == "yellow") then return 3 end 
+		if (flareColor == "random") then return -1 end 
+		if (flareColor == "rnd") then return -1 end 
+		return 0
+	end
+
 	
 	function dcsCommon.markPointWithSmoke(p, smokeColor)
 		if not smokeColor then smokeColor = 0 end 
@@ -3313,6 +3338,23 @@ function dcsCommon.spellString(inString)
 		end
 	end
 	return res 
+end
+
+--
+-- iterators
+--
+-- iteratePlayers - call callback for all player units
+-- callback is of signature callback(playerUnit)
+--
+
+function dcsCommon.iteratePlayers(callBack)
+	local factions = {0, 1, 2}
+	for idx, theFaction in pairs(factions) do 
+		local players = coalition.getPlayers(theFaction)
+		for idy, theUnit in pairs(players) do 
+			callBack(theUnit)
+		end
+	end
 end
 
 --

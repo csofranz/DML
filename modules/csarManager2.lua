@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.2.5"
+csarManager.version = "2.2.6"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -63,6 +63,8 @@ csarManager.ups = 1
  - 2.2.4 - CSAR attribute value defaults name 
 		 - start? attribute for CSAR as startCSAR? synonym
  - 2.2.5 - manual freq for CSAR was off by a factor of 10 - Corrected
+ - 2.2.6 - useFlare, now also launches a flare in addition to smoke 
+		 - zone testing uses getPoint for zones, supports moving csar zones
 
 	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
 		 
@@ -1028,6 +1030,18 @@ function csarManager.updateCSARMissions()
 	csarManager.openMissions = newMissions -- this is the new batch
 end
 
+function csarManager.launchFlare(args)
+	local color = args.color
+	if color < 0 then color = math.random(4) - 1 end 
+	local loc = args.loc -- with height 
+	if csarManager.verbose then 
+		trigger.action.outText("+++csarM: launching flare, c = " .. color .. " (" .. dcsCommon.flareColor2Text(color) .. ")", 30)
+	end
+	trigger.action.outTextForGroup(args.uID, "Launching flare!", 30)
+	loc.y = loc.y + 3 -- launch 3 meters above ground 
+	trigger.action.signalFlare(loc, color, 0)
+end
+
 function csarManager.update() -- every second
 	-- schedule next invocation
 	timer.scheduleFunction(csarManager.update, {}, timer.getTime() + 1/csarManager.ups)
@@ -1053,7 +1067,8 @@ function csarManager.update() -- every second
 				-- enough to trigger comms 
 				for idx, csarMission in pairs (csarManager.openMissions) do
 					-- check if we are inside trigger range on the same side
-					local d = dcsCommon.distFlat(uPoint, csarMission.zone.point)
+					local mp = cfxZones.getPoint(csarMission.zone, true)
+					local d = dcsCommon.distFlat(uPoint, mp)
 					if ((uSide == csarMission.side) or (csarMission.side == 0) )
 					and (d < csarManager.rescueTriggerRange) then 
 						-- we are in trigger distance. if we did not notify before
@@ -1065,7 +1080,21 @@ function csarManager.update() -- every second
 							local oclock = dcsCommon.clockPositionOfARelativeToB(csarMission.zone.point, uPoint, ownHeading) .. " o'clock"
 							local msg = "\n" .. uName ..", " .. csarMission.name .. ". We can hear you, check your " .. oclock 
 							if csarManager.useSmoke then msg = msg .. " - popping smoke" end
+							if csarManager.useFlare then 
+								if csarManager.useSmoke then 
+									msg = msg .. " and will launch flare in a few seconds"
+								else 
+									msg = msg .. " - preparing flare"
+								end
+								-- schedule flare launch in 5-10 seconds
+								local args = {}
+								args.loc = mp 
+								args.color = csarManager.flareColor
+								args.uID = uID
+								timer.scheduleFunction(csarManager.launchFlare, args, timer.getTime() + math.random(5))
+							end
 							msg = msg .. "."
+
 							if csarMission.isHot then 
 								msg = msg .. " Be advised: LZ is hot."
 							end
@@ -1393,6 +1422,10 @@ function csarManager.readConfigZone()
 	csarManager.useSmoke = cfxZones.getBoolFromZoneProperty(theZone, "useSmoke", true)
 	csarManager.smokeColor = cfxZones.getSmokeColorStringFromZoneProperty(theZone, "smokeColor", "blue")
 	csarManager.smokeColor = dcsCommon.smokeColor2Num(csarManager.smokeColor)
+	
+	csarManager.useFlare = cfxZones.getBoolFromZoneProperty(theZone, "useFlare", true)
+	csarManager.flareColor = cfxZones.getFlareColorStringFromZoneProperty(theZone, "flareColor", "red")
+	csarManager.flareColor = dcsCommon.flareColor2Num(csarManager.flareColor)
 	
 	
 	if cfxZones.hasProperty(theZone, "csarRedDelivered!") then 

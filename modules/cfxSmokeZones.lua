@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.1.2" 
+cfxSmokeZone.version = "1.1.3" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -18,6 +18,7 @@ cfxSmokeZone.requiredLibs = {
  1.1.0 - Watchflag upgrade 
  1.1.1 - stopSmoke? input 
  1.1.2 - 'agl', 'alt' synonymous for altitude to keep in line with fireFX
+ 1.1.3 - corrected smokeTriggerMethod in zone definition
  
 --]]--
 cfxSmokeZone.smokeZones = {}
@@ -67,7 +68,7 @@ function cfxSmokeZone.processSmokeZone(aZone)
 	aZone.smokeTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
 
 	if cfxZones.hasProperty(aZone, "smokeTriggerMethod") then 
-		aZone.delayTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "smokeTriggerMethod", "change")
+		aZone.smokeTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "smokeTriggerMethod", "change")
 	end
 	
 end

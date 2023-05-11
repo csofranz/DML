@@ -1,14 +1,15 @@
 cfxPlayerScoreUI = {}
-cfxPlayerScoreUI.version = "2.0.0"
+cfxPlayerScoreUI.version = "2.0.1"
 cfxPlayerScoreUI.verbose = false 
 
 --[[-- VERSION HISTORY
  - 1.0.2 - initial version 
  - 1.0.3 - module check
  - 2.0.0 - removed cfxPlayer dependency, handles own commands
+ - 2.0.1 - late start capability 
 --]]--
 
-cfxPlayerScoreUI.rootCommands = {} -- by unit's group name, for player aircraft
+cfxPlayerScoreUI.rootCommands = {} -- by unit's GROUP name, for player aircraft
 
 -- redirect: avoid the debug environ of missionCommand
 function cfxPlayerScoreUI.redirectCommandX(args)
@@ -23,7 +24,7 @@ function cfxPlayerScoreUI.doCommandX(args)
 	local gid = theGroup:getID()
 	
 	if not cfxPlayerScore.scoreTextForPlayerNamed then 
-		trigger.action.outText("***pSGui: CANNOT FIND PlayerScore MODULE", 30)
+		trigger.action.outText("***pSGUI: CANNOT FIND PlayerScore MODULE", 30)
 		return 
 	end
 	local desc = cfxPlayerScore.scoreTextForPlayerNamed(playerName)
@@ -35,10 +36,7 @@ end
 -- event handling: we are only interested in birth events
 -- for player aircraft 
 --
-function cfxPlayerScoreUI:onEvent(event)
-	if event.id ~= 15 then return end -- only birth 
-	if not event.initiator then return end -- no initiator, no joy 
-	local theUnit = event.initiator 
+function cfxPlayerScore.processPlayerUnit(theUnit)
 	if not theUnit.getPlayerName then return end -- no player name, bye!
 	local playerName = theUnit:getPlayerName()
 	if not playerName then return end 
@@ -61,18 +59,19 @@ function cfxPlayerScoreUI:onEvent(event)
 	-- we need to install a group menu item for scores. 
 	-- will persist through death
 	local commandTxt = "Show Score / Kills"
-	local theCommand =  missionCommands.addCommandForGroup(
-			gid, 
-			commandTxt,
-			nil, -- root level 
-			cfxPlayerScoreUI.redirectCommandX, 
-			{groupName, playerName, "score"}
-		)
+	local theCommand =  missionCommands.addCommandForGroup(gid, commandTxt, nil, cfxPlayerScoreUI.redirectCommandX,	{groupName, playerName, "score"} )
 	cfxPlayerScoreUI.rootCommands[groupName] = theCommand 
 	
 	if cfxPlayerScoreUI.verbose then 
 		trigger.action.outText("++pSGui: installed player score menu for group <" .. groupName .. ">", 30)
 	end
+end
+
+function cfxPlayerScoreUI:onEvent(event)
+	if event.id ~= 15 then return end -- only birth 
+	if not event.initiator then return end -- no initiator, no joy 
+	local theUnit = event.initiator 
+	cfxPlayerScore.processPlayerUnit(theUnit)
 end
 
 --
@@ -81,7 +80,8 @@ end
 function cfxPlayerScoreUI.start()	
 	-- install the event handler for new player planes
 	world.addEventHandler(cfxPlayerScoreUI)
-	
+	-- process all existing players (late start)
+	dcsCommon.iteratePlayers(cfxPlayerScore.processPlayerUnit)
 	trigger.action.outText("cf/x cfxPlayerScoreUI v" .. cfxPlayerScoreUI.version .. " started", 30)
 	return true 
 end

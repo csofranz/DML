@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.7.4"
+cfxSpawnZones.version = "1.7.5"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -66,6 +66,8 @@ cfxSpawnZones.spawnedGroups = {}
    1.7.2 - baseName now can can be set to zone name by issuing "*"
    1.7.3 - ability to hand off to delicates, useDelicates attribute 
    1.7.4 - wait-attackZone fixes
+   1.7.5 - improved verbosity on spawning 
+         - getRequestableSpawnersInRange() ignores height for distance 
 
   
   - types    - type strings, comma separated 
@@ -204,6 +206,9 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.requestable = cfxZones.getBoolFromZoneProperty(inZone, "requestable", false)
 	if theSpawner.requestable then 
 		theSpawner.paused = true 
+		if inZone.verbose or cfxSpawnZones.verbose then 
+			trigger.action.outText("+++spwn: spawner <" .. inZone.name .. "> paused: requestable enabled", 30)
+		end
 	end
 	if cfxZones.hasProperty(inZone, "target") then 
 		theSpawner.target = cfxZones.getStringFromZoneProperty(inZone, "target", "")
@@ -248,7 +253,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 	for aZone, aSpawner in pairs(cfxSpawnZones.allSpawners) do 
 		-- iterate all zones and collect those that match 
 		local hasMatch = true 
-		local delta = dcsCommon.dist(aPoint, aZone.point)
+		local delta = dcsCommon.distFlat(aPoint, cfxZones.getPoint(aZone))
 		if delta>aRange then hasMatch = false end 
 		if aSide ~= 0 then 
 			-- check if side is correct for owned zone 
@@ -333,9 +338,20 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 				theCoalition, 
 				aSpawner.baseName .. "-" .. aSpawner.count, -- must be unique 
 				aSpawner.zone, 											
-				unitTypes, 													
+				unitTypes, 
 				aSpawner.formation,
 				aSpawner.heading)
+	if cfxSpawnZones.verbose or theZone.verbose then 
+		-- check created group size versus requested size 
+		trigger.action.outText("+++spwn: created <" .. theGroup:getSize() .. "> units, requested <" .. #unitTypes .. "> units, formation <" .. aSpawner.formation .. ">", 30)
+		trigger.action.outText("+++spwn: zone <" .. theZone.name .. ">center at <" .. dcsCommon.point2text(p) .. ">", 30)
+		local allUnits = theGroup:getUnits()
+		for idx, myUnit in pairs (allUnits) do 
+			local pos = myUnit:getPoint()
+			trigger.action.outText("unit <" .. myUnit:getName() .. "> at " .. dcsCommon.point2text(pos), 30)
+		end
+	end
+	
 	aSpawner.theSpawn = theGroup
 	aSpawner.count = aSpawner.count + 1 
 

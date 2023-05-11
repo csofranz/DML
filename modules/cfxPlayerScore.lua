@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "2.0.0"
+cfxPlayerScore.version = "2.0.1"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -70,7 +70,9 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - pkMod attribute
 		  - pvp feat 
 		  - immediate awarding of all negative scores, even if deferred
-		  
+	2.0.1 - corrected access to nowString()
+	      - more robust config reading 
+	
 --]]--
 
 cfxPlayerScore.requiredLibs = {
@@ -1278,7 +1280,7 @@ function cfxPlayerScore.saveScores(theText, name)
 		end
 		
 		-- prepend time for score 
-		theText = "\n\n====== Mission Time: " .. dcsCommon.nowstring() .. "\n" .. theText
+		theText = "\n\n====== Mission Time: " .. dcsCommon.nowString() .. "\n" .. theText
 	end 
 	
 	if persistence.saveText(theText, name, shared, append) then 
@@ -1360,10 +1362,11 @@ function cfxPlayerScore.start()
 	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
 	if not theZone then 
 		trigger.action.outText("+++scr: no config!", 30) 
-	else 
-		cfxPlayerScore.readConfigZone(theZone)
-		trigger.action.outText("+++scr: read config", 30) 
+		theZone = cfxZones.createSimpleZone("playerScoreConfig")
 	end 
+	cfxPlayerScore.readConfigZone(theZone)
+	--	trigger.action.outText("+++scr: read config", 30) 
+	 
 	
 	-- read all scoreSafe zones 
 	local safeZones = cfxZones.zonesWithProperty("scoreSafe")

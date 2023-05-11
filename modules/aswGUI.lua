@@ -1,5 +1,5 @@
 aswGUI = {}
-aswGUI.version = "1.0.1"
+aswGUI.version = "1.0.2"
 aswGUI.verbose = false 
 aswGUI.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,6 +12,7 @@ aswGUI.requiredLibs = {
 	Version History
 	1.0.0 - initial version 
 	1.0.1 - env.info clean-up, verbosity clean-up 
+	1.0.2 - late start capability
 	
 --]]--
 
@@ -524,6 +525,22 @@ function aswGUI:onEvent(theEvent)
 	end
 end
 
+function aswGUI.processPlayerUnit(theUnit)
+	local name = theUnit:getName() 
+	local conf = aswGUI.aswCraft[name]
+	if not conf then 
+		-- let's init it
+		conf = aswGUI.initUnit(name)
+		aswGUI.aswCraft[name] = conf 
+	else 
+		aswGUI.resetConf(conf)
+	end
+	aswGUI.setMenuForUnit(theUnit)
+	if aswGUI.verbose then 
+		trigger.action.outText("aswG: set up player <" .. theUnit:getPlayerName() .. "> in <" .. name .. ">", 30)
+	end
+end
+
 --
 -- Config & start 
 --
@@ -571,7 +588,10 @@ function aswGUI.start()
 		
 	-- subscribe to world events 
 	world.addEventHandler(aswGUI)
-		
+	
+	-- install menus in all existing players 
+	dcsCommon.iteratePlayers(aswGUI.processPlayerUnit)
+	
 	-- say Hi
 	trigger.action.outText("cfx ASW GUI v" .. aswGUI.version .. " started.", 30)
 	return true 
