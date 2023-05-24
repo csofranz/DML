@@ -1,19 +1,22 @@
 factoryZone = {}
-factoryZone.version = "1.0.0"
+factoryZone.version = "2.0.0"
 factoryZone.verbose = false 
 factoryZone.name = "factoryZone" 
 
 --[[-- VERSION HISTORY
 
-1.0.0 - refactored production part from cfxOwnedZones 1.xpcall
+2.0.0 - refactored production part from cfxOwnedZones 1.xpcall
+	  - "production" and "defenders" simplification 
+	  - now optional specification for red/blue 
+	  - use maxRadius from zone for spawning to support quad zones 
 
 --]]--
 factoryZone.requiredLibs = {
-	"dcsCommon", -- common is of course needed for everything
-	             -- pretty stupid to check for this since we 
-				 -- need common to invoke the check, but anyway
-	"cfxZones", -- Zones, of course 
+	"dcsCommon",
+	"cfxZones",  
 	"cfxCommander", -- to make troops do stuff
+	"cfxGroundTroops", -- all produced troops rely on this 
+	"cfxOwnedZones", 
 }
 
 factoryZone.zones = {} -- my factory zones 
@@ -28,7 +31,7 @@ factoryZone.repairTime = 200 -- time until we raplace one lost unit, also repair
 -- is regularly verified and cut to size 
 factoryZone.spawnedAttackers = {}
 
--- factoryZone is a module that managers production of units
+-- factoryZone is a module that manages production of units
 -- inside zones and can switch production based on who owns the 
 -- zone. Zone ownership can by dynamic (by using OwnedZones or 
 -- using scripts to change the 'owner' flag
@@ -48,10 +51,6 @@ factoryZone.spawnedAttackers = {}
 --  attackDelta - polar coord: r from zone center where attackers are spawned
 --  attackPhi - polar degrees where attackers are to be spawned
 --  paused - will not spawn. default is false 
---  unbeatable - can't be conquered by other side. default is false
---  untargetable - will not be targeted by either side. make unbeatable
---  owned zones untargetable, or they'll become a troop magnet for 
---  zoneAttackers 
 
 --
 -- M I S C
@@ -66,29 +65,39 @@ function factoryZone.getFactoryZoneByName(zName)
 end
 
 function factoryZone.addFactoryZone(aZone)
-	aZone.worksFor = cfxZones.getCoalitionFromZoneProperty(aZone, "factory", 0) -- currently unused, have RED/BLUE separate types 
+	--aZone.worksFor = cfxZones.getCoalitionFromZoneProperty(aZone, "factory", 0) -- currently unused, have RED/BLUE separate types 
 	aZone.state = "init"
 	aZone.timeStamp = timer.getTime()
-	aZone.defendersRED = cfxZones.getStringFromZoneProperty(aZone, "defendersRED", "none")
-	aZone.defendersBLUE = cfxZones.getStringFromZoneProperty(aZone, "defendersBLUE", "none")
+	
+	-- set up production default 
+	local factory = cfxZones.getStringFromZoneProperty(aZone, "factory", "none")
+	
+	local production = cfxZones.getStringFromZoneProperty(aZone, "production", factory)
+	
+	local defenders = cfxZones.getStringFromZoneProperty(aZone, "defenders", factory)
+		
 	if cfxZones.hasProperty(aZone, "attackersRED") then 
 		-- legacy support
-		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "attackersRED", "none")
+		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "attackersRED", production)
 	else
-		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "productionRED", "none")
+		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "productionRED", production)
 	end
 	
 	if cfxZones.hasProperty(aZone, "attackersBLUE") then 	
 		-- legacy support 
-		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "attackersBLUE", "none")
+		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "attackersBLUE", production)
 	else 
-		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "productionBLUE", "none")
+		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "productionBLUE", production)
 	end
+	
+	-- set up defenders default, or use production / factory 
+	aZone.defendersRED = cfxZones.getStringFromZoneProperty(aZone, "defendersRED", defenders)
+	aZone.defendersBLUE = cfxZones.getStringFromZoneProperty(aZone, "defendersBLUE", defenders)
 	
 	aZone.formation = cfxZones.getStringFromZoneProperty(aZone, "formation", "circle_out")
 	aZone.attackFormation = cfxZones.getStringFromZoneProperty(aZone, "attackFormation", "circle_out") -- cfxZones.getZoneProperty(aZone, "attackFormation")
-	aZone.spawnRadius = cfxZones.getNumberFromZoneProperty(aZone, "spawnRadius", aZone.radius-5) -- "-5" so they remaininside radius 
-	aZone.attackRadius = cfxZones.getNumberFromZoneProperty(aZone, "attackRadius", aZone.radius)
+	aZone.spawnRadius = cfxZones.getNumberFromZoneProperty(aZone, "spawnRadius", aZone.maxRadius-5) -- "-5" so they remaininside radius 
+	aZone.attackRadius = cfxZones.getNumberFromZoneProperty(aZone, "attackRadius", aZone.maxRadius)
 	aZone.attackDelta = cfxZones.getNumberFromZoneProperty(aZone, "attackDelta", 10) -- aZone.radius)
 	aZone.attackPhi = cfxZones.getNumberFromZoneProperty(aZone, "attackPhi", 0)
 	
@@ -111,8 +120,6 @@ function factoryZone.addFactoryZone(aZone)
 		aZone.factoryTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "factoryTriggerMethod", "change")
 	end
 	
-	aZone.untargetable = cfxZones.getBoolFromZoneProperty(aZone, "untargetable", false)
-
 	factoryZone.zones[aZone.name] = aZone 
 	factoryZone.verifyZone(aZone)
 end
@@ -123,154 +130,6 @@ function factoryZone.verifyZone(aZone)
 		trigger.action.outText("+++factZ: " .. aZone.name .. " attackers need cfxGroundTroops to function", 30)
 	end
 	
-end
-
-function factoryZone.getEnemyZonesFor(aCoalition) 
-	-- when cfxOwnedZones is present, or it will return only those 
-	-- else it scans all zones from cfxZones 
-	local enemyZones = {}
-	local allZones = cfxZones.zones
-	if cfxOwnedZones then 
-		allZones = cfxOwnedZones.zones
-	end 
-	local ourEnemy = dcsCommon.getEnemyCoalitionFor(aCoalition)
-	for zKey, aZone in pairs(allZones) do 
-		if aZone.owner == ourEnemy then -- only check enemy owned zones
-			-- note: will include untargetable zones 
-			table.insert(enemyZones, aZone)			
-		end
-	end
-	return enemyZones
-end
-
-function factoryZone.getNearestOwnedZoneToPoint(aPoint)
-	local shortestDist = math.huge
-	-- when cfxOwnedZones is present, or it will return only those 
-	-- else it scans all zones from cfxZones 
-	local closestZone = nil
-	local allZones = cfxZones.zones
-	if cfxOwnedZones then 
-		allZones = cfxOwnedZones.zones
-	end 
-	for zKey, aZone in pairs(allZones) do 
-		local zPoint = cfxZones.getPoint(aZone) 
-		currDist = dcsCommon.dist(zPoint, aPoint)
-		if aZone.untargetable ~= true and 
-		   currDist < shortestDist then 
-			shortestDist = currDist
-			closestZone = aZone
-		end
-	end
-	
-	return closestZone, shortestDist
-end
-
-function factoryZone.getNearestOwnedZone(theZone)
-	local shortestDist = math.huge
-	-- when cfxOwnedZones is present, or it will return only those 
-	-- else it scans all zones from cfxZones 
-	local closestZone = nil
-	local aPoint = cfxZones.getPoint(theZone)
-	local allZones = cfxZones.zones
-	if cfxOwnedZones then 
-		allZones = cfxOwnedZones.zones
-	end 
-	for zKey, aZone in pairs(allZones) do
-		local zPoint = cfxZones.getPoint(aZone) 
-		currDist = dcsCommon.dist(zPoint, aPoint)
-		if aZone.untargetable ~= true and currDist < shortestDist then 
-			shortestDist = currDist
-			closestZone = aZone
-		end
-	end
-	
-	return closestZone, shortestDist
-end
-
-function factoryZone.getNearestEnemyOwnedZone(theZone, targetNeutral)
-	if not targetNeutral then targetNeutral = false else targetNeutral = true end
-	local shortestDist = math.huge
-	local closestZone = nil
-	-- when cfxOwnedZones is present, or it will return only those 
-	-- else it scans all zones from cfxZones 
-	local allZones = cfxZones.zones
-	if cfxOwnedZones then 
-		allZones = cfxOwnedZones.zones
-	end 
-	local ourEnemy = dcsCommon.getEnemyCoalitionFor(theZone.owner)
-	if not ourEnemy then return nil end -- we called for a neutral zone. they have no enemies 
-	local zPoint = cfxZones.getPoint(theZone)
-	
-	for zKey, aZone in pairs(allZones) do 
-		if targetNeutral then 
-			-- return all zones that do not belong to us
-			if aZone.owner ~= theZone.owner then 
-				local aPoint = cfxZones.getPoint(aZone)
-				currDist = dcsCommon.dist(aPoint, zPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		else 
-			-- return zones that are taken by the Enenmy
-			if aZone.owner == ourEnemy then -- only check own zones
-				local aPoint = cfxZones.getPoint(aZone)
-				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		end 
-	end
-	
-	return closestZone, shortestDist
-end
-
-function factoryZone.getNearestFriendlyZone(theZone, targetNeutral)
-	if not targetNeutral then targetNeutral = false else targetNeutral = true end
-	local shortestDist = math.huge
-	local closestZone = nil
-	local ourEnemy = dcsCommon.getEnemyCoalitionFor(theZone.owner)
-	if not ourEnemy then return nil end -- we called for a neutral zone. they have no enemies nor friends, all zones would be legal.
-	local zPoint = cfxZones.getPoint(theZone)
-	-- when cfxOwnedZones is present, or it will return only those 
-	-- else it scans all zones from cfxZones 
-	local allZones = cfxZones.zones
-	if cfxOwnedZones then 
-		allZones = cfxOwnedZones.zones
-	end
-	for zKey, aZone in pairs(allZones) do 
-		if targetNeutral then 
-			-- target all zones that do not belong to the enemy
-			if aZone.owner ~= ourEnemy then
-				local aPoint = cfxZones.getPoint(aZone)
-				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		else 
-			-- only target zones that are taken by us
-			if aZone.owner == theZone.owner then -- only check own zones
-				local aPoint = cfxZones.getPoint(aZone)
-				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		end 
-	end
-	
-	return closestZone, shortestDist
-end
-
-function factoryZone.enemiesRemaining(aZone)
-	if factoryZone.getNearestEnemyOwnedZone(aZone) then return true end
-	return false
 end
 
 function factoryZone.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation)
@@ -337,7 +196,7 @@ end
 --
 
 function factoryZone.sendOutAttackers(aZone)
-	-- sanity check: never done for non-neutral zones 
+	-- sanity check: never done for neutral zones 
 	if aZone.owner == 0 then 
 		if aZone.verbose or factoryZone.verbose then 
 			trigger.action.outText("+++factZ: SendAttackers invoked for NEUTRAL zone <" .. aZone.name .. ">", 30)
@@ -346,7 +205,7 @@ function factoryZone.sendOutAttackers(aZone)
 	end
 	
 	-- only spawn if there are zones to attack
-	if not factoryZone.enemiesRemaining(aZone) then 
+	if not cfxOwnedZones.enemiesRemaining(aZone) then 
 		if factoryZone.verbose then 
 			trigger.action.outText("+++factZ - no enemies, resting ".. aZone.name, 30)
 		end
@@ -832,11 +691,13 @@ function factoryZone.readConfigZone(theZone)
 	factoryZone.attackingTime = cfxZones.getNumberFromZoneProperty(theZone, "attackingTime", 300)
 	factoryZone.shockTime = cfxZones.getNumberFromZoneProperty(theZone, "shockTime", 200)
 	factoryZone.repairTime = cfxZones.getNumberFromZoneProperty(theZone, "repairTime", 200)
+	factoryZone.targetZones = "OWNED"
+
 end
 
 function factoryZone.init()
 	-- check libs
-	if not dcsCommon.libCheck("cfx Owned Zones", 
+	if not dcsCommon.libCheck("cfx Factory Zones", 
 		factoryZone.requiredLibs) then
 		return false 
 	end
@@ -845,7 +706,7 @@ function factoryZone.init()
 	local theZone = cfxZones.getZoneByName("factoryZoneConfig") 
 	factoryZone.readConfigZone(theZone)
 
-	-- collect all owned zones by their 'factory' property 
+	-- collect all zones by their 'factory' property 
 	-- start the process
 	local pZones = cfxZones.zonesWithProperty("factory")
 	

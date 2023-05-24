@@ -1,5 +1,5 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.5.3"
+limitedAirframes.version = "1.5.4"
 limitedAirframes.verbose = false 
 limitedAirframes.enabled = true -- can be turned off
 limitedAirframes.userCanToggle = true -- F10 menu?
@@ -56,6 +56,7 @@ limitedAirframes.requiredLibs = {
            when autoCSAR is active 
  - 1.5.3 - ... but do allow it if not coming from 'ejected' so ditching 
            a plane will again create CSAR missions
+   1.5.4 - red# and blue# instead of #red and #blue 
 		   
 --]]--
 
@@ -147,8 +148,16 @@ function limitedAirframes.readConfigZone()
 
 	limitedAirframes.maxBlue = cfxZones.getNumberFromZoneProperty(theZone, "maxBlue", -1)
 	
-	limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "#red", "*none")
-	limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "#blue", "*none")
+	if cfxZones.hasProperty(theZone, "#red") then 
+		limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "#red", "*none")
+	else 
+		limitedAirframes.numRed = cfxZones.getStringFromZoneProperty(theZone, "red#", "*none")
+	end 
+	if cfxZones.hasProperty(theZone, "#blue") then 
+		limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "#blue", "*none")
+	else 
+		limitedAirframes.numBlue = cfxZones.getStringFromZoneProperty(theZone, "blue#", "*none")	
+	end
 	
 	limitedAirframes.redWinsFlag = cfxZones.getStringFromZoneProperty(theZone, "redWins!", "*none")
 

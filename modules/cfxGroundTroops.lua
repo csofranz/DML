@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "1.7.7"
+cfxGroundTroops.version = "1.7.8"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -67,7 +67,7 @@ cfxGroundTroops.deployedTroops = {} -- indexed by group name
          - makeTroopsEngageZone() sets 'moving' status to true
          - createGroundTroops() sets moving status to false 
 		 - updateZoneAttackers() uses moving  
-
+   1.7.8 - better guards before invoking ownedZones
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -296,6 +296,10 @@ end
 
 function cfxGroundTroops.updateZoneAttackers(troop)
 	if not troop then return end 
+	if not cfxOwnedZones then 
+		trigger.action.outText("+++gndT: update zone attackers requires ownedZones", 30)
+		return 
+	end
 	troop.insideDestination = false -- mark as not inside 
 	
 	local newTargetZone = cfxGroundTroops.getClosestEnemyZone(troop)

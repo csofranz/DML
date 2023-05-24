@@ -8,6 +8,7 @@ playerZone.playerZones = {}
 --[[--
 	Version History
 	1.0.0 - Initial version 
+	1.0.1 - pNum --> pNum# 
 	
 --]]--
 
@@ -22,8 +23,10 @@ function playerZone.createPlayerZone(theZone)
 		theZone.pzMethod = cfxZones.getStringFromZoneProperty(theZone, "pwMethod", "inc")
 	end 
 	
-	if cfxZones.hasProperty(theZone, "pNum") then 
-		theZone.pNum = cfxZones.getStringFromZoneProperty(theZone, "pNum", "none")
+	if cfxZones.hasProperty(theZone, "pNum#") then 
+		theZone.pNum = cfxZones.getStringFromZoneProperty(theZone, "pNum#", "none")
+	elseif cfxZones.hasProperty(theZone, "pNum") then 
+		theZone.pNum = cfxZones.getStringFromZoneProperty(theZone, "pNum", "none") 
 	end 
 	
 	if cfxZones.hasProperty(theZone, "added!") then 

@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.0.9"
+cfxZones.version = "3.1.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -127,6 +127,8 @@ cfxZones.version = "3.0.9"
 - 3.0.7   - getPoint() can also get land y when passing true as second param
 - 3.0.8   - new cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
 - 3.0.9   - new getFlareColorStringFromZoneProperty()
+- 3.1.0	  - new getRGBVectorFromZoneProperty()
+			new getRGBAVectorFromZoneProperty()
 
 --]]--
 cfxZones.verbose = false
@@ -2220,6 +2222,56 @@ function cfxZones.getVectorFromZoneProperty(theZone, theProperty, minDims, defau
 	
 	return nVec 
 end
+
+function cfxZones.getRGBVectorFromZoneProperty(theZone, theProperty, defaultVal)
+	if not defaultVal then defaultVal = {1.0, 1.0, 1.0} end 
+	if #defaultVal ~=3 then defaultVal = {1.0, 1.0, 1.0} end
+	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	local sVec = dcsCommon.splitString(s, ",")
+	local nVec = {}
+	for i = 1, 3 do 
+		n = sVec[i]
+		if n then n = tonumber(n) end 
+		if not n then n = defaultVal[i] end 
+		if n > 1.0 then n = 1.0 end
+		if n < 0 then n = 0 end 
+		nVec[i] = n
+	end
+		
+	return nVec 
+end
+
+function cfxZones.getRGBAVectorFromZoneProperty(theZone, theProperty, defaultVal)
+	if not defaultVal then defaultVal = {1.0, 1.0, 1.0, 1.0} end 
+	if #defaultVal ~=4 then defaultVal = {1.0, 1.0, 1.0, 1.0} end
+	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	local sVec = dcsCommon.splitString(s, ",")
+	local nVec = {}
+	for i = 1, 4 do 
+		n = sVec[i]
+		if n then n = tonumber(n) end 
+		if not n then n = defaultVal[i] end 
+		if n > 1.0 then n = 1.0 end
+		if n < 0 then n = 0 end 
+		nVec[i] = n
+	end
+		
+	return nVec 
+end
+
+function cfxZones.getRGBFromZoneProperty(theZone, theProperty, default)
+	--if not default then default = {1.0, 1.0, 1.0} end -- white 
+	local rawRGB = cfxZones.getVectorFromZoneProperty(theZone, theProperty, 3, 1.0)
+	local retVal = {}
+	for i = 1, 3 do 
+		local cp = rawRGB[i]
+		if cp > 1.0 then cp = 1.0 end
+		if cp < 0 then cp = 0 end 
+		retVal[i] = cp
+	end
+	return retVal
+end
+
 
 function cfxZones.getSmokeColorStringFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
 	if not default then default = "red" end 
