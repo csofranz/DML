@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.1.0"
+cfxZones.version = "3.1.1"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -129,6 +129,8 @@ cfxZones.version = "3.1.0"
 - 3.0.9   - new getFlareColorStringFromZoneProperty()
 - 3.1.0	  - new getRGBVectorFromZoneProperty()
 			new getRGBAVectorFromZoneProperty()
+- 3.1.1   - getRGBAVectorFromZoneProperty now supports #RRGGBBAA and #RRGGBB format 
+          - owner for all, default 0 
 
 --]]--
 cfxZones.verbose = false
@@ -2245,6 +2247,13 @@ function cfxZones.getRGBAVectorFromZoneProperty(theZone, theProperty, defaultVal
 	if not defaultVal then defaultVal = {1.0, 1.0, 1.0, 1.0} end 
 	if #defaultVal ~=4 then defaultVal = {1.0, 1.0, 1.0, 1.0} end
 	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	s = dcsCommon.trim(s)
+	if s:sub(1,1) == "#" then 
+		-- it's probably a "#RRGGBBAA" format hex string 
+		local hVec = dcsCommon.hexString2RGBA(s)
+		if hVec then return hVec end 
+	end
+
 	local sVec = dcsCommon.splitString(s, ",")
 	local nVec = {}
 	for i = 1, 4 do 
@@ -2841,8 +2850,10 @@ function cfxZones.init()
 	cfxZones.readFromDCS(true) -- true: erase old
 
 	-- pre-read zone owner for all zones
-	local pZones = cfxZones.zonesWithProperty("owner")
-	for n, aZone in pairs(pZones) do
+	-- much like verbose, all zones have owner
+--	local pZones = cfxZones.zonesWithProperty("owner")
+--	for n, aZone in pairs(pZones) do
+    for n, aZone in pairs(cfxZones.zones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)
 	end
 		

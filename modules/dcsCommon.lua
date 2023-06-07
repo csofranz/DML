@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.7"
+dcsCommon.version = "2.8.8"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -150,7 +150,9 @@ dcsCommon.version = "2.8.7"
  2.8.7 - new flareColor2Num()
        - new flareColor2Text()
        - new iteratePlayers()
- 
+ 2.8.8 - new hexString2RGBA()
+       - new playerName2Coalition()
+	   - new coalition2Text()
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -2955,6 +2957,14 @@ function dcsCommon.coalition2county(inCoalition)
 	
 end
 
+function dcsCommon.coalition2Text(coa)
+	if not coa then return "!nil!" end 
+	if coa == 0 then return "NEUTRAL" end 
+	if coa == 1 then return "RED" end 
+	if coa == 2 then return "BLUE" end 
+	return "?UNKNOWN?"
+end
+
 function dcsCommon.latLon2Text(lat, lon)
 	-- inspired by mist, thanks Grimes!
 	-- returns two strings: lat and lon 
@@ -3338,6 +3348,47 @@ function dcsCommon.spellString(inString)
 		end
 	end
 	return res 
+end
+
+--
+-- RGBA from hex
+--
+function dcsCommon.hexString2RGBA(inString) 
+	-- enter with "#FF0020" (RGB) or "#FF00AB99" RGBA
+	-- check if it starts with #
+	if not inString then return nil end 
+	if #inString ~= 7 and #inString ~=9 then return nil end 
+	if inString:sub(1, 1) ~= "#" then return nil end 
+	inString = inString:lower()
+	local red = tonumber("0x" .. inString:sub(2,3)) 
+	if not red then red = 0 end 
+	local green = tonumber("0x" .. inString:sub(4,5))
+	if not green then green = 0 end 
+	local blue = tonumber("0x" .. inString:sub(6,7))
+	if not blue then blue = 0 end 
+	local alpha = 255 
+	if #inString == 9 then 
+		alpha = tonumber("0x" .. inString:sub(8,9))
+	end
+	if not alpha then alpha = 0 end
+	return {red/255, green/255, blue/255, alpha/255}
+end
+
+
+--
+-- Player handling 
+--
+function dcsCommon.playerName2Coalition(playerName)
+	if not playerName then return 0 end 
+	local factions = {1,2}
+	for idx, theFaction in pairs(factions) do 
+		local players = coalition.getPlayers(theFaction)
+		for idy, theUnit in pairs(players) do 
+			local upName = theUnit:getPlayerName()
+			if upName == playerName then return theFaction end
+		end
+	end
+	return 0
 end
 
 --

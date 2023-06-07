@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.0.0"
+cfxOwnedZones.version = "2.0.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -21,6 +21,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - heloCap option 
 	  - fixWingCap option 
 	  - filter water owned zones for groundTroops 
+2.0.1 - RGBA colors can be entered hex style #ff340799
 
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -838,8 +839,6 @@ end
 	masterOwner input for zones, overrides all else when not neutral 
 	
 	dont count zones that cant be conquered for allBlue/allRed
-	
-	define color with #FF008080
-	
+		
 --]]--
 

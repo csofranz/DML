@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.0.4"
+stopGap.version = "1.0.5"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -35,6 +35,7 @@ stopGap.requiredLibs = {
 		  - stopGap Zones 
 	1.0.3 - server plug-in logic
 	1.0.4 - player units or groups that end in '-sg' are not stop-gapped
+	1.0.5 - triggerMethod
 --]]--
 
 stopGap.standInGroups = {}
@@ -216,14 +217,14 @@ function stopGap.update()
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
 	
 	-- check if signal for on? or off? 
-	if stopGap.turnOn and cfxZones.testZoneFlag(stopGap, stopGap.turnOnFlag, "change", "lastTurnOnFlag") then
+	if stopGap.turnOn and cfxZones.testZoneFlag(stopGap, stopGap.turnOnFlag, stopGap.triggerMethod, "lastTurnOnFlag") then
 		if not stopGap.enabled then 
 			stopGap.turnOn()
 		end
 		stopGap.enabled = true 
 	end
 	
-	if stopGap.turnOff and cfxZones.testZoneFlag(stopGap, stopGap.turnOffFlag, "change", "lastTurnOffFlag") then
+	if stopGap.turnOff and cfxZones.testZoneFlag(stopGap, stopGap.turnOffFlag, stopGap.triggerMethod, "lastTurnOffFlag") then
 		if stopGap.enabled then 
 			stopGap.turnOff()
 		end
@@ -315,7 +316,7 @@ function stopGap.readConfigZone(theZone)
 		stopGap.turnOffFlag = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>")
 		stopGap.lastTurnOffFlag = trigger.misc.getUserFlag(stopGap.turnOffFlag)
 	end
-	
+	stopGap.triggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 	if stopGap.verbose then 
 		trigger.action.outText("+++StopG: config read, verbose = YES", 30)
 		if stopGap.enabled then 

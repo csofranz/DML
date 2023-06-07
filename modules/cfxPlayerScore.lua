@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "2.0.1"
+cfxPlayerScore.version = "2.1.1"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -72,6 +72,14 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - immediate awarding of all negative scores, even if deferred
 	2.0.1 - corrected access to nowString()
 	      - more robust config reading 
+	2.1.0 - coalition score 
+		  - reportCoalition switch 
+		  - persist coalition score 
+		  - add score to coalition when scoring player 
+	2.1.1 - check ownership of scoreSafe zone upon touch-down 
+	      - new scoreSummaryForPlayersOfCoalition()
+		  - new noGrief option in config 
+		  - improved guards when checking ownership (nil zone owner)
 	
 --]]--
 
@@ -79,13 +87,15 @@ cfxPlayerScore.requiredLibs = {
 	"dcsCommon", -- this is doing score keeping
 	"cfxZones", -- zones for config 
 }
-cfxPlayerScore.playerScore = {} -- init to empty
+cfxPlayerScore.playerScore = {} -- indexed by playerName
+cfxPlayerScore.coalitionScore = {} -- score per coalition
+cfxPlayerScore.coalitionScore[1] = 0 -- init red
+cfxPlayerScore.coalitionScore[2] = 0 -- init blue
 cfxPlayerScore.deferred = false -- on deferred, we only award after landing, and erase on any form of re-slot
 cfxPlayerScore.delayAfterLanding = 10 -- seconds after landing 
 cfxPlayerScore.safeZones = {} -- safe zones to land in  
 cfxPlayerScore.featZones = {} -- zones that define feats 
 cfxPlayerScore.killZones = {} -- when set, kills only count here 
-
 
 -- typeScore: dictionary sorted by typeString for score 
 -- extend to add more types. It is used by unitType2score to 
@@ -107,7 +117,6 @@ cfxPlayerScore.train = 5
 cfxPlayerScore.landing = 0 -- if > 0 it scores as feat
 
 cfxPlayerScore.unit2player = {} -- lookup and reverse look-up 
---cfxPlayerScore.player2unit = {} -- to detect death and destruction
 
 function cfxPlayerScore.addSafeZone(theZone)
 	theZone.scoreSafe = cfxZones.getCoalitionFromZoneProperty(theZone, "scoreSafe", 0)
@@ -154,29 +163,25 @@ function cfxPlayerScore.featsForLocation(name, loc, coa, featType, killer, victi
 	-- and location of victim for kill 
 	-- coa is coalition of landing unit 
 	-- and coalition of killer for kill 
---	trigger.action.outText("enter feat check for <" .. featType .. ">", 30)
+
 	if not coa then coa = 0 end 
 	if not featType then featType = "KILL" end 
 	featType = string.upper(featType)
 	local theFeats = {}
 	for idx, theZone in pairs(cfxPlayerScore.featZones) do 
---		trigger.action.outText("featcheck: <" .. theZone.name .. ">", 30)
 		local canAward = true 
 				   
 		-- check if it can be awarded 
 		if theZone.featNum == 0 then 
 			canAward = false 
---			trigger.action.outText("  - failed featNum", 30)
 		end 
 		
 		if theZone.featType ~= featType then 
 			canAward = false
-			--trigger.action.outText("  - failed type check (look for <" .. featType .. ">, got <" .. theZone.featType .. ">", 30)			
 		end
 		
 		if not (theZone.coalition == 0 or theZone.coalition == coa) then 
 			canAward = false 
-		--	trigger.action.outText("  - failed coa check ", 30)
 		end			
 		
 		if featType == "PVP" then 
@@ -191,21 +196,17 @@ function cfxPlayerScore.featsForLocation(name, loc, coa, featType, killer, victi
 		
 		if not cfxZones.pointInZone(loc, theZone) then 
 			canAward = false 
-		--	trigger.action.outText("  - failed loc check ", 30)
 		end
 		
 		if theZone.ppOnce then 
 			if theZone.awardedTo[name] then 
 				canAward = false
-				--trigger.action.outText("  - already awarded fail ", 30)
 			end
 		end
 		
 		if canAward then 
 			table.insert(theFeats, theZone) -- jupp, add it
-			--trigger.action.outText(" can award", 30)
 		else 
-			--trigger.action.outText("FAIL.", 30)
 		end 
 
 	end
@@ -240,7 +241,6 @@ function cfxPlayerScore.preprocessWildcards(inMsg, aUnit, aVictim)
 		theMsg = theMsg:gsub("<type>", aVictim:getTypeName())
 		-- victim may not have group. guard against that 
 		-- happens if unit 'cooks off'
-		--local gName = "(unknown)"
 		local aGroup = nil 
 		if aVictim.getGroup then 
 			aVictim:getGroup()
@@ -290,9 +290,8 @@ function cfxPlayerScore.object2score(inVictim) -- does not have group
 		inName = tostring(inName)
 	end
 	
-	-- now, since 2.7x DCS turns units into static objects for 
+	-- since 2.7x DCS turns units into static objects for 
 	-- cooking off, so first thing we need to do is do a name check 
-	
 	local objectScore = cfxPlayerScore.typeScore[inName]
 	if not objectScore then 
 		-- try the type desc 
@@ -384,6 +383,20 @@ function cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
 	local thePlayerScore = cfxPlayerScore.getPlayerScore(playerName)
 	thePlayerScore.score = thePlayerScore.score + score
 	cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
+	-- if coalitionScore is active, trace player back to their current 
+	-- coalition and add points to that coalition if positive 
+	-- or always if noGrief is true 
+	local pFaction = dcsCommon.playerName2Coalition(playerName)
+	if cfxPlayerScore.noGrief then  
+		-- only on positive score
+		if (score > 0) and pFaction > 0 then 
+			cfxPlayerScore.coalitionScore[pFaction] = cfxPlayerScore.coalitionScore[pFaction] + score 
+		end
+	else 
+		if pFaction > 0 then 
+			cfxPlayerScore.coalitionScore[pFaction] = cfxPlayerScore.coalitionScore[pFaction] + score 
+		end
+	end
 	return thePlayerScore.score 
 end
 
@@ -395,10 +408,6 @@ function cfxPlayerScore.updateScoreForPlayer(playerName, score)
 		cfxPlayerScore.setPlayerScore(playerName, thePlayerScore) -- write-through. why? because it may be a new entry.
 		return thePlayerScore.score -- this is the old score!!! 
 	end
-	--local thePlayerScore = cfxPlayerScore.getPlayerScore(playerName)
-	--thePlayerScore.score = thePlayerScore.score + score
-	--cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
-	--return thePlayerScore.score 
 	-- now write immediately 
 	return cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
 end
@@ -524,13 +533,34 @@ function cfxPlayerScore.scoreTextForPlayerNamed(playerName)
 	return cfxPlayerScore.playerScore2text(thePlayerScore)
 end
 
+function cfxPlayerScore.scoreSummaryForPlayersOfCoalition(side)
+	-- only list players who are in the coalition RIGHT NOW
+	-- only list their score 
+	if not side then side = -1 end 
+	local desc = "\nCurrent score for players in " .. dcsCommon.coalition2Text(side) .." coalition:\n"
+	local count = 0 
+	for pName, pScore in pairs(cfxPlayerScore.playerScore) do 
+		local coa = dcsCommon.playerName2Coalition(pName)
+		if coa == side then 
+			desc = desc .. pName ..": " .. pScore.score .. "\n"
+			count = count + 1
+		end
+	end
+	if count < 1 then 
+		desc = desc .. "  (No score yet)"
+	end
+	
+	desc = desc .. "\n"
+	return desc
+end
+
 function cfxPlayerScore.scoreTextForAllPlayers(ranked) 
 	if not ranked then ranked = false end 
 	local theText = ""
 	local isFirst = true 
 	local theScores = cfxPlayerScore.playerScore
 	if cfxPlayerScore.verbose then 
-		trigger.action.outText("+++pScr: Saving score - <" .. dcsCommon.getSizeOfTable(theScores) .. "> entries.", 30)
+		trigger.action.outText("+++pScr: Generating score - <" .. dcsCommon.getSizeOfTable(theScores) .. "> entries.", 30)
 	end 
 	if ranked then 
 		table.sort(theScores, function(left, right) return left.score < right.score end )
@@ -548,6 +578,17 @@ function cfxPlayerScore.scoreTextForAllPlayers(ranked)
 		isFirst = false
 		rank = rank + 1
 	end
+	
+	if dcsCommon.getSizeOfTable(theScores) < 1 then 
+		theText = theText .. "  (No score yet)\n"
+	end
+	
+	if cfxPlayerScore.reportCoalition then 
+		--theText = theText .. "\n"
+		theText = theText .. "\nRED  total: " .. cfxPlayerScore.coalitionScore[1]
+		theText = theText .. "\nBLUE total: " .. cfxPlayerScore.coalitionScore[2]
+	end
+	
 	return theText
 end
 
@@ -585,6 +626,10 @@ function cfxPlayerScore.awardScoreTo(killSide, theScore, killerName)
 			trigger.action.outTextForCoalition(killSide, "Killscore:  " .. theScore .. ", now " .. thePlayerRecord.scoreaccu .. " waiting for " .. killerName .. ", awarded after landing", 30)
 		else -- negative score or not deferred 
 			trigger.action.outTextForCoalition(killSide, "Killscore:  " .. theScore .. " for a total of " .. playerScore .. " for " .. killerName, 30)
+			
+			if cfxPlayerScore.reportCoalition then 
+				trigger.action.outTextForCoalition(killSide, "\nCoalition Total:  " .. cfxPlayerScore.coalitionScore[killSide], 30)
+			end 
 		end
 	end 
 end
@@ -937,20 +982,6 @@ function cfxPlayerScore.handlePlayerLanding(theEvent)
 	-- only continue if there is anything to award 
 	local killSize = dcsCommon.getSizeOfTable(theScore.killQueue)
 	local featSize = dcsCommon.getSizeOfTable(theScore.featQueue)
-	--trigger.action.outText("+++pScr: kS = <" .. killSize .. ">, fS = <" .. featSize .. ">, Accu = <" .. theScore.scoreaccu .. ">", 30)
-	
-	-- to avoid possible race conditions with other modules that 
-	-- trigger on landing, we always schedule the check in 10 seconds
-	--[[--
-	if killSize < 1 and 
-	   featSize < 1 and 
-	   theScore.scoreaccu < 1 then 
-		if cfxPlayerScore.verbose then 
-			trigger.action.outText("+++pScr: deferred and nothing to award after touchdown to <" .. playerName .. ">, returning", 30)
-		end
-		return 
-	end
-	--]]--
 	
 	if cfxPlayerScore.verbose then 
 		trigger.action.outText("+++pScr: prepping deferred score for <" .. playerName ..">", 30)
@@ -964,8 +995,16 @@ function cfxPlayerScore.handlePlayerLanding(theEvent)
 	local isSafe = false 
 	for idx, theZone in pairs(cfxPlayerScore.safeZones) do 
 		if theZone.scoreSafe == 0 or theZone.scoreSafe == coa then 
-			if cfxZones.pointInZone(loc, theZone) then 
-				isSafe = true
+			-- make sure that this zone doesn't belong to the 
+			-- wrong faction (if owned zone) 
+			if (theZone.owner == coa) or (theZone.owner == 0) or (theZone.owner == nil) then 
+				if cfxZones.pointInZone(loc, theZone) then 
+					isSafe = true
+				end
+			else 
+				if cfxPlayerScore.verbose then 
+					trigger.action.outText("+++pSc: Zone <" .. theZone.name .. ">: owner=<" .. theZone.owner .. ">, my coa=<" .. coa .. ">, no owner match")
+				end
 			end
 		end 
 	end
@@ -1014,7 +1053,8 @@ function cfxPlayerScore.scheduledAward(args)
 	local coa = theUnit:getCoalition()
 	local isSafe = false 
 	for idx, theZone in pairs(cfxPlayerScore.safeZones) do 
-		if theZone.scoreSafe == 0 or theZone.scoreSafe == coa then 
+		if theZone.scoreSafe == 0 or theZone.scoreSafe == coa then
+			-- we no longer check ownership of zone, we did that when we landed
 			if cfxZones.pointInZone(loc, theZone) then 
 				isSafe = true
 			end
@@ -1028,6 +1068,11 @@ function cfxPlayerScore.scheduledAward(args)
 	
 	
 	local theScore = cfxPlayerScore.getPlayerScore(playerName)
+	local playerSide = dcsCommon.playerName2Coalition(playerName)
+	if playerSide < 1 then
+		trigger.action.outText("+++pScr: WARNING - unaffiliated player <" .. playerName .. ">, score award ignored", 30)
+		return 
+	end 
 	if dcsCommon.getSizeOfTable(theScore.killQueue) < 1 and 
 	   dcsCommon.getSizeOfTable(theScore.featQueue) < 1 and 
 	   theScore.scoreaccu < 1 then 
@@ -1042,9 +1087,10 @@ function cfxPlayerScore.scheduledAward(args)
 	-- when we get here we award all scores, kills, and feats 
 	local desc = "\nPlayer " .. playerName .. " is awarded:\n"
 	-- score and total score 
-	if theScore.scoreaccu > 0 then 
+	if theScore.scoreaccu > 0 then -- remember: negatives are immediate 
 		theScore.score = theScore.score + theScore.scoreaccu
 		desc = desc .. "  score: " .. theScore.scoreaccu .. " for a new total of " .. theScore.score .. "\n"
+		cfxPlayerScore.coalitionScore[playerSide] = cfxPlayerScore.coalitionScore[playerSide] + theScore.scoreaccu
 		theScore.scoreaccu = 0 
 		hasAward = true 
 	end 
@@ -1073,6 +1119,10 @@ function cfxPlayerScore.scheduledAward(args)
 		hasAward = true 
 	end
 	theScore.featQueue = {}
+	
+	if cfxPlayerScore.reportCoalition then 
+		desc = desc .. "\nCoalition Total: " .. cfxPlayerScore.coalitionScore[playerSide]
+	end
 	
 	-- output score 
 	desc = desc .. "\n"
@@ -1129,7 +1179,8 @@ function cfxPlayerScore.handlePlayerEvent(theEvent)
 		local playerName = thePlayerUnit:getPlayerName()
 		local theScore = cfxPlayerScore.getPlayerScore(playerName)
 		-- now re-init feat and score queues 
-		if theScore.scoreaccu > 0 then 
+		
+		if theScore.scoreaccu and theScore.scoreaccu > 0 then 
 			trigger.action.outTextForCoalition(playerSide, "Player " .. playerName .. ", score of <" .. theScore.scoreaccu .. "> points discarded.", 30)
 		end 
 		theScore.scoreaccu = 0 
@@ -1209,6 +1260,11 @@ function cfxPlayerScore.readConfigZone(theZone)
 	cfxPlayerScore.reportScore = cfxZones.getBoolFromZoneProperty(theZone, "reportScore", true)
 	
 	cfxPlayerScore.reportFeats = cfxZones.getBoolFromZoneProperty(theZone, "reportFeats", true)
+	
+	cfxPlayerScore.reportCoalition = cfxZones.getBoolFromZoneProperty(
+	theZone, "reportCoalition", false) -- also show coalition score 
+	
+	cfxPlayerScore.noGrief = cfxZones.getBoolFromZoneProperty(theZone, "noGrief", true) -- noGrief = only add positive score 
 end
 
 --
@@ -1220,6 +1276,7 @@ function cfxPlayerScore.saveData()
 	local theScore = dcsCommon.clone(cfxPlayerScore.playerScore)
 	theData.theScore = theScore
 	-- build feat zone list 
+	theData.coalitionScore = dcsCommon.clone(cfxPlayerScore.coalitionScore)
 	local featZones = {}
 	for idx, theZone in pairs(cfxPlayerScore.featZones) do 
 		local theFeat = {}
@@ -1243,6 +1300,9 @@ function cfxPlayerScore.loadData()
 	
 	local theScore = theData.theScore
 	cfxPlayerScore.playerScore = theScore 
+	if theData.coalitionScore then 
+		cfxPlayerScore.coalitionScore = theData.coalitionScore
+	end
 	local featData = theData.featData 
 	if featData then 
 		for name, data in pairs(featData) do 

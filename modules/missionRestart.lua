@@ -1,6 +1,10 @@
 missionRestart = {}
+missionRestart.version = "1.0.0" 
 missionRestart.restarting = false 
-
+-- 
+-- Restart this mission, irrespective of its name
+-- Only works if run as multiplayer (sends commands to the server)
+--
 function missionRestart.restart()
 	if missionRestart.restarting then return end 
 	
