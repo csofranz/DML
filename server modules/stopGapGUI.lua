@@ -1,5 +1,5 @@
 stopGapGUI = {}
-stopGapGUI.version = "1.0.0"
+stopGapGUI.version = "1.0.1"
 stopGapGUI.fVal = -300 -- 5 minutes max block
 --
 -- Server Plug-In for StopGap mission script, only required for server
@@ -19,4 +19,11 @@ function stopGapGUI.onPlayerTryChangeSlot(playerID, side, slotID)
 	net.send_chat("+++SG: readying group <" .. sgName .. "> for slotting")
 end   
  
+function stopGapGUI.onSimulationStart() 
+	net.dostring_in("server", " trigger.action.setUserFlag(\"stopGapGUI\", 0); ")
+	if not DCS.isServer() then return end 
+	if not DCS.isMultiplayer() then return end 
+	net.dostring_in("server", " trigger.action.setUserFlag(\"stopGapGUI\", 200); ") -- tells client that MP is active
+end
+
 DCS.setUserCallbacks(stopGapGUI)

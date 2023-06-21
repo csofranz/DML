@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.8"
+dcsCommon.version = "2.8.9"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -153,6 +153,10 @@ dcsCommon.version = "2.8.8"
  2.8.8 - new hexString2RGBA()
        - new playerName2Coalition()
 	   - new coalition2Text()
+ 2.8.9 - vAdd supports xy and xyz 
+       - vSub supports xy and xyz 
+	   - vMultScalar supports xy and xyz 
+	   
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -2684,7 +2688,9 @@ function dcsCommon.vAdd(a, b)
 	if not b then b = {x = 0, y = 0, z = 0} end
 	r.x = a.x + b.x 
 	r.y = a.y + b.y 
-	r.z = a.z + b.z 
+	if a.z and b.z then 
+		r.z = a.z + b.z 
+	end 
 	return r 
 end
 
@@ -2694,7 +2700,9 @@ function dcsCommon.vSub(a, b)
 	if not b then b = {x = 0, y = 0, z = 0} end
 	r.x = a.x - b.x 
 	r.y = a.y - b.y 
-	r.z = a.z - b.z 
+	if a.z and b.z then 
+		r.z = a.z - b.z 
+	end 
 	return r 
 end
 
@@ -2704,7 +2712,9 @@ function dcsCommon.vMultScalar(a, f)
 	if not f then f = 0 end
 	r.x = a.x * f 
 	r.y = a.y * f 
-	r.z = a.z * f 
+	if a.z and b.z then 
+		r.z = a.z * f
+    end		
 	return r 
 end
 

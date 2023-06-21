@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "2.1.1"
+cfxPlayerScore.version = "2.2.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -80,6 +80,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	      - new scoreSummaryForPlayersOfCoalition()
 		  - new noGrief option in config 
 		  - improved guards when checking ownership (nil zone owner)
+	2.0.0 - score flags for red and blue 
 	
 --]]--
 
@@ -1396,6 +1397,38 @@ function cfxPlayerScore.update()
 		end
 	end
 	
+	-- check score flags 
+	if cfxPlayerScore.blueTriggerFlags then 
+		local coa = 2
+		for tName, tVal in pairs(cfxPlayerScore.blueTriggerFlags) do 
+			local newVal = trigger.misc.getUserFlag(tName)
+			if tVal ~= newVal then 
+				-- score!
+				cfxPlayerScore.coalitionScore[coa] = cfxPlayerScore.coalitionScore[coa] + cfxPlayerScore.blueTriggerScore[tName]
+				cfxPlayerScore.blueTriggerFlags[tName] = newVal
+				if cfxPlayerScore.announcer then
+					trigger.action.outTextForCoalition(coa, "BLUE goal [" .. tName .. "] achieved, new BLUE coalition score is " .. cfxPlayerScore.coalitionScore[coa], 30)
+					trigger.action.outSoundForCoalition(coa, cfxPlayerScore.scoreSound)
+				end
+			end
+		end
+	end
+	if cfxPlayerScore.redTriggerFlags then 
+		local coa = 1
+		for tName, tVal in pairs(cfxPlayerScore.redTriggerFlags) do 
+			local newVal = trigger.misc.getUserFlag(tName)
+				if tVal ~= newVal then 
+				-- score!
+
+				cfxPlayerScore.coalitionScore[coa] = cfxPlayerScore.coalitionScore[coa] + cfxPlayerScore.redTriggerScore[tName]
+				cfxPlayerScore.redTriggerFlags[tName] = newVal
+				if cfxPlayerScore.announcer then
+					trigger.action.outTextForCoalition(coa, "RED goal [" .. tName .. "] achieved, new RED coalition score is " .. cfxPlayerScore.coalitionScore[coa], 30)
+					trigger.action.outSoundForCoalition(coa, cfxPlayerScore.scoreSound)
+				end
+			end
+		end
+	end
 end
 --
 -- start
@@ -1418,10 +1451,42 @@ function cfxPlayerScore.start()
 		trigger.action.outText("+++scr: read score table", 30) 
 	end 
 	
+	-- read score tiggers and values
+	cfxPlayerScore.redTriggerFlags = nil
+	cfxPlayerScore.blueTriggerFlags = nil
+	local theZone = cfxZones.getZoneByName("redScoreFlags") 
+	if theZone then 
+		-- read flags into redTriggerScore
+		cfxPlayerScore.redTriggerScore = cfxZones.getAllZoneProperties(theZone, false, true) -- use case, all numbers 
+		-- init their flag handlers 
+		cfxPlayerScore.redTriggerFlags = {}
+		trigger.action.outText("+++pScr: read RED score table", 30)
+		for tName, tScore in pairs(cfxPlayerScore.redTriggerScore) do 
+			if tScore == 0 then 
+				trigger.action.outText("+++pScr: WARNING - RED triggered score <" .. tName .. "> has zero score value!", 30)
+			end
+			cfxPlayerScore.redTriggerFlags[tName] = trigger.misc.getUserFlag(tName)
+		end
+	end 
+	local theZone = cfxZones.getZoneByName("blueScoreFlags") 
+	if theZone then 
+		-- read flags into redTriggerScore
+		cfxPlayerScore.blueTriggerScore = cfxZones.getAllZoneProperties(theZone, false, true) -- case sensitive, numbers only
+		-- init their flag handlers 
+		cfxPlayerScore.blueTriggerFlags = {}
+		trigger.action.outText("+++pScr: read BLUE score table", 30)
+		for tName, tScore in pairs(cfxPlayerScore.blueTriggerScore) do
+			if tScore == 0 then 
+				trigger.action.outText("+++pScr: WARNING - BLUE triggered score <" .. tName .. "> has zero score value!", 30)
+			end		
+			cfxPlayerScore.blueTriggerFlags[tName] = trigger.misc.getUserFlag(tName)
+		end
+	end 
+	
 	-- now read my config zone 
 	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
 	if not theZone then 
-		trigger.action.outText("+++scr: no config!", 30) 
+		trigger.action.outText("+++pScr: no config!", 30) 
 		theZone = cfxZones.createSimpleZone("playerScoreConfig")
 	end 
 	cfxPlayerScore.readConfigZone(theZone)

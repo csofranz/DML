@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.5"
+cfxMX.version = "1.2.6"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -25,6 +25,8 @@ cfxMX.verbose = false
 		 - groupCoalitionByName
    1.2.4 - playerUnit2Group cross index 
    1.2.5 - unitIDbyName index added 
+   1.2.6 - cfxMX.allTrainsByName
+		 - train carve-outs for vehicles
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
@@ -39,6 +41,7 @@ cfxMX.allHeloByName = {}
 cfxMX.allGroundByName = {}
 cfxMX.allSeaByName = {}
 cfxMX.allStaticByName = {}
+cfxMX.allTrainsByName = {}
 
 cfxMX.playerGroupByName = {} -- returns data only if a player is in group 
 cfxMX.playerUnitByName = {} -- returns data only if this is a player unit 
@@ -76,6 +79,7 @@ function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 							   obj_type_name == "plane" or 
 							   obj_type_name == "vehicle" or 
 							   obj_type_name == "static" 
+							   -- note: trains are 'vehicle' here
 							then -- (so it's not id or name)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
@@ -86,6 +90,9 @@ function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 											if not fetchOriginal then 
 												theGroup = dcsCommon.clone(group_data)
 											end
+											-- train carve-out: if first unit's type == "Train", change
+											-- category to "train"
+											if group_data.units[1] and group_data.units[1].type == "Train" then category = "train" end 
 											return theGroup, category, countryID  
 										end
 									end
@@ -200,6 +207,7 @@ function cfxMX.createCrossReferences()
 							   obj_type_name == "plane" or 
 							   obj_type_name == "vehicle" or 
 							   obj_type_name == "static" -- what about "cargo"?
+							   -- not that trains appear as 'vehicle'
 							then -- (so it's not id or name)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
@@ -213,6 +221,11 @@ function cfxMX.createCrossReferences()
 											linkUnit = group_data.route.points[1].linkUnit
 											cfxMX.linkByName[aName] = linkUnit
 										end 
+										if group_data.units[1] and group_data.units[1].type == "Train" then 
+											category = "train" 
+											obj_type_name = "train"
+										end 
+										
 										cfxMX.groupTypeByName[aName] = category
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
@@ -231,6 +244,8 @@ function cfxMX.createCrossReferences()
 											cfxMX.allGroundByName[aName] = group_data
 										elseif obj_type_name == "static" then 
 											cfxMX.allStaticByName[aName] = group_data
+										elseif obj_type_name == "train" then 
+											cfxMX.allTrainsByName[aName] = group_data
 										else 
 											-- should be impossible, but still
 											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)
@@ -268,6 +283,7 @@ function cfxMX.catText2ID(inText)
 	if c == "vehicle" then outCat = 2 end 
 	if c == "train" then outCat = 4 end 
 	if c == "static" then outCat = -1 end 
+	--trigger.action.outText("cat2text: in <" .. inText .. "> out <" .. outCat .. ">", 30)
 	return outCat
 end
  

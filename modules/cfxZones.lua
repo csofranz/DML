@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.1.1"
+cfxZones.version = "3.1.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -131,6 +131,7 @@ cfxZones.version = "3.1.1"
 			new getRGBAVectorFromZoneProperty()
 - 3.1.1   - getRGBAVectorFromZoneProperty now supports #RRGGBBAA and #RRGGBB format 
           - owner for all, default 0 
+- 3.1.2   - getAllZoneProperties has numbersOnly option 
 
 --]]--
 cfxZones.verbose = false
@@ -1947,8 +1948,9 @@ end
 -- =================== 
 --
 
-function cfxZones.getAllZoneProperties(theZone, caseInsensitive) -- return as dict 
+function cfxZones.getAllZoneProperties(theZone, caseInsensitive, numbersOnly) -- return as dict 
 	if not caseInsensitive then caseInsensitive = false end 
+	if not numbersOnly then numbersOnly = false end 
 	if not theZone then return {} end 
 	
 	local dcsProps = theZone.properties -- zone properties in dcs format 
@@ -1960,7 +1962,12 @@ function cfxZones.getAllZoneProperties(theZone, caseInsensitive) -- return as di
 		local theKey = "dummy"
 		if string.len(theProp.key) > 0 then theKey = theProp.key end 
 		if caseInsensitive then theKey = theKey:upper() end 
-		props[theKey] = theProp.value
+		local v = theProp.value 
+		if numbersOnly then 
+			v = tonumber(v)
+			if not v then v = 0 end 
+		end
+		props[theKey] = v
 	end
 	return props 
 end

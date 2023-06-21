@@ -1,8 +1,11 @@
 stopGap = {}
-stopGap.version = "1.0.4 STANDALONE"
+stopGap.version = "1.0.6 STANDALONE"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true 
 stopGap.ignoreMe = "-sg"
+stopGap.spIgnore = "-sp" -- only single-player ignored 
+stopGap.isMP = false 
+
 --[[--
 	Written and (c) 2023 by Christian Franz 
 
@@ -23,7 +26,9 @@ stopGap.ignoreMe = "-sg"
     1.0.1 - update / replace statics after slots become free 
 	1.0.3 - server plug-in logic for SSB, sgGUI
 	1.0.4 - player units or groups that end in '-sg' are not stop-gapped
-	
+	1.0.5 - (DML-only additions)
+	1.0.6 - can detect stopGapGUI active on server
+		  - supports "-sp" for single-player only suppress
 --]]--
 
 stopGap.standInGroups ={}
@@ -124,7 +129,7 @@ function stopGap.isGroundStart(theGroup)
 	local sType = land.getSurfaceType(u1) -- has fields x and y
 	if sType == 3 then return false end 
 	
-	if stopGap.verbose then 
+	if false then 
 		trigger.action.outText("Player Group <" .. theGroup.name .. "> GROUND BASED: " .. action .. " land type " .. sType, 30)
 	end 
 	return true
@@ -134,14 +139,24 @@ function stopGap.createStandInsForMXGroup(group)
 	local allUnits = group.units
 	if group.name:sub(-#stopGap.ignoreMe) == stopGap.ignoreMe then 
 		if stopGap.verbose then 
-			trigger.action.outText("<<skipping group " .. group.name .. ">>", 30)
+			trigger.action.outText("<< '-sg' skipping group " .. group.name .. ">>", 30)
+		end
+		return nil 
+	end
+	if (not stopGap.isMP) and group.name:sub(-#stopGap.spIgnore) == stopGap.spIgnore then 
+		if stopGap.verbose then 
+			trigger.action.outText("<<'-sp' !SP! skipping group " .. group.name .. ">>", 30)
 		end
 		return nil 
 	end
 	local theStaticGroup = {}
 	for idx, theUnit in pairs (allUnits) do 
+		local sgMatch = theUnit.name:sub(-#stopGap.ignoreMe) == stopGap.ignoreMe
+		local spMatch = theUnit.name:sub(-#stopGap.spIgnore) == stopGap.spIgnore
+		if stopGap.isMP then spMatch = false end -- only single-player
 		if (theUnit.skill == "Client" or theUnit.skill == "Player") 
-		   and (theUnit.name:sub(-#stopGap.ignoreMe) ~= stopGap.ignoreMe)
+		   and (not sgMatch)
+		   and (not spMatch)
 		then 
 			local theStaticMX = stopGap.staticMXFromUnitMX(group, theUnit)
 			local theStatic = coalition.addStaticObject(theStaticMX.cty, theStaticMX)
@@ -189,6 +204,21 @@ function stopGap.initGaps()
 	end
 end
 
+function stopGap.turnOff()
+	-- remove all stand-ins
+	for gName, standIn in pairs (stopGap.standInGroups) do 
+		for name, theStatic in pairs(standIn) do 
+			StaticObject.destroy(theStatic)
+		end
+	end
+	stopGap.standInGroups = {}
+end
+
+function stopGap.turnOn()
+	-- populate all empty (non-taken) slots with stand-ins
+	stopGap.initGaps()
+end
+
 -- 
 -- event handling 
 --
@@ -233,6 +263,16 @@ end
 function stopGap.update()
 	-- check every 1 second
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
+	
+	if not stopGap.isMP then 
+		local sgDetect = trigger.misc.getUserFlag("stopGapGUI")
+		if sgDetect > 0 then 
+			trigger.action.outText("stopGap: MP activated <" .. sgDetect .. ">, will re-init", 30) 
+			stopGap.turnOff()
+			stopGap.isMP = true 
+			stopGap.turnOn()
+		end 
+	end
 	
 	-- check if slots can be refilled or need to be vacated (MP) 
 	for name, theGroup in pairs(stopGap.myGroups) do 
@@ -296,6 +336,11 @@ end
 -- get going 
 --
 function stopGap.start()
+	-- check MP status, usually client is not synched to 
+	-- server, yet so it will initially fail, and re-init in update() 
+	local sgDetect = trigger.misc.getUserFlag("stopGapGUI")
+	stopGap.isMP = sgDetect > 0 
+	
 	-- run a cross reference on all mission data for palyer info
 	cfxMX.createCrossReferences()
 	-- fill player slots with static objects 
@@ -308,7 +353,9 @@ function stopGap.start()
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
 	
 	-- say hi!
-	trigger.action.outText("stopGap v" .. stopGap.version .. "  running", 30)	
+	local mp = " (SP - <" .. sgDetect .. ">)"
+	if sgDetect > 0 then mp = " -- MP GUI Detected (" .. sgDetect .. ")!" end
+	trigger.action.outText("stopGap v" .. stopGap.version .. "  running" .. mp, 30)	
 	return true 
 end
 

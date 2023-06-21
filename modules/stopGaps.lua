@@ -1,8 +1,11 @@
 stopGap = {}
-stopGap.version = "1.0.5"
+stopGap.version = "1.0.6"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
+stopGap.spIgnore = "-sp" -- only single-player ignored 
+stopGap.isMP = false 
+
 stopGap.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -36,6 +39,7 @@ stopGap.requiredLibs = {
 	1.0.3 - server plug-in logic
 	1.0.4 - player units or groups that end in '-sg' are not stop-gapped
 	1.0.5 - triggerMethod
+	1.0.6 - spIgnore '-sp' 
 --]]--
 
 stopGap.standInGroups = {}
@@ -86,10 +90,15 @@ function stopGap.isGroundStart(theGroup)
 	return true
 end
 
-function stopGap.ignoreMXUnit(theUnit)
+function stopGap.ignoreMXUnit(theUnit) -- DML-only 
 	local p = {x=theUnit.x, y=0, z=theUnit.y}
 	for idx, theZone in pairs(stopGap.stopGapZones) do 
 		if theZone.sgIgnore and cfxZones.pointInZone(p, theZone) then 
+			return true
+		end
+		-- only single-player: exclude units in spIgnore zones 
+		if (not stopGap.isMP) and
+			theZone.spIgnore and cfxZones.pointInZone(p, theZone) then 
 			return true
 		end
 	end
@@ -104,13 +113,24 @@ function stopGap.createStandInsForMXGroup(group)
 		end
 		return nil 
 	end
+	if (not stopGap.isMP) and group.name:sub(-#stopGap.spIgnore) == stopGap.spIgnore then 
+		if stopGap.verbose then 
+			trigger.action.outText("<<'-sp' !SP! skipping group " .. group.name .. ">>", 30)
+		end
+		return nil 
+	end
 	
 	local theStaticGroup = {}
 	for idx, theUnit in pairs (allUnits) do 
+		local sgMatch = theUnit.name:sub(-#stopGap.ignoreMe) == stopGap.ignoreMe
+		local spMatch = theUnit.name:sub(-#stopGap.spIgnore) == stopGap.spIgnore
+		local zoneIgnore = stopGap.ignoreMXUnit(theUnit)
+		if stopGap.isMP then spMatch = false end -- only single-player
 		if (theUnit.skill == "Client" or theUnit.skill == "Player") 
-		   and (theUnit.name:sub(-#stopGap.ignoreMe) ~= stopGap.ignoreMe)
-		   and (not stopGap.ignoreMXUnit(theUnit))
-		then 
+		   and (not sgMatch)
+		   and (not spMatch)
+		   and (not zoneIgnore)
+		then
 			local theStaticMX = stopGap.staticMXFromUnitMX(group, theUnit)
 			local theStatic = coalition.addStaticObject(theStaticMX.cty, theStaticMX)
 			theStaticGroup[theUnit.name] = theStatic -- remember me
@@ -215,8 +235,21 @@ end
 function stopGap.update()
 	-- check every second. 
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
-	
-	-- check if signal for on? or off? 
+
+	if not stopGap.isMP then 
+		local sgDetect = trigger.misc.getUserFlag("stopGapGUI")
+		if sgDetect > 0 then 
+			trigger.action.outText("stopGap: MP activated <" .. sgDetect .. ">, will re-init", 30) 
+			stopGap.turnOff()
+			stopGap.isMP = true 
+			if stopGap.enabled then 
+				stopGap.turnOn()
+			end
+			return 
+		end  
+	end
+
+		-- check if signal for on? or off? 
 	if stopGap.turnOn and cfxZones.testZoneFlag(stopGap, stopGap.turnOnFlag, stopGap.triggerMethod, "lastTurnOnFlag") then
 		if not stopGap.enabled then 
 			stopGap.turnOn()
@@ -299,6 +332,11 @@ function stopGap.createStopGapZone(theZone)
 	if sg then theZone.sgIgnore = false else theZone.sgIgnore = true end 
 end
 
+function stopGap.createStopGapSPZone(theZone)
+	local sp = cfxZones.getBoolFromZoneProperty(theZone, "stopGapSP", true)
+	if sp then theZone.spIgnore = false else theZone.spIgnore = true end 
+end
+
 --
 -- Read Config Zone
 --
@@ -335,6 +373,9 @@ function stopGap.start()
 							  stopGap.requiredLibs) 
 	then return false end
 	
+	local sgDetect = trigger.misc.getUserFlag("stopGapGUI")
+	stopGap.isMP = sgDetect > 0 
+	
 	local theZone = cfxZones.getZoneByName("stopGapConfig") 
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("stopGapConfig")
@@ -345,6 +386,13 @@ function stopGap.start()
 	local pZones = cfxZones.zonesWithProperty("stopGap")
 	for k, aZone in pairs(pZones) do
 		stopGap.createStopGapZone(aZone)
+		stopGap.stopGapZones[aZone.name] = aZone
+	end
+	
+	-- collect single-player exclusion zones
+	local pZones = cfxZones.zonesWithProperty("stopGapSP")
+	for k, aZone in pairs(pZones) do
+		stopGap.createStopGapSPZone(aZone)
 		stopGap.stopGapZones[aZone.name] = aZone
 	end
 	
@@ -360,7 +408,10 @@ function stopGap.start()
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
 	
 	-- say hi!
-	trigger.action.outText("stopGap v" .. stopGap.version .. "  running", 30)	
+	local mp = " (SP - <" .. sgDetect .. ">)"
+	if sgDetect > 0 then mp = " -- MP GUI Detected (" .. sgDetect .. ")!" end
+	trigger.action.outText("stopGap v" .. stopGap.version .. "  running" .. mp, 30)	
+
 	return true 
 end
 
