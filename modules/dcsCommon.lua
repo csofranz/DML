@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.9"
+dcsCommon.version = "2.8.10"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -156,6 +156,13 @@ dcsCommon.version = "2.8.9"
  2.8.9 - vAdd supports xy and xyz 
        - vSub supports xy and xyz 
 	   - vMultScalar supports xy and xyz 
+2.8.10 - tacan2freq now integrated with module (blush) 
+       - array2string cosmetic default 
+	   - vMultScalar corrected bug in accessing b.z 
+	   - new randomLetter()
+	   - new getPlayerUnit()
+	   - new getMapName()
+	   - new getMagDeclForPoint()
 	   
 --]]--
 
@@ -2236,13 +2243,14 @@ end
 	end
 	
 	function dcsCommon.array2string(inArray, deli)
-		if not deli then deli = "," end
+		if not deli then deli = ", " end
 		if type(inArray) ~= "table" then return "<err in array2string: not an array>" end
 		local s = ""
 		local count = 0
 		for idx, ele in pairs(inArray) do
 			if count > 0 then s = s .. deli .. " " end
 			s = s .. ele
+			count = count + 1
 		end
 		return s
 	end
@@ -2475,6 +2483,7 @@ end
 	end
 	
 	function dcsCommon.dumpVar2Str(key, value, prefix, inrecursion)
+		-- dumps to screen, not string 
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
 			trigger.action.outText("*** dcsCommon vardump START",30)
@@ -2599,7 +2608,7 @@ end
 	end
 
 -- based on buzzer1977's idea, channel is number, eg in 74X, channel is 74, mode is "X"
-	function tacan2freq(channel, mode)	
+	function dcsCommon.tacan2freq(channel, mode)	
 		if not mode then mode = "X" end 
 		if not channel then channel = 1 end 
 		if type(mode) ~= "string" then mode = "X" end 
@@ -2712,7 +2721,7 @@ function dcsCommon.vMultScalar(a, f)
 	if not f then f = 0 end
 	r.x = a.x * f 
 	r.y = a.y * f 
-	if a.z and b.z then 
+	if a.z then 
 		r.z = a.z * f
     end		
 	return r 
@@ -2812,15 +2821,6 @@ function dcsCommon.isTroopCarrier(theUnit, carriers)
 	return dcsCommon.isTroopCarrierType(uType, carriers) 
 end
 
-function dcsCommon.isPlayerUnit(theUnit)
-	-- new patch. simply check if getPlayerName returns something
-	if not theUnit then return false end 
-	if not Unit.isExist(theUnit) then return end 
-	if not theUnit.getPlayerName then return false end -- map/static object 
-	local pName = theUnit:getPlayerName()
-	if pName then return true end 
-	return false 
-end
 
 function dcsCommon.getAllExistingPlayerUnitsRaw()
 	local apu = {}
@@ -3360,6 +3360,14 @@ function dcsCommon.spellString(inString)
 	return res 
 end
 
+dcsCommon.letters = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", 
+"O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", }
+function dcsCommon.randomLetter(lowercase)
+	local theLetter = dcsCommon.pickRandom(dcsCommon.letters)
+	if lowercase then theLetter = string.lower(theLetter) end 
+	return theLetter
+end
+
 --
 -- RGBA from hex
 --
@@ -3400,6 +3408,55 @@ function dcsCommon.playerName2Coalition(playerName)
 	end
 	return 0
 end
+
+function dcsCommon.isPlayerUnit(theUnit)
+	-- new patch. simply check if getPlayerName returns something
+	if not theUnit then return false end 
+	if not Unit.isExist(theUnit) then return end 
+	if not theUnit.getPlayerName then return false end -- map/static object 
+	local pName = theUnit:getPlayerName()
+	if pName then return true end 
+	return false 
+end
+
+function dcsCommon.getPlayerUnit(name)
+	for coa = 1, 2 do 
+		local players = coalition.getPlayers(coa)
+		for idx, theUnit in pairs(players) do 
+			if theUnit:getPlayerName() == name then return theUnit end
+		end
+	end
+	return nil 
+end
+
+--
+-- theater and theater-related stuff 
+--
+function dcsCommon.getMapName()
+	return env.mission.theatre
+end
+
+dcsCommon.magDecls = {Caucasus = 6.5,
+					  MarianaIslands = 1,
+					  Nevada = 12,
+					  PersianGulf = 2,
+					  Syria = 4,
+					  Normandy = -12 -- 1944, -1 in 2016 
+					  -- SinaiMap still missing 
+					  -- Falklands still missing, big differences 
+					  }
+					  
+function dcsCommon.getMagDeclForPoint(point) 
+	-- WARNING! Approximations only, map-wide, not adjusted for year nor location!
+	-- serves as a stub for the day when DCS provides correct info 
+	local map = dcsCommon.getMapName()
+	local decl = dcsCommon.magDecls[map]
+	if not decl then 
+		trigger.action.outText("+++dcsC: unknown map <" .. map .. ">, using dclenation 0", 30)
+		decl = 0
+	end
+	return decl 
+end 
 
 --
 -- iterators

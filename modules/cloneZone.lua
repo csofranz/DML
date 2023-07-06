@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.7.1"
+cloneZones.version = "1.7.3"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -94,6 +94,8 @@ cloneZones.respawnOnGroupID = true
 	1.7.1 - useDelicates handOff for delicates 
 	      - forcedRespawn passes zone instead of verbose
 	1.7.2 - onPerimeter attribute 
+	1.7.3 - declutter option 
+	
 	
 --]]--
 
@@ -255,6 +257,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 			trigger.action.outText(theZone.name .. " clone template saved", 30)
 		end
 	end
+	
+	-- declutter 
+	theZone.declutter = cfxZones.getBoolFromZoneProperty(theZone, "declutter", false)
 	
 	-- watchflags
 	theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
@@ -1541,6 +1546,14 @@ function cloneZones.spawnWithCloner(theZone)
 	if theZone.preWipe then 
 		cloneZones.despawnAll(theZone)
 		cloneZones.invokeCallbacks(theZone, "wiped", {})
+	end
+	
+	-- declutter?
+	if theZone.declutter then 
+		cfxZones.declutterZone(theZone)
+		if theZone.verbose then 
+			trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> declutter complete.", 30)
+		end
 	end
 	
 	local theClones, theStatics = cloneZones.spawnWithTemplateForZone(templateZone, theZone)

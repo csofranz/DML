@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.1.2"
+cfxZones.version = "3.1.3"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -132,6 +132,11 @@ cfxZones.version = "3.1.2"
 - 3.1.1   - getRGBAVectorFromZoneProperty now supports #RRGGBBAA and #RRGGBB format 
           - owner for all, default 0 
 - 3.1.2   - getAllZoneProperties has numbersOnly option 
+- 3.1.3   - new numberArrayFromString()
+		  - new declutterZone()
+		  - new getZoneVolume()
+		  - offsetZone also updates zone bounds when moving zones 
+		  - corrected bug in calculateZoneBounds()
 
 --]]--
 cfxZones.verbose = false
@@ -340,7 +345,8 @@ function cfxZones.calculateZoneBounds(theZone)
 			if (vertex.x < ll.x) then ll.x = vertex.x; ul.x = vertex.x end 
 			if (vertex.x > lr.x) then lr.x = vertex.x; ur.x = vertex.x end 
 			if (vertex.z < ul.z) then ul.z = vertex.z; ur.z = vertex.z end
-			if (vertex.z > ll.z) then ll.z = vertex.z; lr.z = vertex.z end 
+			--if (vertex.z > ll.z) then ll.z = vertex.z; lr.z = vertex.z end
+			if (vertex.z > ur.z) then ur.z = vertex.z; ul.z = vertex.z end 			
 			local dp = dcsCommon.dist(theZone.point, vertex)
 			if dp > pRad then pRad = dp end -- find largst distance to vertex
 		end
@@ -351,6 +357,7 @@ function cfxZones.calculateZoneBounds(theZone)
 		bounds.lr = lr
 		bounds.ul = ul
 		bounds.ur = ur 
+		-- we may need to ascertain why we need ul, ur, ll, lr instead of just ll and ur 
 		-- store pRad 
 		theZone.pRad = pRad -- not sure we'll ever need that, but at least we have it
 --		trigger.action.outText("+++Zones: poly zone <" .. theZone.name .. "> has pRad = " .. pRad, 30) -- remember to remove me 
@@ -805,6 +812,66 @@ function cfxZones.getZonesWithAttributeNamed(attributeName, testZones)
 end
 
 --
+-- zone volume management
+--
+
+function cfxZones.getZoneVolume(theZone)
+	if not theZone then return nil end 
+	
+	if (theZone.isCircle) then 
+		-- create a sphere volume
+		local p = cfxZones.getPoint(theZone)
+		p.y = land.getHeight({x = p.x, y = p.z})
+		local r = theZone.radius
+		if r < 10 then r = 10 end 
+		local vol = {
+			id = world.VolumeType.SPHERE,
+			params = {
+				point = p,
+				radius = r
+			}
+		}
+		return vol 
+	elseif (theZone.isPoly) then 
+		--trigger.action.outText("zne: isPointInside: " .. theZone.name .. " is Polyzone!", 30)
+		-- build the box volume, using the zone's bounds ll and ur points 
+		local lowerLeft = {}
+		-- we build x = westerm y = southern, Z = alt 
+		local alt = land.getHeight({x=theZone.bounds.ll.x, y = theZone.bounds.ll.z}) - 10
+		lowerLeft.x = theZone.bounds.ll.x 
+		lowerLeft.z = theZone.bounds.ll.z 
+		lowerLeft.y = alt -- we go lower 
+		
+		local upperRight = {}
+		alt = land.getHeight({x=theZone.bounds.ur.x, y = theZone.bounds.ur.z}) + 10
+		upperRight.x = theZone.bounds.ur.x 
+		upperRight.z = theZone.bounds.ur.z 
+		upperRight.y = alt -- we go higher 
+		
+		-- construct volume 
+		local vol = {
+			id = world.VolumeType.BOX,
+			params = {
+				min = lowerLeft,
+				max = upperRight
+			}
+		}
+		return vol 
+	else 
+		trigger.action.outText("zne: unknown zone type for <" .. theZone.name .. ">", 30)
+	end
+end
+
+function cfxZones.declutterZone(theZone)
+	if not theZone then return end 
+	local theVol = cfxZones.getZoneVolume(theZone)
+	if theZone.verbose then 
+		dcsCommon.dumpVar2Str("vol", theVol)
+	end
+	world.removeJunk(theVol)
+end
+
+--
 -- units / groups in zone
 --
 function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be code 
@@ -924,6 +991,18 @@ function cfxZones.offsetZone(theZone, dx, dz)
 		theZone.poly[v].x = theZone.poly[v].x + dx
 		theZone.poly[v].z = theZone.poly[v].z + dz 
 	end
+	
+	-- update zone bounds 
+	theZone.bounds.ll.x = theZone.bounds.ll.x + dx 
+	theZone.bounds.lr.x = theZone.bounds.lr.x + dx
+	theZone.bounds.ul.x = theZone.bounds.ul.x + dx 
+	theZone.bounds.ur.x = theZone.bounds.ur.x + dx
+
+	theZone.bounds.ll.z = theZone.bounds.ll.z + dz 
+	theZone.bounds.lr.z = theZone.bounds.lr.z + dz
+	theZone.bounds.ul.z = theZone.bounds.ul.z + dz 
+	theZone.bounds.ur.z = theZone.bounds.ur.z + dz
+	
 end
 
 function cfxZones.moveZoneTo(theZone, x, z)
@@ -1886,7 +1965,58 @@ function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	return testResult, currVal
 end
 
-
+function cfxZones.numberArrayFromString(inString, default)
+	if not default then default = 0 end 
+	if string.len(inString) < 1 then 
+		trigger.action.outText("+++zne: empty numbers", 30)
+		return {default, } 
+	end
+	if cfxZones.verbose then 
+		trigger.action.outText("+++zne: processing <" .. inString .. ">", 30)
+	end 
+	
+	local flags = {}
+	local rawElements = dcsCommon.splitString(inString, ",")
+	-- go over all elements 
+	for idx, anElement in pairs(rawElements) do 
+		anElement = dcsCommon.trim(anElement)
+		if dcsCommon.stringStartsWithDigit(anElement) and dcsCommon.containsString(anElement, "-") then 
+			-- interpret this as a range
+			local theRange = dcsCommon.splitString(anElement, "-")
+			local lowerBound = theRange[1]
+			lowerBound = tonumber(lowerBound)
+			local upperBound = theRange[2]
+			upperBound = tonumber(upperBound)
+			if lowerBound and upperBound then
+				-- swap if wrong order
+				if lowerBound > upperBound then 
+					local temp = upperBound
+					upperBound = lowerBound
+					lowerBound = temp 
+				end
+				-- now add add numbers to flags
+				for f=lowerBound, upperBound do 
+					table.insert(flags, tostring(f))
+				end
+			else
+				-- bounds illegal
+				trigger.action.outText("+++zne: ignored range <" .. anElement .. "> (range)", 30)
+			end
+		else
+			-- single number
+			f = dcsCommon.trim(anElement)
+			f = tonumber(f)
+			if f then 
+				table.insert(flags, f)
+			end
+		end
+	end
+	if #flags < 1 then flags = {default, } end 
+	if cfxZones.verbose then 
+		trigger.action.outText("+++zne: <" .. #flags .. "> flags total", 30)
+	end 
+	return flags
+end 
 
 function cfxZones.flagArrayFromString(inString)
 -- original code from RND flag
