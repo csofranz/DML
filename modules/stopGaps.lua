@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.0.6"
+stopGap.version = "1.0.7"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -40,6 +40,8 @@ stopGap.requiredLibs = {
 	1.0.4 - player units or groups that end in '-sg' are not stop-gapped
 	1.0.5 - triggerMethod
 	1.0.6 - spIgnore '-sp' 
+	1.0.7 - migrated to OOP zones 
+		  - corrected ssbEnabled config from sbb to ssb 
 --]]--
 
 stopGap.standInGroups = {}
@@ -250,7 +252,8 @@ function stopGap.update()
 	end
 
 		-- check if signal for on? or off? 
-	if stopGap.turnOn and cfxZones.testZoneFlag(stopGap, stopGap.turnOnFlag, stopGap.triggerMethod, "lastTurnOnFlag") then
+	if stopGap.turnOn and cfxZones.testZoneFlag(stopGap, stopGap.turnOnFlag, stopGap.triggerMethod, "lastTurnOnFlag") -- warning: stopGap is NOT dmlZone, requires cfxZone invocation 
+	then
 		if not stopGap.enabled then 
 			stopGap.turnOn()
 		end
@@ -328,12 +331,12 @@ end
 -- read stopGapZone 
 --
 function stopGap.createStopGapZone(theZone)
-	local sg = cfxZones.getBoolFromZoneProperty(theZone, "stopGap", true)
+	local sg = theZone:getBoolFromZoneProperty("stopGap", true)
 	if sg then theZone.sgIgnore = false else theZone.sgIgnore = true end 
 end
 
 function stopGap.createStopGapSPZone(theZone)
-	local sp = cfxZones.getBoolFromZoneProperty(theZone, "stopGapSP", true)
+	local sp = theZone:getBoolFromZoneProperty("stopGapSP", true)
 	if sp then theZone.spIgnore = false else theZone.spIgnore = true end 
 end
 
@@ -344,17 +347,17 @@ stopGap.name = "stopGapConfig" -- cfxZones compatibility here
 function stopGap.readConfigZone(theZone)
 	-- currently nothing to do 
 	stopGap.verbose = theZone.verbose 
-	stopGap.ssbEnabled = cfxZones.getBoolFromZoneProperty(theZone, "sbb", true)
-	stopGap.enabled = cfxZones.getBoolFromZoneProperty(theZone, "onStart", true)
-	if cfxZones.hasProperty(theZone, "on?") then 
-		stopGap.turnOnFlag = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>")
+	stopGap.ssbEnabled = theZone:getBoolFromZoneProperty("ssb", true)
+	stopGap.enabled = theZone:getBoolFromZoneProperty("onStart", true)
+	if theZone:hasProperty("on?") then 
+		stopGap.turnOnFlag = theZone:getStringFromZoneProperty("on?", "*<none>")
 		stopGap.lastTurnOnFlag = trigger.misc.getUserFlag(stopGap.turnOnFlag)
 	end
-	if cfxZones.hasProperty(theZone, "off?") then 
-		stopGap.turnOffFlag = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>")
+	if theZone:hasProperty("off?") then 
+		stopGap.turnOffFlag = theZone:getStringFromZoneProperty("off?", "*<none>")
 		stopGap.lastTurnOffFlag = trigger.misc.getUserFlag(stopGap.turnOffFlag)
 	end
-	stopGap.triggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	stopGap.triggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
 	if stopGap.verbose then 
 		trigger.action.outText("+++StopG: config read, verbose = YES", 30)
 		if stopGap.enabled then 

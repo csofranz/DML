@@ -1,8 +1,9 @@
 tacan = {}
-tacan.version = "1.0.0"
+tacan.version = "1.1.0"
 --[[--
 Version History
  1.0.0 - initial version 
+ 1.1.0 - OOP cfxZones 
  
 --]]--
 tacan.verbose = false  
@@ -14,59 +15,55 @@ tacan.tacanZones = {}
 
 
 function tacan.createTacanZone(theZone)
-	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", true)
-	local channels = cfxZones.getStringFromZoneProperty(theZone, "channel", "1")
-	theZone.channels = cfxZones.numberArrayFromString(channels, 1)
+	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", true)
+	local channels = theZone:getStringFromZoneProperty("channel", "1")
+	theZone.channels = dcsCommon.numberArrayFromString(channels, 1)
 	if theZone.verbose or tacan.verbose then 
 		trigger.action.outText("+++tcn: new tacan <" .. theZone.name .. "> for channels [" .. dcsCommon.array2string(theZone.channels, ", ") .. "]", 30)
 	end
 	
-	local mode = cfxZones.getStringFromZoneProperty(theZone, "mode", "X")
+	local mode = theZone:getStringFromZoneProperty("mode", "X")
 	mode = string.upper(mode)
-	theZone.modes = cfxZones.flagArrayFromString(mode) 
+	theZone.modes = dcsCommon.flagArrayFromString(mode) 
 	if theZone.verbose or tacan.verbose then 
 		trigger.action.outText("+++tcn: modes [" .. dcsCommon.array2string(theZone.modes, ", ") .. "]", 30)
 	end
-	
-	theZone.coa = cfxZones.getCoalitionFromZoneProperty(theZone, "tacan", 0)
-
-	theZone.heading = cfxZones.getNumberFromZoneProperty(theZone, "heading", 0) 
+	theZone.coa = theZone:getCoalitionFromZoneProperty("tacan", 0)
+	theZone.heading = theZone:getNumberFromZoneProperty("heading", 0) 
 	theZone.heading = theZone.heading * 0.0174533 -- convert to rads 
-	local callsign = cfxZones.getStringFromZoneProperty(theZone, "callsign", "TXN")
+	local callsign = theZone:getStringFromZoneProperty("callsign", "TXN")
 	callsign = string.upper(callsign)
-	theZone.callsigns = cfxZones.flagArrayFromString(callsign)
+	theZone.callsigns = dcsCommon.flagArrayFromString(callsign)
 	if theZone.verbose or tacan.verbose then 
 		trigger.action.outText("+++tcn: callsigns [" .. dcsCommon.array2string(theZone.callsigns) .. "]", 30)
 	end
-	
-	theZone.rndLoc = cfxZones.getBoolFromZoneProperty(theZone, "rndLoc", false)
---	theZone.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	theZone.triggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "deploy?") then 
-		theZone.deployFlag = cfxZones.getStringFromZoneProperty(theZone, "deploy?", "<none>")
-		theZone.lastDeployFlagValue = cfxZones.getFlagValue(theZone.deployFlag, theZone)
+	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
+	theZone.triggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if theZone:hasProperty("deploy?") then 
+		theZone.deployFlag = theZone:getStringFromZoneProperty("deploy?", "<none>")
+		theZone.lastDeployFlagValue = theZone:getFlagValue(theZone.deployFlag)
 	end
 	if (not theZone.deployFlag) and (not theZone.onStart) then 
 		trigger.action.outText("+++tacan: WARNING: tacan zone <> is late activation and has no activation flag, will never activate.", 30)
 	end	
 	
 	theZone.spawnedTACANS = {} -- for GC and List
-	theZone.preWipe = cfxZones.getBoolFromZoneProperty(theZone, "preWipe", true)
+	theZone.preWipe = theZone:getBoolFromZoneProperty("preWipe", true)
 	
-	if cfxZones.hasProperty(theZone, "destroy?") then 
-		theZone.destroyFlag = cfxZones.getStringFromZoneProperty(theZone, "destroy?", "<none>")
-		theZone.lastDestroyFlagValue = cfxZones.getFlagValue(theZone.destroyFlag, theZone)	
+	if theZone:hasProperty("destroy?") then 
+		theZone.destroyFlag = theZone:getStringFromZoneProperty( "destroy?", "<none>")
+		theZone.lastDestroyFlagValue = theZone:getFlagValue(theZone.destroyFlag)	
 	end
 	
-	if cfxZones.hasProperty(theZone, "c#") then 
-		theZone.channelOut = cfxZones.getStringFromZoneProperty(theZone, "C#", "<none>")
+	if theZone:hasProperty("c#") then 
+		theZone.channelOut = theZone:getStringFromZoneProperty("C#", "<none>")
 	end
 	
-	theZone.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", false)
+	theZone.announcer = theZone:getBoolFromZoneProperty("announcer", false)
 	
 	-- interface to groupTracker 
-	if cfxZones.hasProperty(theZone, "trackWith:") then 
-		theZone.trackWith = cfxZones.getStringFromZoneProperty(theZone, "trackWith:", "<None>")
+	if theZone:hasProperty("trackWith:") then 
+		theZone.trackWith = theZone:getStringFromZoneProperty( "trackWith:", "<None>")
 	end
 	
 	-- see if we need to deploy now 
@@ -379,8 +376,8 @@ function tacan.readConfigZone()
 	tacan.verbose = theZone.verbose 
 	
 	tacan.list = cfxZones.getBoolFromZoneProperty(theZone, "list", false)
-	if cfxZones.hasProperty(theZone, "GUI") then 
-		tacan.list = cfxZones.getBoolFromZoneProperty(theZone, "GUI", false)
+	if theZone:hasProperty("GUI") then 
+		tacan.list = theZone:getBoolFromZoneProperty("GUI", false)
 	end
 	
 	if tacan.verbose then 

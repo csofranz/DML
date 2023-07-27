@@ -1,5 +1,5 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "1.1.3" 
+cfxSmokeZone.version = "1.2.0" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -19,13 +19,14 @@ cfxSmokeZone.requiredLibs = {
  1.1.1 - stopSmoke? input 
  1.1.2 - 'agl', 'alt' synonymous for altitude to keep in line with fireFX
  1.1.3 - corrected smokeTriggerMethod in zone definition
+ 1.2.0 - first OOP guinea pig. 
  
 --]]--
 cfxSmokeZone.smokeZones = {}
 cfxSmokeZone.updateDelay = 5 * 60 -- every 5 minutes 
 
 function cfxSmokeZone.processSmokeZone(aZone)
-	local rawVal = cfxZones.getStringFromZoneProperty(aZone, "smoke", "green")
+	local rawVal = aZone:getStringFromZoneProperty("smoke", "green")
 	rawVal = rawVal:lower()
 	local theColor = 0 
 	if rawVal == "red" or rawVal == "1" then theColor = 1 end 
@@ -37,38 +38,38 @@ function cfxSmokeZone.processSmokeZone(aZone)
 	end
 
 	aZone.smokeColor = theColor
-	aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "altitude", 1)
-	if cfxZones.hasProperty(aZone, "alt") then 
-		aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "alt", 1)
-	elseif cfxZones.hasProperty(aZone, "agl") then 
-		aZone.smokeAlt = cfxZones.getNumberFromZoneProperty(aZone, "agl", 1)
+	aZone.smokeAlt = aZone:getNumberFromZoneProperty("altitude", 1)
+	if aZone:hasProperty("alt") then 
+		aZone.smokeAlt = aZone:getNumberFromZoneProperty("alt", 1)
+	elseif aZone:hasProperty("agl") then 
+		aZone.smokeAlt = aZone:getNumberFromZoneProperty("agl", 1)
 	end
 	
 	-- paused 
-	aZone.paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
+	aZone.paused = aZone:getBoolFromZoneProperty("paused", false)
 	
 	-- f? query flags 
-	if cfxZones.hasProperty(aZone, "f?") then 
-		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "f?", "*<none>")
-	elseif cfxZones.hasProperty(aZone, "startSmoke?") then 
-		aZone.onFlag = cfxZones.getStringFromZoneProperty(aZone, "startSmoke?", "none")
+	if aZone:hasProperty("f?") then 
+		aZone.onFlag = aZone:getStringFromZoneProperty("f?", "*<none>")
+	elseif aZone:hasProperty("startSmoke?") then 
+		aZone.onFlag = aZone:getStringFromZoneProperty("startSmoke?", "none")
 	end
 	
 	if aZone.onFlag then 
-		aZone.onFlagVal = cfxZones.getFlagValue(aZone.onFlag, aZone) -- save last value
+		aZone.onFlagVal = aZone:getFlagValue(aZone.onFlag) -- save last value
 	end
 	
-	if cfxZones.hasProperty(aZone, "stopSmoke?") then 
-		aZone.smkStopFlag = cfxZones.getStringFromZoneProperty(aZone, "stopSmoke?", "<none>")
-		aZone.smkLastStopFlag = cfxZones.getFlagValue(aZone.smkStopFlag, aZone)
+	if aZone:hasProperty("stopSmoke?") then 
+		aZone.smkStopFlag = aZone:getStringFromZoneProperty("stopSmoke?", "<none>")
+		aZone.smkLastStopFlag = aZone:getFlagValue(aZone.smkStopFlag)
 	end
 	
 	-- watchflags:
 	-- triggerMethod
-	aZone.smokeTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
+	aZone.smokeTriggerMethod = aZone:getStringFromZoneProperty( "triggerMethod", "change")
 
-	if cfxZones.hasProperty(aZone, "smokeTriggerMethod") then 
-		aZone.smokeTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "smokeTriggerMethod", "change")
+	if aZone:hasProperty("smokeTriggerMethod") then 
+		aZone.smokeTriggerMethod = aZone:getStringFromZoneProperty( "smokeTriggerMethod", "change")
 	end
 	
 end

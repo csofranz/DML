@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.2.1"
+messenger.version = "2.3.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -67,6 +67,7 @@ messenger.messengers = {}
 	2.2.1 - when messenger is linked to a unit, it can use the linked
 			unit as reference point for relative wildcards. Always broadcasts to coalition. Can be used to broadcase 'eye in the sky' type information
 		  - fixed verbosity bug 
+	2.3.0 - cfxZones OOP switch
 	
 --]]--
 
@@ -138,7 +139,7 @@ function messenger.dynamicUnitProcessing(inMsg, theZone, theUnit)
 				local tHead = 0
 				
 				if tZone then 
-					thePoint = cfxZones.getPoint(tZone)
+					thePoint = tZone:getPoint()
 					-- if this zone follows a unit, get the master units elevaltion
 					if tZone.linkedUnit and Unit.isExist(tZone.linkedUnit) then 
 						local lU = tZone.linkedUnit
@@ -225,90 +226,82 @@ end
 function messenger.createMessengerWithZone(theZone)
 	-- start val - a range
 	
-	local aMessage = cfxZones.getStringFromZoneProperty(theZone, "message", "") 
+	local aMessage = theZone:getStringFromZoneProperty("message", "") 
 	theZone.message = aMessage -- refactoring: messenger.preProcMessage(aMessage, theZone) removed 
 
-	theZone.spaceBefore = cfxZones.getBoolFromZoneProperty(theZone, "spaceBefore", false)
-	theZone.spaceAfter = cfxZones.getBoolFromZoneProperty(theZone, "spaceAfter", false)
+	theZone.spaceBefore = theZone:getBoolFromZoneProperty("spaceBefore", false)
+	theZone.spaceAfter = theZone:getBoolFromZoneProperty("spaceAfter", false)
 
-	theZone.soundFile = cfxZones.getStringFromZoneProperty(theZone, "soundFile", "<none>") 
+	theZone.soundFile = theZone:getStringFromZoneProperty("soundFile", "<none>") 
 
-	theZone.clearScreen = cfxZones.getBoolFromZoneProperty(theZone, "clearScreen", false)
+	theZone.clearScreen = theZone:getBoolFromZoneProperty("clearScreen", false)
 	
-	theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "duration", 30)
-	if cfxZones.hasProperty(theZone, "messageDuration") then 
-		theZone.duration = cfxZones.getNumberFromZoneProperty(theZone, "messageDuration", 30)
+	theZone.duration = theZone:getNumberFromZoneProperty("duration", 30)
+	if theZone:hasProperty("messageDuration") then 
+		theZone.duration = theZone:getNumberFromZoneProperty( "messageDuration", 30)
 	end 
 	
 	-- msgTriggerMethod
-	theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "msgTriggerMethod") then 
-		theZone.msgTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "msgTriggerMethod", "change")
+	theZone.msgTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if theZone:hasProperty("msgTriggerMethod") then 
+		theZone.msgTriggerMethod = theZone:getStringFromZoneProperty("msgTriggerMethod", "change")
 	end 
-	
-	-- trigger flag f? in? messageOut?, add messenger?
-	
-	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")	
-		-- may want to add deprecated note later
-	end 
-
-	
+		
+	if theZone:hasProperty("f?") then 
+		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("f?", "none")	
+	end 	
 	-- can also use in? for counting. we always use triggerMessagerFlag 
-	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+	if theZone:hasProperty("in?") then 
+		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("in?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "messageOut?") then 
-		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOut?", "none")
+	if theZone:hasProperty("messageOut?") then 
+		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("messageOut?", "none")
 	end
 	
 	-- try default only if no other is set 
 	if not theZone.triggerMessagerFlag then 
-		if not cfxZones.hasProperty(theZone, "messenger?") then 
+		if not theZone:hasProperty("messenger?") then 
 			trigger.action.outText("*** Note: messenger in <" .. theZone.name .. "> can't be triggered", 30)
 		end
-		theZone.triggerMessagerFlag = cfxZones.getStringFromZoneProperty(theZone, "messenger?", "none")
+		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty( "messenger?", "none")
 	end 
-		
---	if theZone.triggerMessagerFlag then 
-	theZone.lastMessageTriggerValue = cfxZones.getFlagValue(theZone.triggerMessagerFlag, theZone)-- save last value	
---	end
 
-	theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "mute", false) --false 
-	if cfxZones.hasProperty(theZone, "messageMute") then
-		theZone.messageOff = cfxZones.getBoolFromZoneProperty(theZone, "messageMute", false)
+	theZone.lastMessageTriggerValue = theZone:getFlagValue(theZone.triggerMessagerFlag)-- save last value	
+
+	theZone.messageOff = theZone:getBoolFromZoneProperty("mute", false) --false 
+	if theZone:hasProperty("messageMute") then
+		theZone.messageOff = theZone:getBoolFromZoneProperty( "messageMute", false)
 	end
 	
-	-- advisory: messageOff, messageOffFlag and lastMessageOff are all distinct 
-	
-	if cfxZones.hasProperty(theZone, "messageOff?") then 
-		theZone.messageOffFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOff?", "*none")
-		theZone.lastMessageOff = cfxZones.getFlagValue(theZone.messageOffFlag, theZone)
+	-- advisory: messageOff, messageOffFlag and lastMessageOff are all distinct 	
+	if theZone:hasProperty("messageOff?") then 
+		theZone.messageOffFlag = theZone:getStringFromZoneProperty("messageOff?", "*none")
+		theZone.lastMessageOff = theZone:getFlagValue(theZone.messageOffFlag)
 	end
 	
-	if cfxZones.hasProperty(theZone, "messageOn?") then 
-		theZone.messageOnFlag = cfxZones.getStringFromZoneProperty(theZone, "messageOn?", "*none")
-		theZone.lastMessageOn = cfxZones.getFlagValue(theZone.messageOnFlag, theZone)
+	if theZone:hasProperty("messageOn?") then 
+		theZone.messageOnFlag = theZone:getStringFromZoneProperty( "messageOn?", "*none")
+		theZone.lastMessageOn = theZone:getFlagValue(theZone.messageOnFlag)
 	end
 	
 	-- reveiver: coalition, group, unit 
-	if cfxZones.hasProperty(theZone, "coalition") then 
-		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
-	elseif cfxZones.hasProperty(theZone, "msgCoalition") then 
-		theZone.msgCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "msgCoalition", 0)
+	if theZone:hasProperty("coalition") then 
+		theZone.msgCoalition = theZone:getCoalitionFromZoneProperty("coalition", 0)
+	elseif theZone:hasProperty("msgCoalition") then 
+		theZone.msgCoalition = theZone:getCoalitionFromZoneProperty("msgCoalition", 0)
 	end 
 	
-	if cfxZones.hasProperty(theZone, "group") then 
-		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "group", "<none>")
-	elseif cfxZones.hasProperty(theZone, "msgGroup") then 
-		theZone.msgGroup = cfxZones.getStringFromZoneProperty(theZone, "msgGroup", "<none>")
+	if theZone:hasProperty("group") then 
+		theZone.msgGroup = theZone:getStringFromZoneProperty("group", "<none>")
+	elseif theZone:hasProperty("msgGroup") then 
+		theZone.msgGroup = theZone:getStringFromZoneProperty("msgGroup", "<none>")
 	end
 	
-	if cfxZones.hasProperty(theZone, "unit") then 
-		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "unit", "<none>")
-	elseif cfxZones.hasProperty(theZone, "msgUnit") then 
-		theZone.msgUnit = cfxZones.getStringFromZoneProperty(theZone, "msgUnit", "<none>")
+	if theZone:hasProperty("unit") then 
+		theZone.msgUnit = theZone:getStringFromZoneProperty("unit", "<none>")
+	elseif theZone:hasProperty("msgUnit") then 
+		theZone.msgUnit = theZone:getStringFromZoneProperty("msgUnit", "<none>")
 	end
 	
 	if (theZone.msgGroup and theZone.msgUnit) or 
@@ -319,27 +312,27 @@ function messenger.createMessengerWithZone(theZone)
 	end
 	
 	-- flag whose value can be read: to be deprecated
-	if cfxZones.hasProperty(theZone, "messageValue?") then 
-		theZone.messageValue = cfxZones.getStringFromZoneProperty(theZone, "messageValue?", "<none>") 
+	if theZone:hasProperty("messageValue?") then 
+		theZone.messageValue = theZone:getStringFromZoneProperty( "messageValue?", "<none>") 
 		trigger.action.outText("+++Msg: Warning - zone <" .. theZone.name .. "> uses 'messageValue' attribute. Migrate to <v:<flag> now!", 30)
 	end
 	
 	-- time format for new <t: flagname>
-	theZone.msgTimeFormat = cfxZones.getStringFromZoneProperty(theZone, "timeFormat", "<:h>:<:m>:<:s>")
+	theZone.msgTimeFormat = theZone:getStringFromZoneProperty( "timeFormat", "<:h>:<:m>:<:s>")
 	
-	theZone.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperial", false)
-	if cfxZones.hasProperty(theZone, "imperialUnits") then 
-		theZone.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperialUnits", false)
+	theZone.imperialUnits = theZone:getBoolFromZoneProperty("imperial", false)
+	if theZone:hasProperty("imperialUnits") then 
+		theZone.imperialUnits = theZone:getBoolFromZoneProperty( "imperialUnits", false)
 	end
 	
-	theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "error", "")
-	if cfxZones.hasProperty(theZone, "messageError") then 
-		theZone.errString = cfxZones.getStringFromZoneProperty(theZone, "messageError", "")
+	theZone.errString = theZone:getStringFromZoneProperty("error", "")
+	if theZone:hasProperty("messageError") then 
+		theZone.errString = theZone:getStringFromZoneProperty( "messageError", "")
 	end
 	
 	-- possible responses for mapping
-	if cfxZones.hasProperty(theZone, "responses") then 
-		local resp = cfxZones.getStringFromZoneProperty(theZone, "responses", "none")
+	if theZone:hasProperty("responses") then 
+		local resp = theZone:getStringFromZoneProperty("responses", "none")
 		theZone.msgResponses = dcsCommon.string2Array(resp, ",")
 	end
 	
@@ -359,7 +352,7 @@ function messenger.getMessage(theZone)
 	local zVal = "<n/a>"
 	if theZone.messageValue then 
 		trigger.action.outText("+++Msg: Warning - zone <" .. theZone.name .. "> uses 'messageValue' attribute. Migrate to <v:<flag> now!")
-		zVal = cfxZones.getFlagValue(theZone.messageValue, theZone)
+		zVal = theZone:getFlagValue(theZone.messageValue)
 		zVal = tostring(zVal)
 		if not zVal then zVal = "<err>" end 
 	end 
@@ -421,13 +414,13 @@ function messenger.isTriggered(theZone)
 			end
 			trigger.action.outSoundForUnit(ID, fileName)
 		end
-	elseif cfxZones.getLinkedUnit(theZone) then 
+	elseif theZone:getLinkedUnit() then 
 		-- this only works if the zone is linked to a unit 
 		-- and not using group or unit 
 		-- the linked unit is then used as reference 
 		-- outputs to all of same coalition as the linked 
 		-- unit 
-		local theUnit = cfxZones.getLinkedUnit(theZone)
+		local theUnit = theZone:getLinkedUnit()
 		local ID = theUnit:getID()
 		local coa = theUnit:getCoalition()
 		msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
@@ -451,7 +444,7 @@ function messenger.update()
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
-		if cfxZones.testZoneFlag(aZone, aZone.triggerMessagerFlag, aZone.msgTriggerMethod, 			"lastMessageTriggerValue") then 
+		if aZone:testZoneFlag(aZone.triggerMessagerFlag, aZone.msgTriggerMethod, "lastMessageTriggerValue") then 
 			if messenger.verbose or aZone.verbose then 
 					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
 				end
@@ -459,14 +452,14 @@ function messenger.update()
 		end 
 		
 		-- old trigger code 		
-		if cfxZones.testZoneFlag(aZone, aZone.messageOffFlag, aZone.msgTriggerMethod, "lastMessageOff") then 
+		if aZone:testZoneFlag(aZone.messageOffFlag, aZone.msgTriggerMethod, "lastMessageOff") then 
 			aZone.messageOff = true
 			if messenger.verbose or aZone.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ***OFF***", 30)
 			end 
 		end
 		
-		if cfxZones.testZoneFlag(aZone, 				aZone.messageOnFlag, aZone.msgTriggerMethod, "lastMessageOn") then 
+		if aZone:testZoneFlag(aZone.messageOnFlag, aZone.msgTriggerMethod, "lastMessageOn") then 
 			aZone.messageOff = false
 			if messenger.verbose or aZone.verbose then 
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
@@ -487,7 +480,7 @@ function messenger.readConfigZone()
 		theZone =  cfxZones.createSimpleZone("messengerConfig")
 	end 
 	
-	messenger.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	messenger.verbose = theZone:getBoolFromZoneProperty("verbose", false)
 	
 	if messenger.verbose then 
 		trigger.action.outText("+++msgr: read config", 30)

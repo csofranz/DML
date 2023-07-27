@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.0.1"
+radioMenu.version = "2.1.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -10,23 +10,27 @@ radioMenu.menus = {}
 
 --[[--
 	Version History 
-	1.0.0 Initial version 
-	1.0.1 spelling corrections
-	1.1.0 removeMenu 
-	      addMenu 
-		  menuVisible 
-	2.0.0 redesign: handles multiple receivers
-		  optional MX module 
-		  group option
-	      type option
-		  multiple group names 
-		  multiple types 
-		  gereric helo type 
-		  generic plane type 
-		  type works with coalition 
-	2.0.1 corrections to installMenu(), as suggested by GumidekCZ
-
-	
+	1.0.0 - Initial version 
+	1.0.1 - spelling corrections
+	1.1.0 - removeMenu 
+	        addMenu 
+		    menuVisible 
+	2.0.0 - redesign: handles multiple receivers
+		    optional MX module 
+		    group option
+	        type option
+		    multiple group names 
+		    multiple types 
+		    gereric helo type 
+		    generic plane type 
+		    type works with coalition 
+	2.0.1 - corrections to installMenu(), as suggested by GumidekCZ
+	2.1.0 - valA/valB/valC/valD attributes 
+			OOP cfxZones
+			corrected CD setting for "D"
+			ackA, ackB, ackC, ackD attributes 
+			valA-D now define full method, not just values 
+			full wildcard support for ack and cooldown 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -183,8 +187,8 @@ function radioMenu.installMenu(theZone)
 		theZone.rootMenu[0] = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, nil)		
 	end
 	
-	if cfxZones.hasProperty(theZone, "itemA") then 
-		local menuA = cfxZones.getStringFromZoneProperty(theZone, "itemA", "<no A submenu>")
+	if theZone:hasProperty("itemA") then 
+		local menuA = theZone:getStringFromZoneProperty("itemA", "<no A submenu>")
 		if theZone.menuGroup or theZone.menuTypes then
 			theZone.menuA = {}
 			for idx, grp in  pairs(gID) do  
@@ -197,8 +201,8 @@ function radioMenu.installMenu(theZone)
 		end 
 	end 
 	
-	if cfxZones.hasProperty(theZone, "itemB") then 
-		local menuB = cfxZones.getStringFromZoneProperty(theZone, "itemB", "<no B submenu>")
+	if theZone:hasProperty("itemB") then 
+		local menuB = theZone:getStringFromZoneProperty("itemB", "<no B submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuB = {}
 			for idx, grp in  pairs(gID) do 
@@ -211,8 +215,8 @@ function radioMenu.installMenu(theZone)
 		end
 	end
 
-	if cfxZones.hasProperty(theZone, "itemC") then 
-		local menuC = cfxZones.getStringFromZoneProperty(theZone, "itemC", "<no C submenu>")
+	if theZone:hasProperty("itemC") then 
+		local menuC = theZone:getStringFromZoneProperty("itemC", "<no C submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuC = {}
 			for idx, grp in  pairs(gID) do 
@@ -225,8 +229,8 @@ function radioMenu.installMenu(theZone)
 		end
 	end
 	
-	if cfxZones.hasProperty(theZone, "itemD") then 
-		local menuD = cfxZones.getStringFromZoneProperty(theZone, "itemD", "<no D submenu>")
+	if theZone:hasProperty("itemD") then 
+		local menuD = theZone:getStringFromZoneProperty("itemD", "<no D submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuD = {}
 			for idx, grp in  pairs(gID) do 
@@ -241,23 +245,23 @@ function radioMenu.installMenu(theZone)
 end
 
 function radioMenu.createRadioMenuWithZone(theZone)
-	theZone.rootName = cfxZones.getStringFromZoneProperty(theZone, "radioMenu", "<No Name>")
+	theZone.rootName = theZone:getStringFromZoneProperty("radioMenu", "<No Name>")
 	
-	theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0)
+	theZone.coalition = theZone:getCoalitionFromZoneProperty("coalition", 0)
 	-- groups / types 
-	if cfxZones.hasProperty(theZone, "group") then 
-		theZone.menuGroup = cfxZones.getStringFromZoneProperty(theZone, "group", "<none>")
+	if theZone:hasProperty("group") then 
+		theZone.menuGroup = theZone:getStringFromZoneProperty("group", "<none>")
 		theZone.menuGroup = dcsCommon.trim(theZone.menuGroup)
-	elseif cfxZones.hasProperty(theZone, "groups") then 
-		theZone.menuGroup = cfxZones.getStringFromZoneProperty(theZone, "groups", "<none>")
+	elseif theZone:hasProperty("groups") then 
+		theZone.menuGroup = theZone:getStringFromZoneProperty("groups", "<none>")
 		theZone.menuGroup = dcsCommon.trim(theZone.menuGroup)
-	elseif cfxZones.hasProperty(theZone, "type") then 
-		theZone.menuTypes = cfxZones.getStringFromZoneProperty(theZone, "type", "none")
-	elseif cfxZones.hasProperty(theZone, "types") then
-		theZone.menuTypes = cfxZones.getStringFromZoneProperty(theZone, "types", "none")
+	elseif theZone:hasProperty("type") then 
+		theZone.menuTypes = theZone:getStringFromZoneProperty("type", "none")
+	elseif theZone:hasProperty("types") then
+		theZone.menuTypes = theZone:getStringFromZoneProperty("types", "none")
 	end	
 	
-	theZone.menuVisible = cfxZones.getBoolFromZoneProperty(theZone, "menuVisible", true)
+	theZone.menuVisible = theZone:getBoolFromZoneProperty("menuVisible", true)
 	
 	-- install menu if not hidden
 	if theZone.menuVisible then 
@@ -265,41 +269,62 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	end
 
 	-- get the triggers & methods here 
-	theZone.radioMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "radioMethod") then 
-		theZone.radioMethod = cfxZones.getStringFromZoneProperty(theZone, "radioMethod", "inc")
+	theZone.radioMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("radioMethod") then 
+		theZone.radioMethod = theZone:getStringFromZoneProperty( "radioMethod", "inc")
 	end
 	
-	theZone.radioTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "radioTriggerMethod", "change")
+	theZone.radioTriggerMethod = theZone:getStringFromZoneProperty("radioTriggerMethod", "change")
 	
-	theZone.itemAChosen = cfxZones.getStringFromZoneProperty(theZone, "A!", "*<none>")
-	theZone.cooldownA = cfxZones.getNumberFromZoneProperty(theZone, "cooldownA", 0)
-	--theZone.mcdA = 0
-	theZone.busyA = cfxZones.getStringFromZoneProperty(theZone, "busyA", "Please stand by (<s> seconds)")
-	
-	theZone.itemBChosen = cfxZones.getStringFromZoneProperty(theZone, "B!", "*<none>")
-	theZone.cooldownB = cfxZones.getNumberFromZoneProperty(theZone, "cooldownB", 0)
-	--theZone.mcdB = 0
-	theZone.busyB = cfxZones.getStringFromZoneProperty(theZone, "busyB", "Please stand by (<s> seconds)")
-	
-	theZone.itemCChosen = cfxZones.getStringFromZoneProperty(theZone, "C!", "*<none>")
-	theZone.cooldownC = cfxZones.getNumberFromZoneProperty(theZone, "cooldownC", 0)
-	--theZone.mcdC = 0
-	theZone.busyC = cfxZones.getStringFromZoneProperty(theZone, "busyC", "Please stand by (<s> seconds)")
-
-	theZone.itemDChosen = cfxZones.getStringFromZoneProperty(theZone, "D!", "*<none>")
-	theZone.cooldownD = cfxZones.getNumberFromZoneProperty(theZone, "cooldownD", 0)
-	--theZone.mcdD = 0
-	theZone.busyD = cfxZones.getStringFromZoneProperty(theZone, "busyD", "Please stand by (<s> seconds)")
-	
-	if cfxZones.hasProperty(theZone, "removeMenu?") then 
-		theZone.removeMenu = cfxZones.getStringFromZoneProperty(theZone, "removeMenu?", "*<none>")
-		theZone.lastRemoveMenu = cfxZones.getFlagValue(theZone.removeMenu, theZone)
+	-- A! to D!
+	theZone.itemAChosen = theZone:getStringFromZoneProperty("A!", "*<none>")
+	theZone.cooldownA = theZone:getNumberFromZoneProperty("cooldownA", 0)
+	theZone.busyA = theZone:getStringFromZoneProperty("busyA", "Please stand by (<s> seconds)")
+	if theZone:hasProperty("valA") then 
+		theZone.outValA = theZone:getStringFromZoneProperty("valA", 1)
+	end
+	if theZone:hasProperty("ackA") then 
+		theZone.ackA = theZone:getStringFromZoneProperty("ackA", "Acknowledged: A")
 	end
 	
-	if cfxZones.hasProperty(theZone, "addMenu?") then 
-		theZone.addMenu = cfxZones.getStringFromZoneProperty(theZone, "addMenu?", "*<none>")
-		theZone.lastAddMenu = cfxZones.getFlagValue(theZone.addMenu, theZone)
+	theZone.itemBChosen = theZone:getStringFromZoneProperty("B!", "*<none>")
+	theZone.cooldownB = theZone:getNumberFromZoneProperty("cooldownB", 0)
+	theZone.busyB = theZone:getStringFromZoneProperty("busyB", "Please stand by (<s> seconds)")
+	if theZone:hasProperty("valB") then 
+		theZone.outValB = theZone:getStringFromZoneProperty("valB", 1)
+	end
+	if theZone:hasProperty("ackB") then 
+		theZone.ackB = theZone:getStringFromZoneProperty("ackB", "Acknowledged: B")
+	end
+	
+	theZone.itemCChosen = theZone:getStringFromZoneProperty("C!", "*<none>")
+	theZone.cooldownC = theZone:getNumberFromZoneProperty("cooldownC", 0)
+	theZone.busyC = theZone:getStringFromZoneProperty("busyC", "Please stand by (<s> seconds)")
+	if theZone:hasProperty("valC") then 
+		theZone.outValC = theZone:getStringFromZoneProperty("valC", 1)
+	end
+	if theZone:hasProperty("ackC") then 
+		theZone.ackC = theZone:getStringFromZoneProperty("ackC", "Acknowledged: C")
+	end
+	
+	theZone.itemDChosen = theZone:getStringFromZoneProperty("D!", "*<none>")
+	theZone.cooldownD = theZone:getNumberFromZoneProperty("cooldownD", 0)
+	theZone.busyD = theZone:getStringFromZoneProperty("busyD", "Please stand by (<s> seconds)")
+	if theZone:hasProperty("valD") then 
+		theZone.outValD = theZone:getStringFromZoneProperty("valD", 1)
+	end	
+	if theZone:hasProperty("ackD") then 
+		theZone.ackC = theZone:getStringFromZoneProperty("ackD", "Acknowledged: D")
+	end
+	
+	if theZone:hasProperty("removeMenu?") then 
+		theZone.removeMenu = theZone:getStringFromZoneProperty( "removeMenu?", "*<none>")
+		theZone.lastRemoveMenu = theZone:getFlagValue(theZone.removeMenu)
+	end
+	
+	if theZone:hasProperty("addMenu?") then 
+		theZone.addMenu = theZone:getStringFromZoneProperty("addMenu?", "*<none>")
+		theZone.lastAddMenu = theZone:getFlagValue(theZone.addMenu)
 	end
 	
 	if radioMenu.verbose or theZone.verbose then 
@@ -326,6 +351,28 @@ function radioMenu.processHMS(msg, delta)
 	return dcsCommon.processHMS(msg, delta)
 end
 
+function radioMenu.radioOutMsg(ack, gid, theZone)
+	-- group processing. only if gid>0 and cfxMX 
+	local theMsg = ack
+	if (gid > 0) and cfxMX then 
+		local gName = cfxMX.cfxMX.groupNamesByID[gid]
+		theMsg = theMsg:gsub("<group>", gName)
+	end
+
+	-- for the time being, we can't support many wildcards 
+	-- leave them in, and simply proceed 
+	-- note that theZone is the radio Menu zone!
+	theMsg = cfxZones.processStringWildcards(theMsg, theZone)
+	c = theZone.coalition
+	
+	if gid > 0 then 
+		trigger.action.outTextForGroup(gid, theMsg, 30)
+	elseif c > 0 then
+		trigger.action.outTextForCoalition(c, theMsg, 30)	
+	else 
+		trigger.action.outText(theMsg, 30)
+	end
+end
 
 --
 -- Menu Branching
@@ -360,20 +407,28 @@ function radioMenu.doMenuX(args)
 	local cd = radioMenu.cdByGID(theZone.mcdA, theZone, theGroup) --theZone.mcdA
 	local busy = theZone.busyA 
 	local theFlag = theZone.itemAChosen
+	local outVal = theZone.outValA
+	local ack = theZone.ackA 
 	
 	-- decode A..X
 	if theItemIndex == "B"then 
 		cd = radioMenu.cdByGID(theZone.mcdB, theZone, theGroup) -- theZone.mcdB
 		busy = theZone.busyB 
 		theFlag = theZone.itemBChosen
+		outVal = theZone.outValB
+		ack = theZone.ackB 
 	elseif theItemIndex == "C" then 
 		cd = radioMenu.cdByGID(theZone.mcdC, theZone, theGroup) -- theZone.mcdC
 		busy = theZone.busyC 
 		theFlag = theZone.itemCChosen
+		outVal = theZone.outValC
+		ack = theZone.ackC 
 	elseif theItemIndex == "D" then 
 		cd = radioMenu.cdByGID(theZone.mcdD, theZone, theGroup) -- theZone.mcdD
 		busy = theZone.busyD 
 		theFlag = theZone.itemDChosen
+		outVal = theZone.outValD
+		ack = theZone.ackD
 	end
 	
 	-- see if we are on cooldown 
@@ -381,8 +436,15 @@ function radioMenu.doMenuX(args)
 	if now < cd then 
 		-- we are on cooldown.
 		local msg = radioMenu.processHMS(busy, cd - now)
-		radioMenu.radioOutMessage(msg, theZone)
+		radioMenu.radioOutMsg(msg, theGroup, theZone)
+		--radioMenu.radioOutMessage(msg, theZone)
 		return 
+	else
+		-- see if we have an acknowledge
+		if ack then 
+			local gid = theGroup 
+			radioMenu.radioOutMsg(ack, gid, theZone)
+		end
 	end
 	
 	-- set new cooldown -- needs own decoder A..X
@@ -393,14 +455,23 @@ function radioMenu.doMenuX(args)
 	elseif theItemIndex == "C" then 
 		radioMenu.setCDByGID("mcdC", theZone, theGroup, now + theZone.cooldownC)
 	else 
-		radioMenu.setCDByGID("mcdC", theZone, theGroup, now + theZone.cooldownC)
+		radioMenu.setCDByGID("mcdD", theZone, theGroup, now + theZone.cooldownD)
 	end
 	
-	cfxZones.pollFlag(theFlag, theZone.radioMethod, theZone)
-	if theZone.verbose or radioMenu.verbose then 
-		trigger.action.outText("+++menu: banging with <" .. theZone.radioMethod .. "> on <" .. theFlag .. "> for " .. theZone.name, 30)
-	end
-
+	-- poll flag, override with outVal if set 
+	if outVal then 
+		--outVal = "#"..outVal -- we force immediate mode
+		theZone:pollFlag(theFlag, outVal)
+		if theZone.verbose or radioMenu.verbose then 
+			trigger.action.outText("+++menu: overriding index " .. theItemIndex .. " output method <" .. theZone.radioMethod .. "> with immediate value <" .. outVal .. ">", 30)
+		end
+	else 
+		theZone:pollFlag(theFlag, theZone.radioMethod)
+		if theZone.verbose or radioMenu.verbose then 
+			trigger.action.outText("+++menu: banging with <" .. theZone.radioMethod .. "> on <" .. theFlag .. "> for " .. theZone.name, 30)
+		end
+	end 
+	
 end
 
 --
@@ -413,7 +484,7 @@ function radioMenu.update()
 	-- iterate all menus
 	for idx, theZone in pairs(radioMenu.menus) do 
 		if theZone.removeMenu 
-		and cfxZones.testZoneFlag(theZone, theZone.removeMenu, theZone.radioTriggerMethod, "lastRemoveMenu") 
+		and theZone:testZoneFlag(theZone.removeMenu, theZone.radioTriggerMethod, "lastRemoveMenu") 
 		and theZone.menuVisible
 		then 			
 			if theZone.menuGroup or theZone.menuTypes then 
@@ -430,7 +501,7 @@ function radioMenu.update()
 		end
 		
 		if theZone.addMenu 
-		and cfxZones.testZoneFlag(theZone, theZone.addMenu, theZone.radioTriggerMethod, "lastAddMenu") 
+		and theZone:testZoneFlag(theZone.addMenu, theZone.radioTriggerMethod, "lastAddMenu") 
 		and (not theZone.menuVisible)
 		then 
 			if theZone.verbose or radioMenu.verbose then 
@@ -453,10 +524,10 @@ function radioMenu.readConfigZone()
 		if radioMenu.verbose then 
 			trigger.action.outText("+++radioMenu: NO config zone!", 30)
 		end 
-		return 
+		theZone = cfxZones.createSimpleZone("radioMenuConfig") 
 	end 
 	
-	radioMenu.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	radioMenu.verbose = theZone:getBoolFromZoneProperty("verbose", false)
 	
 	if radioMenu.verbose then 
 		trigger.action.outText("+++radioMenu: read config", 30)

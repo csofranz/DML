@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.7.3"
+cloneZones.version = "1.8.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -95,6 +95,9 @@ cloneZones.respawnOnGroupID = true
 	      - forcedRespawn passes zone instead of verbose
 	1.7.2 - onPerimeter attribute 
 	1.7.3 - declutter option 
+	1.8.0 - OOP cfxZones 
+		  - removed "empty+1" as planned
+		  - upgraded config zone parsing 
 	
 	
 --]]--
@@ -155,7 +158,7 @@ end
 --
 function cloneZones.partOfGroupDataInZone(theZone, theUnits)
 	local zP = cfxZones.getPoint(theZone)
-	zP = cfxZones.getDCSOrigin(theZone) -- don't use getPoint now.
+	zP = theZone:getDCSOrigin() -- don't use getPoint now.
 	zP.y = 0
 	
 	for idx, aUnit in pairs(theUnits) do 
@@ -192,7 +195,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.myUniqueCounter = cloneZones.lclUniqueCounter -- init local counter
 	
 	local localZones = cloneZones.allGroupsInZoneByData(theZone)  
-	local localObjects = cfxZones.allStaticsInZone(theZone, true) -- true = use DCS origin, not moved zone
+	local localObjects = theZone:allStaticsInZone(true) -- true = use DCS origin, not moved zone
 	if theZone.verbose then 
 		trigger.action.outText("+++clnZ: building cloner <" .. theZone.name .. "> TMPL: >>>", 30)
 		for idx, theGroup in pairs (localZones) do 
@@ -208,7 +211,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.myStatics = {} 
 	-- update: getPoint is bad if it's a moving zone. 
 	-- use getDCSOrigin instead 
-	theZone.origin = cfxZones.getDCSOrigin(theZone) 
+	theZone.origin = theZone:getDCSOrigin() 
 	
 	-- source tells us which template to use. it can be the following:
 	-- nothing (no attribute) - then we use whatever groups are in zone to 
@@ -216,8 +219,8 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	-- name of another spawner that provides the template 
 	-- we can't simply use a group name as we lack the reference 
 	-- location for delta 
-	if cfxZones.hasProperty(theZone, "source") then 
-		theZone.source = cfxZones.getStringFromZoneProperty(theZone, "source", "<none>")
+	if theZone:hasProperty("source") then 
+		theZone.source = theZone:getStringFromZoneProperty("source", "<none>")
 		if theZone.source == "<none>" then theZone.source = nil end 
 	end 
 	
@@ -259,95 +262,96 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end
 	
 	-- declutter 
-	theZone.declutter = cfxZones.getBoolFromZoneProperty(theZone, "declutter", false)
+	theZone.declutter = theZone:getBoolFromZoneProperty("declutter", false)
 	
 	-- watchflags
-	theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	theZone.cloneTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
 
-	if cfxZones.hasProperty(theZone, "cloneTriggerMethod") then 
-		theZone.cloneTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "cloneTriggerMethod", "change")
+	if theZone:hasProperty("cloneTriggerMethod") then 
+		theZone.cloneTriggerMethod = theZone:getStringFromZoneProperty("cloneTriggerMethod", "change")
 	end
 	
 	-- f? and spawn? and other synonyms map to the same 
-	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
+	if theZone:hasProperty("f?") then 
+		theZone.spawnFlag = theZone:getStringFromZoneProperty("f?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+	if theZone:hasProperty("in?") then 
+		theZone.spawnFlag = theZone:getStringFromZoneProperty("in?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "spawn?") then 
-		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "spawn?", "none")
+	if theZone:hasProperty("spawn?") then 
+		theZone.spawnFlag = theZone:getStringFromZoneProperty("spawn?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "clone?") then 
-		theZone.spawnFlag = cfxZones.getStringFromZoneProperty(theZone, "clone?", "none")
+	if theZone:hasProperty("clone?") then 
+		theZone.spawnFlag = theZone:getStringFromZoneProperty("clone?", "none")
 	end
 	
 	if theZone.spawnFlag then 
-		theZone.lastSpawnValue = cfxZones.getFlagValue(theZone.spawnFlag, theZone)
+		theZone.lastSpawnValue = theZone:getFlagValue(theZone.spawnFlag)
 	end
 	
 	-- deSpawn?
-	if cfxZones.hasProperty(theZone, "deSpawn?") then 
-		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deSpawn?", "none")
+	if theZone:hasProperty("deSpawn?") then 
+		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deSpawn?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "deClone?") then 
-		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "deClone?", "none")
+	if theZone:hasProperty("deClone?") then 
+		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deClone?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "wipe?") then 
-		theZone.deSpawnFlag = cfxZones.getStringFromZoneProperty(theZone, "wipe?", "none")
+	if theZone:hasProperty("wipe?") then 
+		theZone.deSpawnFlag = theZone:getStringFromZoneProperty("wipe?", "none")
 	end
 	
 	if theZone.deSpawnFlag then 
-		theZone.lastDeSpawnValue = cfxZones.getFlagValue(theZone.deSpawnFlag, theZone)
+		theZone.lastDeSpawnValue = theZone:getFlagValue(theZone.deSpawnFlag)
 	end
 	
-	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
+	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
 	
-	theZone.moveRoute = cfxZones.getBoolFromZoneProperty(theZone, "moveRoute", false)
+	theZone.moveRoute = theZone:getBoolFromZoneProperty("moveRoute", false)
 	
-	theZone.preWipe = cfxZones.getBoolFromZoneProperty(theZone, "preWipe", false)
+	theZone.preWipe = theZone:getBoolFromZoneProperty("preWipe", false)
 	
 	-- to be deprecated
-	if cfxZones.hasProperty(theZone, "empty+1") then 
-		theZone.emptyFlag = cfxZones.getStringFromZoneProperty(theZone, "empty+1", "<None>") -- note string on number default
+	--[[--
+	if theZone:hasProperty("empty+1") then 
+		theZone.emptyFlag = theZone:getStringFromZoneProperty("empty+1", "<None>") -- note string on number default
+	end
+	--]]--
+	
+	if theZone:hasProperty("empty!") then 
+		theZone.emptyBangFlag = theZone:getStringFromZoneProperty("empty!", "<None>") -- note string on number default
 	end
 	
-	if cfxZones.hasProperty(theZone, "empty!") then 
-		theZone.emptyBangFlag = cfxZones.getStringFromZoneProperty(theZone, "empty!", "<None>") -- note string on number default
+	theZone.cloneMethod = theZone:getStringFromZoneProperty("cloneMethod", "inc")
+	if theZone:hasProperty("method") then 
+		theZone.cloneMethod = theZone:getStringFromZoneProperty("method", "inc") -- note string on number default
 	end
 	
-	theZone.cloneMethod = cfxZones.getStringFromZoneProperty(theZone, "cloneMethod", "inc")
-	if cfxZones.hasProperty(theZone, "method") then 
-		theZone.cloneMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc") -- note string on number default
-	end
-	
-	if cfxZones.hasProperty(theZone, "masterOwner") then 
-		theZone.masterOwner = cfxZones.getStringFromZoneProperty(theZone, "masterOwner", "*")
+	if theZone:hasProperty("masterOwner") then 
+		theZone.masterOwner = theZone:getStringFromZoneProperty( "masterOwner", "*")
 		theZone.masterOwner = dcsCommon.trim(theZone.masterOwner)
 		if theZone.masterOwner == "*" then 
 			theZone.masterOwner = theZone.name 
 			if theZone.verbose then 
-				trigger.action.outText("+++clnZ: masterOwner for <" .. theZone.name .. "> successfully to to itself, currently owned by faction <" .. theZone.owner .. ">", 30)
+				trigger.action.outText("+++clnZ: masterOwner for <" .. theZone.name .. "> set successfully to to itself, currently owned by faction <" .. theZone.owner .. ">", 30)
 			end
 		end
 	end
 	
-	theZone.turn = cfxZones.getNumberFromZoneProperty(theZone, "turn", 0)
+	theZone.turn = theZone:getNumberFromZoneProperty("turn", 0)
 	
 	-- interface to groupTracker 
-	if cfxZones.hasProperty(theZone, "trackWith:") then 
-		theZone.trackWith = cfxZones.getStringFromZoneProperty(theZone, "trackWith:", "<None>")
-		--trigger.action.outText("trackwith: " .. theZone.trackWith, 30)
+	if theZone:hasProperty("trackWith:") then 
+		theZone.trackWith = theZone:getStringFromZoneProperty( "trackWith:", "<None>")
 	end
 
 	-- interface to delicates
-	if cfxZones.hasProperty(theZone, "useDelicates") then 
-		theZone.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(theZone, "useDelicates", "<none>"))
+	if theZone:hasProperty("useDelicates") then 
+		theZone.delicateName = dcsCommon.trim(theZone:getStringFromZoneProperty("useDelicates", "<none>"))
 		if theZone.delicateName == "*" then theZone.delicateName = theZone.name end 
 		if theZone.verbose then 
 			trigger.action.outText("+++clnZ: cloner <" .. theZone.name .."> hands off delicates to <" .. theZone.delicateName .. ">", 30)
@@ -355,29 +359,29 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end
 
 	-- randomized locations on spawn 
-	theZone.rndLoc = cfxZones.getBoolFromZoneProperty(theZone, "randomizedLoc", false)
-	if cfxZones.hasProperty(theZone, "rndLoc") then 
-		theZone.rndLoc = cfxZones.getBoolFromZoneProperty(theZone, "rndLoc", false)
+	theZone.rndLoc = theZone:getBoolFromZoneProperty("randomizedLoc", false)
+	if theZone:hasProperty("rndLoc") then 
+		theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
 	end 
-	theZone.centerOnly = cfxZones.getBoolFromZoneProperty(theZone, "centerOnly", false)
-	if cfxZones.hasProperty(theZone, "wholeGroups") then 
-		theZone.centerOnly = cfxZones.getBoolFromZoneProperty(theZone, "wholeGroups", false)
+	theZone.centerOnly = theZone:getBoolFromZoneProperty("centerOnly", false)
+	if theZone:hasProperty("wholeGroups") then 
+		theZone.centerOnly = theZone:getBoolFromZoneProperty( "wholeGroups", false)
 	end
 	
-	theZone.rndHeading = cfxZones.getBoolFromZoneProperty(theZone, "rndHeading", false)
+	theZone.rndHeading = theZone:getBoolFromZoneProperty("rndHeading", false)
 	
-	theZone.onRoad = cfxZones.getBoolFromZoneProperty(theZone, "onRoad", false)
+	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
 	
-	theZone.onPerimeter = cfxZones.getBoolFromZoneProperty(theZone, "onPerimeter", false)
+	theZone.onPerimeter = theZone:getBoolFromZoneProperty("onPerimeter", false)
 
 	-- check for name scheme and / or identical 
-	if cfxZones.hasProperty(theZone, "identical") then
-		theZone.identical = cfxZones.getBoolFromZoneProperty(theZone, "identical", false)
+	if theZone:hasProperty("identical") then
+		theZone.identical = theZone:getBoolFromZoneProperty("identical", false)
 		if theZone.identical == false then theZone.identical = nil end 
 	end 
 	
-	if cfxZones.hasProperty(theZone, "nameScheme") then 
-		theZone.nameScheme = cfxZones.getStringFromZoneProperty(theZone, "nameScheme", "<o>-<uid>") -- default to [<original name> "-" <uuid>] 
+	if theZone:hasProperty("nameScheme") then 
+		theZone.nameScheme = theZone:getStringFromZoneProperty( "nameScheme", "<o>-<uid>") -- default to [<original name> "-" <uuid>] 
 	end
 	
 	if theZone.identical and theZone.nameScheme then
@@ -981,7 +985,6 @@ function cloneZones.validateSpawnUnitData(aUnit, theZone, unitNames)
 		end
 	end	
 	
- 
 	-- check against static objects. 
 	local theStatic = StaticObject.getByName(aUnit.name)	
 	if theStatic and StaticObject.isExist(theStatic) then 
@@ -1073,9 +1076,9 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
 	end
 	-- theZone is the cloner with the TEMPLATE (source)
-	-- spawnZone is the spawner with SETTINGS and DESTINATION (target location)
-	local newCenter = cfxZones.getPoint(spawnZone) -- includes zone following updates
-	local oCenter = cfxZones.getDCSOrigin(theZone) -- get original coords on map for cloning offsets 
+	-- spawnZone is the spawner with SETTINGS and DESTINATION (target location) where the clones are poofed into existence 
+	local newCenter = spawnZone:getPoint() -- includes zone following updates
+	local oCenter = theZone:getDCSOrigin() -- get original coords on map for cloning offsets 
 	-- calculate zoneDelta, is added to all vectors 
 	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin) -- oCenter) --theZone.origin)
 	
@@ -1086,7 +1089,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theUnit = spawnZone.linkedUnit
 		local currHeading = dcsCommon.getUnitHeading(theUnit)
 		dHeading = currHeading - spawnZone.uHdg
-		rotCenter = cfxZones.getPoint(spawnZone)
+		rotCenter = spawnZone:getPoint()
 	end 
 	
 	local spawnedGroups = {}
@@ -1114,10 +1117,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theCat = cfxMX.catText2ID(cat)
 		rawData.CZtheCat = theCat -- save category 
 		
-		-- update their position if not spawning to exact same location
-		if cloneZones.verbose or theZone.verbose or spawnZone.verbose then 	
-			--trigger.action.outText("+++clnZ: tmpl delta x = <" .. math.floor(zoneDelta.x) .. ">, y = <" .. math.floor(zoneDelta.z) .. "> for tmpl <" .. theZone.name  .. "> to cloner <" .. spawnZone.name .. ">", 30)
-		end
 		-- update routes when not spawning same location 
 		cloneZones.updateLocationsInGroupData(rawData, zoneDelta, spawnZone.moveRoute, rotCenter, spawnZone.turn / 57.2958 +
 		dHeading)
@@ -1129,18 +1128,18 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 
 			local loc, dx, dy 
 			if spawnZone.onPerimeter then 
-				loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 			else 
-				loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
 			end 
 			
 			for idx, aUnit in pairs(units) do 
 				if not spawnZone.centerOnly then 
 					-- *every unit's displacement is randomized
 					if spawnZone.onPerimeter then 
-						loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+						loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 					else	
-						loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone)
+						loc, dx, dy = spawnZone:createRandomPointInZone()
 					end 
 					aUnit.x = loc.x 
 					aUnit.y = loc.z 
@@ -1382,9 +1381,9 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 
 			local loc, dx, dy 
 			if spawnZone.onPerimeter then 
-				loc, dx, dy = cfxZones.createRandomPointOnZoneBoundary(spawnZone)
+				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 			else 
-				loc, dx, dy = cfxZones.createRandomPointInZone(spawnZone) -- also supports polygonal zones 
+				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
 			end
 			rawData.x = rawData.x + dx -- might want to use loc 
 			rawData.y = rawData.y + dy -- directly
@@ -1550,7 +1549,7 @@ function cloneZones.spawnWithCloner(theZone)
 	
 	-- declutter?
 	if theZone.declutter then 
-		cfxZones.declutterZone(theZone)
+		theZone:declutterZone()
 		if theZone.verbose then 
 			trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> declutter complete.", 30)
 		end
@@ -1641,7 +1640,7 @@ function cloneZones.update()
 	for idx, aZone in pairs(cloneZones.cloners) do
 		-- see if deSpawn was pulled. Must run before spawn
 		if aZone.deSpawnFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.deSpawnFlag, aZone) -- trigger.misc.getUserFlag(aZone.deSpawnFlag)
+			local currTriggerVal = aZone:getFlagValue(aZone.deSpawnFlag) -- trigger.misc.getUserFlag(aZone.deSpawnFlag)
 			if currTriggerVal ~= aZone.lastDeSpawnValue then 
 				if cloneZones.verbose or aZone.verbose then 
 					trigger.action.outText("+++clnZ: DEspawn triggered for <" .. aZone.name .. ">", 30)
@@ -1652,7 +1651,7 @@ function cloneZones.update()
 		end
 		
 		-- see if we got spawn? command
-		if cfxZones.testZoneFlag(aZone, aZone.spawnFlag, aZone.cloneTriggerMethod, "lastSpawnValue") then
+		if aZone:testZoneFlag(aZone.spawnFlag, aZone.cloneTriggerMethod, "lastSpawnValue") then
 			if cloneZones.verbose then 
 				trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. ">", 30)
 			end 
@@ -1663,13 +1662,15 @@ function cloneZones.update()
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
 		if isEmpty then 
 			-- see if we need to bang a flag 
+			--[[--
 			if aZone.emptyFlag then 
 				--cloneZones.pollFlag(aZone.emptyFlag)
 				cfxZones.pollFlag(aZone.emptyFlag, 'inc', aZone)
 			end 
+			--]]--
 			
 			if aZone.emptyBangFlag then 
-				cfxZones.pollFlag(aZone.emptyBangFlag, aZone.cloneMethod, aZone)
+				aZone:pollFlag(aZone.emptyBangFlag, aZone.cloneMethod)
 				if cloneZones.verbose then 
 					trigger.action.outText("+++clnZ: bang! on " .. aZone.emptyBangFlag, 30)
 				end
@@ -1950,22 +1951,22 @@ function cloneZones.readConfigZone()
 		if cloneZones.verbose then 
 			trigger.action.outText("+++clnZ: NO config zone!", 30)
 		end 
-		return 
+		theZone = cfxZones.createSimpleZone("cloneZonesConfig") 
 	end 
 	
-	if cfxZones.hasProperty(theZone, "uniqueCount") then 
-		cloneZones.uniqueCounter = cfxZones.getNumberFromZoneProperty(theZone, "uniqueCount", cloneZone.uniqueCounter)
+	if theZone:hasProperty("uniqueCount") then 
+		cloneZones.uniqueCounter = theZone:getNumberFromZoneProperty("uniqueCount", cloneZone.uniqueCounter)
 	end
 	
-	if cfxZones.hasProperty(theZone, "localCount") then 
-		cloneZones.lclUniqueCounter = cfxZones.getNumberFromZoneProperty(theZone, "localCount", cloneZone.lclUniqueCounter)
+	if theZone:hasProperty("localCount") then 
+		cloneZones.lclUniqueCounter = theZone:getNumberFromZoneProperty("localCount", cloneZone.lclUniqueCounter)
 	end
 	
-	if cfxZones.hasProperty(theZone, "globalCount") then 
-		cloneZones.globalCounter = cfxZones.getNumberFromZoneProperty(theZone, "globalCount", cloneZone.globalCounter)
+	if theZone:hasProperty("globalCount") then 
+		cloneZones.globalCounter = theZone:getNumberFromZoneProperty("globalCount", cloneZone.globalCounter)
 	end
 	
-	cloneZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	cloneZones.verbose = theZone:getBoolFromZoneProperty("verbose", false)
 	
 	if cloneZones.verbose then 
 		trigger.action.outText("+++clnZ: read config", 30)

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.8.10"
+dcsCommon.version = "2.9.0"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -163,7 +163,11 @@ dcsCommon.version = "2.8.10"
 	   - new getPlayerUnit()
 	   - new getMapName()
 	   - new getMagDeclForPoint()
+2.9.0  - createPoint() moved from cfxZones
+	   - copyPoint() moved from cfxZones
+	   - numberArrayFromString() moved from cfxZones
 	   
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -2520,9 +2524,7 @@ end
 			--env.info("=== dcsCommon vardump END")
 		end
 	end
-	
-
-	
+		
 	function dcsCommon.numberUUID()
 		dcsCommon.simpleUUID = dcsCommon.simpleUUID + 1
 		return dcsCommon.simpleUUID
@@ -3025,6 +3027,53 @@ function dcsCommon.getMissionName()
 	return mn
 end
 
+function dcsCommon.numberArrayFromString(inString, default) -- moved from cfxZones
+	if not default then default = 0 end 
+	if string.len(inString) < 1 then 
+		trigger.action.outText("+++dcsCommon: empty numbers", 30)
+		return {default, } 
+	end
+	
+	local flags = {}
+	local rawElements = dcsCommon.splitString(inString, ",")
+	-- go over all elements 
+	for idx, anElement in pairs(rawElements) do 
+		anElement = dcsCommon.trim(anElement)
+		if dcsCommon.stringStartsWithDigit(anElement) and dcsCommon.containsString(anElement, "-") then 
+			-- interpret this as a range
+			local theRange = dcsCommon.splitString(anElement, "-")
+			local lowerBound = theRange[1]
+			lowerBound = tonumber(lowerBound)
+			local upperBound = theRange[2]
+			upperBound = tonumber(upperBound)
+			if lowerBound and upperBound then
+				-- swap if wrong order
+				if lowerBound > upperBound then 
+					local temp = upperBound
+					upperBound = lowerBound
+					lowerBound = temp 
+				end
+				-- now add add numbers to flags
+				for f=lowerBound, upperBound do 
+					table.insert(flags, tostring(f))
+				end
+			else
+				-- bounds illegal
+				trigger.action.outText("+++dcsCommon: ignored range <" .. anElement .. "> (range)", 30)
+			end
+		else
+			-- single number
+			f = dcsCommon.trim(anElement)
+			f = tonumber(f)
+			if f then 
+				table.insert(flags, f)
+			end
+		end
+	end
+	if #flags < 1 then flags = {default, } end 
+	return flags
+end 
+
 function dcsCommon.flagArrayFromString(inString, verbose)
 	if not verbose then verbose = false end 
 	
@@ -3473,6 +3522,31 @@ function dcsCommon.iteratePlayers(callBack)
 			callBack(theUnit)
 		end
 	end
+end
+
+
+--
+-- MISC POINT CREATION
+--
+function dcsCommon.createPoint(x, y, z)
+	local newPoint = {}
+	newPoint.x = x
+	newPoint.y = y
+	newPoint.z = z -- works even if Z == nil
+	return newPoint
+end
+
+function dcsCommon.copyPoint(inPoint) 
+	local newPoint = {}
+	newPoint.x = inPoint.x
+	newPoint.y = inPoint.y
+	-- handle xz only 
+	if inPoint.z then 
+		newPoint.z = inPoint.z 
+	else 
+		newPoint.z = inPoint.y 
+	end
+	return newPoint	
 end
 
 --

@@ -1,10 +1,13 @@
 flareZone = {}
-flareZone.version = "1.0.0"
+flareZone.version = "1.1.0"
 flareZone.verbose = false 
 flareZone.name = "flareZone" 
 
 --[[-- VERSION HISTORY
 	1.0.0 - initial version
+	1.1.0 - improvements to verbosity 
+	      - OOP 
+		  - small bugfix in doFlare assignment 
 --]]--
 flareZone.requiredLibs = {
 	"dcsCommon", 
@@ -13,40 +16,39 @@ flareZone.requiredLibs = {
 flareZone.flares = {} -- all flare zones 
  
 function flareZone.addFlareZone(theZone)
-	theZone.flareColor = cfxZones.getFlareColorStringFromZoneProperty(theZone, "flare", "green")
+	theZone.flareColor = theZone:getFlareColorStringFromZoneProperty("flare", "green")
 	theZone.flareColor = dcsCommon.flareColor2Num(theZone.flareColor)
-	if cfxZones.hasProperty(theZone, "f?") then 
-		cfxZones.theZone.doFlare = cfxZones.getStringFromZoneProperty(theZone, "f?", "<none>")
-	elseif cfxZones.hasProperty(theZone, "launchFlare?") then
-		theZone.doFlare = cfxZones.getStringFromZoneProperty(theZone, "launchFlare?", "<none>")
+	if theZone:hasProperty("f?") then 
+		theZone.doFlare = theZone:getStringFromZoneProperty("f?", "<none>")
+	elseif theZone:hasProperty("launchFlare?") then
+		theZone.doFlare = theZone:getStringFromZoneProperty( "launchFlare?", "<none>")
 	else 
-		theZone.doFlare = cfxZones.getStringFromZoneProperty(theZone, "launch?", "<none>")
+		theZone.doFlare = theZone:getStringFromZoneProperty("launch?", "<none>")
 	end
 	theZone.lastDoFlare = trigger.misc.getUserFlag(theZone.doFlare)
 	-- triggerMethod
-	theZone.flareTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "flareTriggerMethod") then 
-		theZone.flareTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "flareTriggerMethod", "change")
+	theZone.flareTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
+	if theZone:hasProperty("flareTriggerMethod") then 
+		theZone.flareTriggerMethod = theZone:getStringFromZoneProperty("flareTriggerMethod", "change")
 	end
 	
-	theZone.azimuthL, theZone.azimuthH = cfxZones.getPositiveRangeFromZoneProperty(theZone, "direction", 90) -- in degrees
+	theZone.azimuthL, theZone.azimuthH = theZone:getPositiveRangeFromZoneProperty("direction", 90) -- in degrees
 	-- in DCS documentation, the parameter is incorrectly called 'azimuth'
-	if cfxZones.hasProperty(theZone, "azimuth") then 
-		theZone.azimuthL, theZone.azimuthH = cfxZones.getPositiveRangeFromZoneProperty(theZone, "azimuth", 90) -- in degrees 
+	if theZone:hasProperty("azimuth") then 
+		theZone.azimuthL, theZone.azimuthH = theZone:getPositiveRangeFromZoneProperty("azimuth", 90) -- in degrees 
 	end
---	theZone.azimuth = theZone.azimuth * 0.0174533 -- rads 
-	theZone.flareAlt = cfxZones.getNumberFromZoneProperty(theZone, "altitude", 1)
-	if cfxZones.hasProperty(theZone, "alt") then 
-		theZone.flareAlt = cfxZones.getNumberFromZoneProperty(theZone, "alt", 1)
-	elseif cfxZones.hasProperty(theZone, "flareAlt") then 
-		theZone.flareAlt = cfxZones.getNumberFromZoneProperty(theZone, "flareAlt", 1)
-	elseif cfxZones.hasProperty(theZone, "agl") then 
-		theZone.flareAlt = cfxZones.getNumberFromZoneProperty(theZone, "agl", 1)
+	theZone.flareAlt = theZone:getNumberFromZoneProperty("altitude", 1)
+	if theZone:hasProperty("alt") then 
+		theZone.flareAlt = theZone:getNumberFromZoneProperty("alt", 1)
+	elseif theZone:hasProperty("flareAlt") then 
+		theZone.flareAlt = theZone:getNumberFromZoneProperty("flareAlt", 1)
+	elseif theZone:hasProperty("agl") then 
+		theZone.flareAlt = theZone:getNumberFromZoneProperty("agl", 1)
 	end
 	
-	theZone.salvoSizeL, theZone.salvoSizeH = cfxZones.getPositiveRangeFromZoneProperty(theZone, "salvo", 1)
+	theZone.salvoSizeL, theZone.salvoSizeH = theZone:getPositiveRangeFromZoneProperty("salvo", 1)
 	
-	theZone.salvoDurationL, theZone.salvoDurationH = cfxZones.getPositiveRangeFromZoneProperty(theZone, "duration", 1)
+	theZone.salvoDurationL, theZone.salvoDurationH = theZone:getPositiveRangeFromZoneProperty("duration", 1)
 	
 	if theZone.verbose or flareZone.verbose then 
 		trigger.action.outText("+++flrZ: new flare <" .. theZone.name .. ">, color (" .. theZone.flareColor .. ")", 30)
@@ -57,13 +59,17 @@ end
 function flareZone.launch(theZone)
 	local color = theZone.flareColor
 	if color < 0 then color = math.random(4) - 1 end 
-	if flareZone.verbose or theZone.verbose then 
-		trigger.action.outText("+++flrZ: launching <" .. theZone.name .. ">, c = " .. color .. " (" .. dcsCommon.flareColor2Text(color) .. ")", 30)
-	end
+	
 	local loc = cfxZones.getPoint(theZone, true) -- with height 
 	loc.y = loc.y + theZone.flareAlt
 	-- calculate azimuth 
-	local azimuth = cfxZones.randomInRange(theZone.azimuthL, theZone.azimuthH) * 0.0174533 -- in rads 
+	local azimuth = cfxZones.randomInRange(theZone.azimuthL, theZone.azimuthH)  -- in deg 
+
+	if flareZone.verbose or theZone.verbose then 
+		trigger.action.outText("+++flrZ: launching <" .. theZone.name .. ">, c = " .. color .. " (" .. dcsCommon.flareColor2Text(color) .. "), azi <" .. azimuth .. "> [" .. theZone.azimuthL .. "-" .. theZone.azimuthH .. "]", 30)
+	end
+	azimuth = azimuth * 0.0174533 -- in rads
+	
 	trigger.action.signalFlare(loc, color, azimuth)
 end
 

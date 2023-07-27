@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "3.1.3"
+cfxZones.version = "4.0.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -137,8 +137,44 @@ cfxZones.version = "3.1.3"
 		  - new getZoneVolume()
 		  - offsetZone also updates zone bounds when moving zones 
 		  - corrected bug in calculateZoneBounds()
-
+- 4.0.0   - dmlZone OOP API started 
+		  - code revision / refactoring 
+		  - moved createPoint and copxPoint to dcsCommon, added bridging code 
+		  - re-routed all createPoint() invocations to dcsCommon 
+		  - removed anyPlayerInZone() because of cfxPlayer dependency
+		  - numberArrayFromString() moved to dcsCommon, bridged 
+		  - flagArrayFromString() moved to dcsCommon, bridged 
+		  - doPollFlag() can differentiate between number method and string method 
+		    to enable passing an immediate negative value 
+		  - getNumberFromZoneProperty() enforces number return even on default
+		  - immediate method switched to preceeding '#', to resolve conflict witzh 
+		    negative numbers, backwards compatibility with old (dysfunctional) method 
 --]]--
+
+--
+-- ====================
+-- OOP dmlZone API HERE
+-- ====================
+--
+
+dmlZone = {}
+function dmlZone:new(o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self 
+	self.name = "dmlZone raw"
+	self.isCircle = false
+	self.isPoly = false
+	self.radius = 0
+	self.poly = {}
+	self.bounds = {}
+	self.properties = {}
+	return o 
+end 
+
+--
+-- CLASSIC INTERFACE
+--
 cfxZones.verbose = false
 cfxZones.caseSensitiveProperties = false -- set to true to make property names case sensitive 
 cfxZones.ups = 1 -- updates per second. updates moving zones
@@ -215,7 +251,7 @@ function cfxZones.readFromDCS(clearfirst)
 	for i, dcsZone in pairs(env.mission.triggers.zones) do
 		if type(dcsZone) == 'table' then -- hint taken from MIST: verify type when reading from dcs
 										 -- dcs data is like a box of chocolates...
-			local newZone = {}
+			local newZone = dmlZone:new(nil) -- WAS: {} -- OOP introduction July 2023
 			-- name, converted to upper is used only for indexing
 			-- the original name remains untouched
 			newZone.dcsZone = dcsZone
@@ -245,11 +281,11 @@ function cfxZones.readFromDCS(clearfirst)
 				-- calculate the zone's real position by accessing the unit's MX data 
 				-- as precached by dcsCommon
 				local ux, uy = dcsCommon.getUnitStartPosByID(dcsZone.linkUnit)
-				newZone.point = cfxZones.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
-				newZone.dcsOrigin = cfxZones.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
+				newZone.point = dcsCommon.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
+				newZone.dcsOrigin = dcsCommon.createPoint(ux + dcsZone.x, 0, uy + dcsZone.y)
 			else 
-				newZone.point = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
-				newZone.dcsOrigin = cfxZones.createPoint(dcsZone.x, 0, dcsZone.y)
+				newZone.point = dcsCommon.createPoint(dcsZone.x, 0, dcsZone.y)
+				newZone.dcsOrigin = dcsCommon.createPoint(dcsZone.x, 0, dcsZone.y)
 			end
 
 			-- start type processing. if zone.type exists, we have a mission 
@@ -324,10 +360,10 @@ function cfxZones.calculateZoneBounds(theZone)
 		local radius = theZone.radius 
 		-- dcs uses z+ is down on map
 		-- upper left is center - radius 
-		bounds.ul = cfxZones.createPoint(center.x - radius, 0, center.z - radius)
-		bounds.ur = cfxZones.createPoint(center.x + radius, 0, center.z - radius)
-		bounds.ll = cfxZones.createPoint(center.x - radius, 0, center.z + radius)
-		bounds.lr = cfxZones.createPoint(center.x + radius, 0, center.z + radius)
+		bounds.ul = dcsCommon.createPoint(center.x - radius, 0, center.z - radius)
+		bounds.ur = dcsCommon.createPoint(center.x + radius, 0, center.z - radius)
+		bounds.ll = dcsCommon.createPoint(center.x - radius, 0, center.z + radius)
+		bounds.lr = dcsCommon.createPoint(center.x + radius, 0, center.z + radius)
 		
 	elseif theZone.isPoly then
 		local poly = theZone.poly -- ref copy!
@@ -370,15 +406,23 @@ function cfxZones.calculateZoneBounds(theZone)
 	
 end
 
-function cfxZones.createPoint(x, y, z)
+function dmlZone:calculateZoneBounds()
+	cfxZones.calculateZoneBounds(self)
+end 
+
+function cfxZones.createPoint(x, y, z)  -- bridge to dcsCommon, backward comp.
+	return dcsCommon.createPoint(x, y, z)
+--[[--	
 	local newPoint = {}
 	newPoint.x = x
 	newPoint.y = y
 	newPoint.z = z 
-	return newPoint
+	return newPoint --]]-- 
 end
 
-function cfxZones.copyPoint(inPoint) 
+function cfxZones.copyPoint(inPoint) -- bridge to dcsCommon, backward comp.
+	return dcsCommon.copyPoint(inPoint)
+--[[--
 	local newPoint = {}
 	newPoint.x = inPoint.x
 	newPoint.y = inPoint.y
@@ -388,16 +432,22 @@ function cfxZones.copyPoint(inPoint)
 	else 
 		newPoint.z = inPoint.y 
 	end
-	return newPoint	
+	return newPoint	--]]--
 end
 
 function cfxZones.createHeightCorrectedPoint(inPoint) -- this should be in dcsCommon
-	local cP = cfxZones.createPoint(inPoint.x, land.getHeight({x=inPoint.x, y=inPoint.z}),inPoint.z)
+	local cP = dcsCommon.createPoint(inPoint.x, land.getHeight({x=inPoint.x, y=inPoint.z}),inPoint.z)
 	return cP
 end
 
 function cfxZones.getHeightCorrectedZonePoint(theZone)
-	return cfxZones.createHeightCorrectedPoint(theZone.point)
+	local thePoint = cfxZone.getPoint(theZone)
+	return cfxZones.createHeightCorrectedPoint(thePoint)
+end
+
+function dmlZone:getHeightCorrectedZonePoint()
+	local thePoint = self:getPoint()
+	return dcsCommon.createPoint(thePoint.x, land.getHeight({x=thePoint.x, y=thePoint.z}),thePoint.z)
 end
 
 function cfxZones.createPointFromPoint(inPoint)
@@ -405,7 +455,7 @@ function cfxZones.createPointFromPoint(inPoint)
 end
 
 function cfxZones.createPointFromDCSPoint(inPoint) 
-	return cfxZones.createPoint(inPoint.x, 0, inPoint.y)
+	return dcsCommon.createPoint(inPoint.x, 0, inPoint.y)
 end
 
 
@@ -413,7 +463,7 @@ function cfxZones.createRandomPointInsideBounds(bounds)
 	-- warning: bounds do not move woth zone! may have to be updated
 	local x = math.random(bounds.ll.x, ur.x)
 	local z = math.random(bounds.ll.z, ur.z)
-	return cfxZones.createPoint(x, 0, z)
+	return dcsCommon.createPoint(x, 0, z)
 end
 
 function cfxZones.createRandomPointOnZoneBoundary(theZone)
@@ -427,6 +477,10 @@ function cfxZones.createRandomPointOnZoneBoundary(theZone)
 	end
 end
 
+function dmlZone:createRandomPointOnZoneBoundary()
+	return cfxZones.createRandomPointOnZoneBoundary(self)
+end 
+
 function cfxZones.createRandomPointInZone(theZone)
 	if not theZone then return nil end 
 	if theZone.isPoly then 
@@ -438,8 +492,19 @@ function cfxZones.createRandomPointInZone(theZone)
 	end
 end
 
+function dmlZone:createRandomPointInZone()
+	local loc, dx, dy = cfxZones.createRandomPointInZone(self)
+	return loc, dx, dy
+end 
+
+
 function cfxZones.randomPointInZone(theZone)
 	local loc, dx, dy =  cfxZones.createRandomPointInZone(theZone)
+	return loc, dx, dy 
+end
+
+function dmlZone:randomPointInZone()
+	local loc, dx, dy =  cfxZones.createRandomPointInZone(self)
 	return loc, dx, dy 
 end
 
@@ -464,10 +529,15 @@ function cfxZones.createRandomPointInCircleZone(theZone, onEdge)
 	return {x=px, y=0, z = pz}, dx, dz -- returns loc and offsets to theZone.point
 end
 
+function dmlZone:createRandomPointInCircleZone(theZone, onEdge)
+	local p, dx, dz = cfxZones.createRandomPointInCircleZone(self, onEdge)
+	return p, dx, dz 
+end 
+
 function cfxZones.createRandomPointInPolyZone(theZone, onEdge)
 	if not theZone.isPoly then 
 		trigger.action.outText("+++Zones: warning - createRandomPointInPolyZone called for non-poly zone <" .. theZone.name .. ">", 30)
-		return cfxZones.createPoint(theZone.point.x, 0, theZone.point.z)
+		return dcsCommon.createPoint(theZone.point.x, 0, theZone.point.z)
 	end
 	-- force update of all points 
 	local p = cfxZones.getPoint(theZone)
@@ -505,9 +575,19 @@ function cfxZones.createRandomPointInPolyZone(theZone, onEdge)
 	return polyPoint, polyPoint.x - p.x, polyPoint.z - p.z -- return loc, dx, dz 
 end
 
+function dmlZone:createRandomPointInPolyZone(onEdge)
+	local p, dx, dz = cfxZones.createRandomPointInPolyZone(self, onEdge)
+	return p, dx, dz 
+end 
+
 function cfxZones.addZoneToManagedZones(theZone)
 	local upperName = string.upper(theZone.name) -- newZone.name:upper()
 	cfxZones.zones[upperName] = theZone
+end
+
+function dmlZone:addZoneToManagedZones()
+	local upperName = string.upper(self.name) -- newZone.name:upper()
+	cfxZones.zones[upperName] = self
 end
 
 function cfxZones.createUniqueZoneName(inName, searchSet)
@@ -538,7 +618,7 @@ function cfxZones.createSimpleZone(name, location, radius, addToManaged)
 end
 
 function cfxZones.createCircleZone(name, x, z, radius) 
-	local newZone = {}
+	local newZone = dmlZone:new(nil) -- {} OOP compatibility 
 	newZone.isCircle = true
 	newZone.isPoly = false
 	newZone.poly = {}
@@ -546,7 +626,7 @@ function cfxZones.createCircleZone(name, x, z, radius)
 			
 	newZone.name = name
 	newZone.radius = radius
-	newZone.point = cfxZones.createPoint(x, 0, z)
+	newZone.point = dcsCommon.createPoint(x, 0, z)
  
 	-- props 
 	newZone.properties = {}
@@ -606,7 +686,7 @@ function cfxZones.createSimpleQuadZone(name, location, points, addToManaged)
 end
 
 function cfxZones.createPolyZone(name, poly) -- poly must be array of point type
-local newZone = {}
+	local newZone = dmlZone:new(nil) -- {} OOP compatibility 
 	newZone.isCircle = false
 	newZone.isPoly = true
 	newZone.poly = {}
@@ -743,11 +823,18 @@ function cfxZones.isPointInsideZone(thePoint, theZone, radiusIncrease)
 	trigger.action.outText("isPointInsideZone: Unknown zone type for " .. outerZone.name, 10)
 end
 
+function dmlZone:isPointInsideZone(thePoint, radiusIncrease) -- warning: param order!
+	return cfxZones.isPointInsideZone(thePoint, self, radiusIncrease)
+end 
+
 -- isZoneInZone returns true if center of innerZone is inside  outerZone
 function cfxZones.isZoneInsideZone(innerZone, outerZone) 
-	return cfxZones.isPointInsideZone(innerZone.point, outerZone)
+	local p = cfxZones.getPoint(innerZone)
+	return cfxZones.isPointInsideZone(p, outerZone)	
+end
 
-	
+function dmlZone:isZoneInsideZone(outerZone) 
+	return cfxZones.isPointInsideZone(self:getPoint(), outerZone)	
 end
 
 function cfxZones.getZonesContainingPoint(thePoint, testZones) -- return array 
@@ -796,6 +883,11 @@ function cfxZones.getAllZonesInsideZone(superZone, testZones) -- returnes array!
 	end
 	return containedZones 
 end
+
+function dmlZone:getAllZonesInsideZone(testZones)
+	return cfxZones.getAllZonesInsideZone(self, testZones)
+end
+
 
 function cfxZones.getZonesWithAttributeNamed(attributeName, testZones)
 	if not testZones then testZones = cfxZones.zones end 
@@ -862,10 +954,23 @@ function cfxZones.getZoneVolume(theZone)
 	end
 end
 
+function dmlZone:getZoneVolume()
+	return cfxZones.getZoneVolume(self)
+end 
+
+
 function cfxZones.declutterZone(theZone)
 	if not theZone then return end 
 	local theVol = cfxZones.getZoneVolume(theZone)
 	if theZone.verbose then 
+		dcsCommon.dumpVar2Str("vol", theVol)
+	end
+	world.removeJunk(theVol)
+end
+
+function dmlZone:declutterZone()
+	local theVol = cfxZones.getZoneVolume(self)
+	if self.verbose then 
 		dcsCommon.dumpVar2Str("vol", theVol)
 	end
 	world.removeJunk(theVol)
@@ -890,6 +995,10 @@ function cfxZones.allGroupsInZone(theZone, categ) -- categ is optional, must be 
 	return inZones
 end
 
+function dmlZone:allGroupsInZone(categ)
+	return cfxZones.allGroupsInZone(self, categ)
+end
+
 function cfxZones.allGroupNamesInZone(theZone, categ) -- categ is optional, must be code 
 	-- warning: does not check for exiting!
 	--trigger.action.outText("Zone " .. theZone.name .. " radius " .. theZone.radius, 30)
@@ -904,6 +1013,10 @@ function cfxZones.allGroupNamesInZone(theZone, categ) -- categ is optional, must
 		end
 	end
 	return inZones
+end
+
+function dmlZone:allGroupNamesInZone(categ)
+	return cfxZones.allGroupNamesInZone(self, categ)
 end
 
 function cfxZones.allStaticsInZone(theZone, useOrigin) -- categ is optional, must be code 
@@ -926,6 +1039,11 @@ function cfxZones.allStaticsInZone(theZone, useOrigin) -- categ is optional, mus
 	end
 	return inZones
 end
+
+function dmlZone:allStaticsInZone(useOrigin)
+	return cfxZones.allStaticsInZone(self, useOrigin)
+end
+
 
 function cfxZones.groupsOfCoalitionPartiallyInZone(coal, theZone, categ) -- categ is optional
 	local groupsInZone = {}
@@ -976,6 +1094,9 @@ function cfxZones.isEntireGroupInZone(aGroup, aZone)
 	return true
 end
 
+function dmlZone:isEntireGroupInZone(aGroup)
+	return cfxZones.isEntireGroupInZone(aGroup, self)
+end
 
 --
 -- Zone Manipulation
@@ -1005,27 +1126,31 @@ function cfxZones.offsetZone(theZone, dx, dz)
 	
 end
 
+function dmlZone:offsetZone(dx, dz)
+	cfxZones.offsetZone(self, dx, dz)
+end
+
+
 function cfxZones.moveZoneTo(theZone, x, z)
 	local dx = x - theZone.point.x
 	local dz = z - theZone.point.z 
 	cfxZones.offsetZone(theZone, dx, dz)
 end;
 
+function dmlZone:moveZoneTo(x, z)
+	cfxZones.moveZoneTo(self, x, z)
+end
+
 function cfxZones.centerZoneOnUnit(theZone, theUnit) 
 	local thePoint = theUnit:getPoint()
 	cfxZones.moveZoneTo(theZone, thePoint.x, thePoint.z)
 end
 
+function dmlZone:centerZoneOnUnit(theUnit) 
+	local thePoint = theUnit:getPoint()
+	self:moveZoneTo(thePoint.x, thePoint.z)
+end
 
---[[
--- no longer makes sense with poly zones
-function cfxZones.isZoneEntirelyInsideZone(innerZone, outerZone)
-	if (innerZone.radius > outerZone.radius) then return false end -- cant fit inside
-	local d = dcsCommon.dist(innerZone.point, outerZone.point)
-	local reducedR = outerZone.radius - innerZone.radius
-	return d < reducedR
-end;
---]]
 
 function cfxZones.dumpZones(zoneTable)
 	if not zoneTable then zoneTable = cfxZones.zones end 
@@ -1038,13 +1163,13 @@ function cfxZones.dumpZones(zoneTable)
 		
 		trigger.action.outText("#".. i .. ": " .. zone.name .. " of type " .. myType, 10)
 	end
-	trigger.action.outText("Zones END", 10)
+	trigger.action.outText("Zones end", 10)
 end
-
+--[[-- moved to dcsCommon
 function cfxZones.stringStartsWith(theString, thePrefix)
 	return theString:find(thePrefix) == 1
 end
-
+--]]--
 function cfxZones.keysForTable(theTable)
 	local keyset={}
 	local n=0
@@ -1088,7 +1213,7 @@ function cfxZones.zonesStartingWithName(prefix, searchSet)
 	prefix = prefix:upper() -- all zones have UPPERCASE NAMES! THEY SCREAM AT YOU
 	for name, zone in pairs(searchSet) do
 --		trigger.action.outText("testing " .. name:upper() .. " starts with " .. prefix , 30)
-		if cfxZones.stringStartsWith(name:upper(), prefix) then
+		if dcsCommon.stringStartsWith(name:upper(), prefix) then
 			prefixZones[name] = zone -- note: ref copy!
 			--trigger.action.outText("zone with prefix <" .. prefix .. "> found: " .. name, 10)
 		end
@@ -1114,8 +1239,6 @@ function cfxZones.zonesStartingWith(prefix, searchSet, debugging)
 		end 
 	end
 	
-	--trigger.action.outText("#debugZones is  <" .. #debugZones .. ">", 10)
-
 	if (type(prefix) == "string") then 
 		return cfxZones.zonesStartingWithName(prefix, searchSet)
 	end
@@ -1214,6 +1337,10 @@ function cfxZones.markZoneWithSmoke(theZone, dx, dz, smokeColor, alt)
 	trigger.action.smoke(point, smokeColor)
 end
 
+function dmlZone:markZoneWithSmoke(dx, dz, smokeColor, alt)
+	cfxZones.markZoneWithSmoke(self, dx, dz, smokeColor, alt)
+end
+
 -- place a smoke marker in center of zone, offset by radius and degrees 
 function cfxZones.markZoneWithSmokePolar(theZone, radius, degrees, smokeColor, alt)
 	local rads = degrees * math.pi / 180
@@ -1222,10 +1349,19 @@ function cfxZones.markZoneWithSmokePolar(theZone, radius, degrees, smokeColor, a
 	cfxZones.markZoneWithSmoke(theZone, dx, dz, smokeColor, alt)
 end
 
+function dmlZone:markZoneWithSmokePolar(radius, degrees, smokeColor, alt)
+	cfxZones.markZoneWithSmokePolar(self, radius, degrees, smokeColor, alt)
+end
+
 -- place a smoke marker in center of zone, offset by radius and randomized degrees 
 function cfxZones.markZoneWithSmokePolarRandom(theZone, radius, smokeColor)
 	local degrees = math.random(360)
 	cfxZones.markZoneWithSmokePolar(theZone, radius, degrees, smokeColor)
+end
+
+function dmlZone:markZoneWithSmokePolarRandom(radius, smokeColor)
+	local degrees = math.random(360)
+	self:markZoneWithSmokePolar(radius, degrees, smokeColor)
 end
 
 function cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
@@ -1280,6 +1416,11 @@ function cfxZones.pointInZone(thePoint, theZone, useOrig)
 	return false
 end
 
+function dmlZone:pointInZone(thePoint, useOrig)
+	return cfxZones.pointInZone(thePoint, self, useOrig)
+end
+
+
 function cfxZones.unitInZone(theUnit, theZone)
 	if not (theUnit) then return false, 0, 0 end
 	if not (theUnit:isExist()) then return false, 0, 0 end
@@ -1287,7 +1428,15 @@ function cfxZones.unitInZone(theUnit, theZone)
 	-- pointInZone does update
 	local thePoint = theUnit:getPoint()
 	return cfxZones.pointInZone(thePoint, theZone)
-	
+end
+
+function dmlZone:unitInZone(theUnit)
+	if not (theUnit) then return false, 0, 0 end
+	if not (theUnit:isExist()) then return false, 0, 0 end
+	-- force zone update if it is linked to another zone 
+	-- pointInZone does update
+	local thePoint = theUnit:getPoint()
+	return self:pointInZone(thePoint)
 end
 
 -- returns all units of the input set that are inside the zone 
@@ -1304,6 +1453,17 @@ function cfxZones.unitsInZone(theUnits, theZone)
 	return zoneUnits
 end
 
+function dmlZone:unitsInZone(theUnits)
+	if not theUnits then return {} end
+	local zoneUnits = {}
+	for index, aUnit in pairs(theUnits) do 
+		if self:unitInZone(aUnit) then 
+			table.insert(zoneUnits, aUnit)
+		end
+	end
+	return zoneUnits
+end
+
 function cfxZones.closestUnitToZoneCenter(theUnits, theZone)
 	-- does not care if they really are in zone. call unitsInZone first
 	-- if you need to have them filtered
@@ -1311,15 +1471,24 @@ function cfxZones.closestUnitToZoneCenter(theUnits, theZone)
 	if not theUnits then return nil end
 	if #theUnits == 0 then return nil end
 	local closestUnit = theUnits[1]
+	local zP = cfxZones.getPoint(theZone)
+	local smallestDist = math.huge
 	for i=2, #theUnits do
 		local aUnit = theUnits[i]
-		if dcsCommon.dist(theZone.point, closestUnit:getPoint()) > dcsCommon.dist(theZone.point, aUnit:getPoint()) then 
+		local currDist = dcsCommon.dist(zP, aUnit:getPoint())
+		if smallestDist > currDelta then 
 			closestUnit = aUnit
+			smallestDist = currDist
 		end
 	end
 	return closestUnit
 end
 
+function dmlZone:closestUnitToZoneCenter(theUnits)
+	return cfxZones.closestUnitToZoneCenter(theUnits, self)
+end
+
+--[[
 function cfxZones.anyPlayerInZone(theZone) -- returns first player it finds
 	for pname, pinfo in pairs(cfxPlayer.playerDB) do
 		local playerUnit = pinfo.unit
@@ -1330,6 +1499,7 @@ function cfxZones.anyPlayerInZone(theZone) -- returns first player it finds
 	return false, nil
 end
 
+--]]--
 
 -- grow zone
 function cfxZones.growZone()
@@ -1405,6 +1575,10 @@ function cfxZones.pulseFlag(theFlag, method, theZone)
 	timer.scheduleFunction(cfxZones.unPulseFlag, args, timer.getTime() + delay)
 end
 
+function dmlZone:pulseFlag(theFlag, method)
+	cfxZones.pulseFlag(theFlag, method, self)
+end
+
 function cfxZones.unPulseFlag(args)
 	local theZone = args.theZone
 	local method = args.method 
@@ -1447,32 +1621,56 @@ function cfxZones.evalRemainder(remainder)
 	return rNum
 end
 
-function cfxZones.doPollFlag(theFlag, method, theZone)
-	if cfxZones.verbose then 
-		trigger.action.outText("+++zones: polling flag " .. theFlag .. " with " .. method, 30)
-	end 
-	
+function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
+	-- WARNING: 
+	-- if method is a number string, it will be interpreted as follows:
+	-- positive number: set immediate 
+	-- negative: decrement by amouint
 	if not theZone then 
 		trigger.action.outText("+++zones: nil theZone on pollFlag", 30)
 	end
-	
+
+	local mt = type(method)
+	if mt == "number" then 
+		method = "#" .. method -- convert to immediate 
+		mt = "string"
+	elseif mt ~= "string" then 
+		trigger.action.outText("+++zne: warning: zone <" .. theZone.name .. "> method type <" .. mt .. "> received. Ignoring", 30)
+		return 
+	end
+
+	local val = nil
 	method = method:lower()
 	method = dcsCommon.trim(method)
-	val = tonumber(method)
-	if dcsCommon.stringStartsWith(method, "+") or dcsCommon.stringStartsWith(method, "-")
+	val = tonumber(method) -- see if val can be directly converted 
+	if dcsCommon.stringStartsWith(method, "+") or 
+	   dcsCommon.stringStartsWith(method, "-") 
 	then 
-		-- skip this processing, a legal Lua val can start with "+" or "-"
-		-- but we interpret it as a method
-	else
-		if val then 
-			cfxZones.setFlagValue(theFlag, val, theZone)
-			if cfxZones.verbose or theZone.verbose then
-				trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed to #" .. val, 30)
-			end 
-			return
+		-- skip this processing, a legal method can start with "+" or "-"
+		-- and we interpret it as a method to increase or decrease by amount
+	elseif (val ~= nil) then 
+		-- provision to handle direct (positive) numbers (legacy support)
+		-- method can be converted to number but does not start with - or +
+		-- since all negative numbers start with '-' above guard will skip, positive will end up here
+		cfxZones.setFlagValue(theFlag, val, theZone)
+		if cfxZones.verbose or theZone.verbose then
+			trigger.action.outText("+++zones: flag <" .. theFlag .. "> changed to #" .. val, 30)
 		end 
+		return
+	else 
 	end
-	--trigger.action.outText("+++zones: polling " .. theZone.name .. " method " .. method .. " flag " .. theFlag, 30)
+
+	if dcsCommon.stringStartsWith(method, "#") then 
+		-- immediate value command. remove # and eval remainder 
+		local remainder = dcsCommon.removePrefix(method, "#")
+		val = cfxZones.evalRemainder(remainder) -- always returens a number
+		cfxZones.setFlagValue(theFlag, val, theZone)
+		if theZone.verbose then 
+			trigger.action.outText("+++zones: poll setting immediate <" .. theFlag .. "> in <" .. theZone.name .. "> to <" .. val .. ">", 30)
+		end
+		return 
+	end
+	
 	local currVal = cfxZones.getFlagValue(theFlag, theZone)
 	if method == "inc" or method == "f+1" then 
 		--trigger.action.setUserFlag(theFlag, currVal + 1)
@@ -1546,7 +1744,10 @@ function cfxZones.pollFlag(theFlag, method, theZone)
 		-- a priority 
 		cfxZones.doPollFlag(aFlag, method, theZone)
 	end 
-	
+end
+
+function dmlZone:pollFlag(theFlag, method)
+	cfxZones.pollFlag(theFlag, method, self)
 end
 
 function cfxZones.expandFlagName(theFlag, theZone) 
@@ -1628,6 +1829,11 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	trigger.action.setUserFlag(theFlag, theValue)
 end 
 
+function dmlZone:setFlagValue(theFlag, theValue)
+	cfxZones.setFlagValue(theFlag, theValue, self)
+end
+
+
 function cfxZones.getFlagValue(theFlag, theZone)
 	local zoneName = "<dummy>"
 	if not theZone or not theZone.name then 
@@ -1660,12 +1866,17 @@ function cfxZones.getFlagValue(theFlag, theZone)
 	return tonumber(trigger.misc.getUserFlag(theFlag))
 end
 
+function dmlZone:getFlagValue(theFlag)
+	return cfxZones.getFlagValue(theFlag, self)
+end
+--[[--
 function cfxZones.isMEFlag(inFlag)
 	-- do NOT use me
 	trigger.action.outText("+++zne: warning: deprecated isMEFlag", 30)
 	return true 
 	-- returns true if inFlag is a pure positive number
 end
+--]]--
 
 function cfxZones.verifyMethod(theMethod, theZone)
 	local lMethod = string.lower(theMethod)
@@ -1726,6 +1937,10 @@ function cfxZones.verifyMethod(theMethod, theZone)
 	end
 	
 	return false 
+end
+
+function dmlZone:verifyMethod(theMethod)
+	return cfxZones.verifyMethod(theMethod, self)
 end
 
 -- method-based flag testing 
@@ -1815,6 +2030,11 @@ function cfxZones.evalFlagMethodImmediate(currVal, theMethod, theZone)
 	trigger.action.outText("+++Zne: illegal |" .. theMethod .. "| in eval for zone " .. zoneName, 30 )
 	return false 	
 end
+
+function dmlZone:evalFlagMethodImmediate(currVal, theMethod, theZone)
+	return cfxZones.evalFlagMethodImmediate(currVal, theMethod, self)
+end
+
 
 function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
 	-- return true/false based on theMethod's contraints 
@@ -1914,7 +2134,7 @@ function cfxZones.testFlagByMethodForZone(currVal, lastVal, theMethod, theZone)
 	return false 
 end
 
-
+-- WARNING: testZoneFlag must also support non-dmlZone!!!
 function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	-- returns two values: true/false method result, and curr value
 	-- returns true if method constraints are met for flag theFlagName
@@ -1965,112 +2185,20 @@ function cfxZones.testZoneFlag(theZone, theFlagName, theMethod, latchName)
 	return testResult, currVal
 end
 
-function cfxZones.numberArrayFromString(inString, default)
-	if not default then default = 0 end 
-	if string.len(inString) < 1 then 
-		trigger.action.outText("+++zne: empty numbers", 30)
-		return {default, } 
-	end
-	if cfxZones.verbose then 
-		trigger.action.outText("+++zne: processing <" .. inString .. ">", 30)
-	end 
-	
-	local flags = {}
-	local rawElements = dcsCommon.splitString(inString, ",")
-	-- go over all elements 
-	for idx, anElement in pairs(rawElements) do 
-		anElement = dcsCommon.trim(anElement)
-		if dcsCommon.stringStartsWithDigit(anElement) and dcsCommon.containsString(anElement, "-") then 
-			-- interpret this as a range
-			local theRange = dcsCommon.splitString(anElement, "-")
-			local lowerBound = theRange[1]
-			lowerBound = tonumber(lowerBound)
-			local upperBound = theRange[2]
-			upperBound = tonumber(upperBound)
-			if lowerBound and upperBound then
-				-- swap if wrong order
-				if lowerBound > upperBound then 
-					local temp = upperBound
-					upperBound = lowerBound
-					lowerBound = temp 
-				end
-				-- now add add numbers to flags
-				for f=lowerBound, upperBound do 
-					table.insert(flags, tostring(f))
-				end
-			else
-				-- bounds illegal
-				trigger.action.outText("+++zne: ignored range <" .. anElement .. "> (range)", 30)
-			end
-		else
-			-- single number
-			f = dcsCommon.trim(anElement)
-			f = tonumber(f)
-			if f then 
-				table.insert(flags, f)
-			end
-		end
-	end
-	if #flags < 1 then flags = {default, } end 
-	if cfxZones.verbose then 
-		trigger.action.outText("+++zne: <" .. #flags .. "> flags total", 30)
-	end 
-	return flags
-end 
-
-function cfxZones.flagArrayFromString(inString)
--- original code from RND flag
-	if string.len(inString) < 1 then 
-		trigger.action.outText("+++zne: empty flags", 30)
-		return {} 
-	end
-	if cfxZones.verbose then 
-		trigger.action.outText("+++zne: processing <" .. inString .. ">", 30)
-	end 
-	
-	local flags = {}
-	local rawElements = dcsCommon.splitString(inString, ",")
-	-- go over all elements 
-	for idx, anElement in pairs(rawElements) do 
-		anElement = dcsCommon.trim(anElement)
-		if dcsCommon.stringStartsWithDigit(anElement) and dcsCommon.containsString(anElement, "-") then 
-			-- interpret this as a range
-			local theRange = dcsCommon.splitString(anElement, "-")
-			local lowerBound = theRange[1]
-			lowerBound = tonumber(lowerBound)
-			local upperBound = theRange[2]
-			upperBound = tonumber(upperBound)
-			if lowerBound and upperBound then
-				-- swap if wrong order
-				if lowerBound > upperBound then 
-					local temp = upperBound
-					upperBound = lowerBound
-					lowerBound = temp 
-				end
-				-- now add add numbers to flags
-				for f=lowerBound, upperBound do 
-					table.insert(flags, tostring(f))
-				end
-			else
-				-- bounds illegal
-				trigger.action.outText("+++zne: ignored range <" .. anElement .. "> (range)", 30)
-			end
-		else
-			-- single number
-			f = dcsCommon.trim(anElement) -- DML flag upgrade: accept strings tonumber(anElement)
-			if f then 
-				table.insert(flags, f)
-
-			else 
-				trigger.action.outText("+++zne: ignored element <" .. anElement .. "> (single)", 30)
-			end
-		end
-	end
-	if cfxZones.verbose then 
-		trigger.action.outText("+++zne: <" .. #flags .. "> flags total", 30)
-	end 
-	return flags
+function dmlZone:testZoneFlag(theFlagName, theMethod, latchName)
+	local r, v = cfxZones.testZoneFlag(self, theFlagName, theMethod, latchName)
+	return r, v 
 end
+
+function cfxZones.numberArrayFromString(inString, default) -- bridge
+	return dcsCommon.numberArrayFromString(inString, default)
+end
+ 
+
+function cfxZones.flagArrayFromString(inString) -- dcsCommon bridge 
+	return dcsCommon.flagArrayFromString(inString)
+end
+
 
 --
 -- ===================
@@ -2100,6 +2228,10 @@ function cfxZones.getAllZoneProperties(theZone, caseInsensitive, numbersOnly) --
 		props[theKey] = v
 	end
 	return props 
+end
+
+function dmlZone:getAllZoneProperties(caseInsensitive, numbersOnly)
+	return cfxZones.getAllZoneProperties(self, caseInsensitive, numbersOnly)
 end
 
 function cfxZones.extractPropertyFromDCS(theKey, theProperties)
@@ -2148,10 +2280,34 @@ function cfxZones.getZoneProperty(cZone, theKey)
 	return theVal
 end
 
+function dmlZone:getZoneProperty(theKey)
+	if not theKey then 
+		trigger.action.outText("+++zone: no property key in OOP getZoneProperty for zone " .. self.name, 30)
+		return nil  
+	end	
+	local props = self.properties
+	local theVal = cfxZones.extractPropertyFromDCS(theKey, props)
+	return theVal
+end
+
+
 function cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
-	
 	if not default then default = "" end
-	local p = cfxZones.getZoneProperty(theZone, theProperty)
+--	local p = cfxZones.getZoneProperty(theZone, theProperty)
+-- OOP heavy duty test here
+	local p = theZone:getZoneProperty(theProperty)
+	if not p then return default end
+	if type(p) == "string" then 
+		p = dcsCommon.trim(p)
+		if p == "" then p = default end 
+		return p
+	end
+	return default -- warning. what if it was a number first?
+end
+
+function dmlZone:getStringFromZoneProperty(theProperty, default)
+	if not default then default = "" end
+	local p = self:getZoneProperty(theProperty)
 	if not p then return default end
 	if type(p) == "string" then 
 		p = dcsCommon.trim(p)
@@ -2164,12 +2320,16 @@ end
 function cfxZones.getMinMaxFromZoneProperty(theZone, theProperty)
 	local p = cfxZones.getZoneProperty(theZone, theProperty)
 	local theNumbers = dcsCommon.splitString(p, " ")
-
 	return tonumber(theNumbers[1]), tonumber(theNumbers[2])
-	
 end
 
-function cfxZones.randomInRange(minVal, maxVal)
+function dmlZone:getMinMaxFromZoneProperty(theProperty)
+	local p = self:getZoneProperty(theProperty)
+	local theNumbers = dcsCommon.splitString(p, " ")
+	return tonumber(theNumbers[1]), tonumber(theNumbers[2])
+end
+
+function cfxZones.randomInRange(minVal, maxVal) -- should be moved to dcsCommon
 	if maxVal < minVal then 
 		local t = minVal
 		minVal = maxVal 
@@ -2178,7 +2338,7 @@ function cfxZones.randomInRange(minVal, maxVal)
 	return cfxZones.randomDelayFromPositiveRange(minVal, maxVal)
 end
 
-function cfxZones.randomDelayFromPositiveRange(minVal, maxVal) 
+function cfxZones.randomDelayFromPositiveRange(minVal, maxVal) -- should be moved to dcsCommon 
 	if not maxVal then return minVal end 
 	if not minVal then return maxVal end 
 	local delay = maxVal
@@ -2230,6 +2390,12 @@ function cfxZones.getPositiveRangeFromZoneProperty(theZone, theProperty, default
 	return lowerBound, upperBound
 end
 
+function dmlZone:getPositiveRangeFromZoneProperty(theProperty, default, defaultmax)
+	local lo, up = cfxZones.getPositiveRangeFromZoneProperty(self, theProperty, default, defaultmax)
+	return lo, up 
+end
+
+
 function cfxZones.hasProperty(theZone, theProperty) 
 	if not theProperty then 
 		trigger.action.outText("+++zne: WARNING - hasProperty called with nil theProperty for zone <" .. theZone.name .. ">", 30)
@@ -2276,6 +2442,51 @@ function cfxZones.hasProperty(theZone, theProperty)
 --	return foundIt ~= nil 
 end
 
+function dmlZone:hasProperty(theProperty) 
+	if not theProperty then 
+		trigger.action.outText("+++zne: WARNING - hasProperty called with nil theProperty for zone <" .. self.name .. ">", 30)
+		return false 
+	end 
+	local foundIt = self:getZoneProperty(theProperty)
+	if not foundIt then 
+		-- check for possible forgotten or exchanged IO flags 
+		if string.sub(theProperty, -1) == "?" then
+			local lessOp = theProperty:sub(1,-2)
+			if self:getZoneProperty(lessOp) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be missing a Query ('?') symbol", 30)
+			end
+			local lessPlus = lessOp .. "!"
+			if self:getZoneProperty(lessPlus) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be using '!' instead of '?' for input", 30)
+			end
+			return false 
+		end
+		
+		if string.sub(theProperty, -1) == "!" then 
+			local lessOp = theProperty:sub(1,-2)
+			if self:getZoneProperty(lessOp) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be missing a Bang! ('!') symbol", 30)
+			end
+			local lessPlus = lessOp .. "?"
+			if self:getZoneProperty(lessPlus) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be using '!' instead of '?' for input", 30)
+			end
+			return false 
+		end
+		
+		if string.sub(theProperty, -1) == ":" then 
+			local lessOp = theProperty:sub(1,-2)
+			if self:getZoneProperty(lessOp) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be missing a colon (':') at end", 30)
+			end
+			return false 
+		end
+		
+		return false 
+	end
+	return true 
+end
+
 function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	if not defaultVal then defaultVal = false end 
 	if type(defaultVal) ~= "boolean" then 
@@ -2289,6 +2500,32 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 
 
 	local p = cfxZones.getZoneProperty(theZone, theProperty)
+	if not p then return defaultVal end
+
+	-- make sure we compare so default always works when 
+	-- answer isn't exactly the opposite
+	p = p:lower() 
+	p = dcsCommon.trim(p) 
+	if defaultVal == false then 
+		-- only go true if exact match to yes or true 
+		theBool = false 
+		theBool = (p == 'true') or (p == 'yes') or p == "1"
+		return theBool
+	end
+	
+	local theBool = true 
+	-- only go false if exactly no or false or "0"
+	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") 
+	return theBool
+end
+
+function dmlZone:getBoolFromZoneProperty(theProperty, defaultVal)
+	if not defaultVal then defaultVal = false end 
+	if type(defaultVal) ~= "boolean" then 
+		defaultVal = false 
+	end
+
+	local p = self:getZoneProperty(theProperty)
 	if not p then return defaultVal end
 
 	-- make sure we compare so default always works when 
@@ -2335,18 +2572,84 @@ function cfxZones.getCoalitionFromZoneProperty(theZone, theProperty, default)
 	return default 
 end
 
+function dmlZone:getCoalitionFromZoneProperty(theProperty, default)
+	if not default then default = 0 end
+	local p = self:getZoneProperty(theProperty)
+	if not p then return default end  
+	if type(p) == "number" then -- can't currently really happen
+		if p == 1 then return 1 end 
+		if p == 2 then return 2 end 
+		return 0
+	end
+	
+	if type(p) == "string" then 
+		if p == "1" then return 1 end 
+		if p == "2" then return 2 end 
+		if p == "0" then return 0 end 
+		
+		p = p:lower()
+		
+		if p == "red" then return 1 end 
+		if p == "blue" then return 2 end 
+		if p == "neutral" then return 0 end
+		if p == "all" then return 0 end 
+		return default 
+	end
+	
+	return default 
+end
+
 function cfxZones.getNumberFromZoneProperty(theZone, theProperty, default)
 --TODO: trim string 
 	if not default then default = 0 end
+	default = tonumber(default)
+	if not default then default = 0 end -- enforce default numbner as well 
 	local p = cfxZones.getZoneProperty(theZone, theProperty)
 	p = tonumber(p)
-	if not p then return default else return p end
+	if not p then p = default end 
+--	if theZone.verbose then 
+--		trigger.action.outText("+++zne: getNumberFromZoneProperty returns <" .. p .. "> for prop <" .. theProperty .. "> in zone <" .. theZone.name .. ">", 30)
+--	end
+	return p
+end
+
+function dmlZone:getNumberFromZoneProperty(theProperty, default)
+--TODO: trim string 
+	if not default then default = 0 end
+	default = tonumber(default)
+	if not default then default = 0 end -- enforce default numbner as well 
+	local p = self:getZoneProperty(theProperty)
+	p = tonumber(p)
+	if not p then p = default end 
+--	if self.verbose then 
+--		trigger.action.outText("+++zne OOP: getNumberFromZoneProperty returns <" .. p .. "> for prop <" .. theProperty .. "> in zone <" .. self.name .. ">", 30)
+--	end
+	return p
 end
 
 function cfxZones.getVectorFromZoneProperty(theZone, theProperty, minDims, defaultVal)
 	if not minDims then minDims = 0 end 
 	if not defaultVal then defaultVal = 0 end 
 	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	local sVec = dcsCommon.splitString(s, ",")
+	local nVec = {}
+	for idx, numString in pairs (sVec) do 
+		local n = tonumber(numString)
+		if not n then n = defaultVal end
+		table.insert(nVec, n)
+	end
+	-- make sure vector contains at least minDims values 
+	while #nVec < minDims do 
+		table.insert(nVec, defaultVal)
+	end
+	
+	return nVec 
+end
+
+function dmlZone:getVectorFromZoneProperty(theProperty, minDims, defaultVal)
+	if not minDims then minDims = 0 end 
+	if not defaultVal then defaultVal = 0 end 
+	local s = self:getStringFromZoneProperty(theProperty, "")
 	local sVec = dcsCommon.splitString(s, ",")
 	local nVec = {}
 	for idx, numString in pairs (sVec) do 
@@ -2376,14 +2679,56 @@ function cfxZones.getRGBVectorFromZoneProperty(theZone, theProperty, defaultVal)
 		if n < 0 then n = 0 end 
 		nVec[i] = n
 	end
-		
 	return nVec 
 end
+
+function dmlZone:getRGBVectorFromZoneProperty(theProperty, defaultVal)
+	if not defaultVal then defaultVal = {1.0, 1.0, 1.0} end 
+	if #defaultVal ~=3 then defaultVal = {1.0, 1.0, 1.0} end
+	local s = self:getStringFromZoneProperty(theProperty, "")
+	local sVec = dcsCommon.splitString(s, ",")
+	local nVec = {}
+	for i = 1, 3 do 
+		n = sVec[i]
+		if n then n = tonumber(n) end 
+		if not n then n = defaultVal[i] end 
+		if n > 1.0 then n = 1.0 end
+		if n < 0 then n = 0 end 
+		nVec[i] = n
+	end
+	return nVec 
+end
+
 
 function cfxZones.getRGBAVectorFromZoneProperty(theZone, theProperty, defaultVal)
 	if not defaultVal then defaultVal = {1.0, 1.0, 1.0, 1.0} end 
 	if #defaultVal ~=4 then defaultVal = {1.0, 1.0, 1.0, 1.0} end
 	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, "")
+	s = dcsCommon.trim(s)
+	if s:sub(1,1) == "#" then 
+		-- it's probably a "#RRGGBBAA" format hex string 
+		local hVec = dcsCommon.hexString2RGBA(s)
+		if hVec then return hVec end 
+	end
+
+	local sVec = dcsCommon.splitString(s, ",")
+	local nVec = {}
+	for i = 1, 4 do 
+		n = sVec[i]
+		if n then n = tonumber(n) end 
+		if not n then n = defaultVal[i] end 
+		if n > 1.0 then n = 1.0 end
+		if n < 0 then n = 0 end 
+		nVec[i] = n
+	end
+		
+	return nVec 
+end
+
+function dmlZone:getRGBAVectorFromZoneProperty(theProperty, defaultVal)
+	if not defaultVal then defaultVal = {1.0, 1.0, 1.0, 1.0} end 
+	if #defaultVal ~=4 then defaultVal = {1.0, 1.0, 1.0, 1.0} end
+	local s = self:getStringFromZoneProperty(theProperty, "")
 	s = dcsCommon.trim(s)
 	if s:sub(1,1) == "#" then 
 		-- it's probably a "#RRGGBBAA" format hex string 
@@ -2418,10 +2763,44 @@ function cfxZones.getRGBFromZoneProperty(theZone, theProperty, default)
 	return retVal
 end
 
+function dmlZone:getRGBFromZoneProperty(theProperty, default)
+	--if not default then default = {1.0, 1.0, 1.0} end -- white 
+	local rawRGB = self:getVectorFromZoneProperty(theProperty, 3, 1.0)
+	local retVal = {}
+	for i = 1, 3 do 
+		local cp = rawRGB[i]
+		if cp > 1.0 then cp = 1.0 end
+		if cp < 0 then cp = 0 end 
+		retVal[i] = cp
+	end
+	return retVal
+end
+
 
 function cfxZones.getSmokeColorStringFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
 	if not default then default = "red" end 
 	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
+	s = s:lower()
+	s = dcsCommon.trim(s)
+	-- check numbers 
+	if (s == "0") then return "green" end
+	if (s == "1") then return "red" end
+	if (s == "2") then return "white" end
+	if (s == "3") then return "orange" end
+	if (s == "4") then return "blue" end
+	
+	if s == "green" or
+	   s == "red" or
+	   s == "white" or
+	   s == "orange" or
+	   s == "blue" then return s end
+
+	return default 
+end
+
+function dmlZone:getSmokeColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
+	if not default then default = "red" end 
+	local s = self:getStringFromZoneProperty(theProperty, default)
 	s = s:lower()
 	s = dcsCommon.trim(s)
 	-- check numbers 
@@ -2463,6 +2842,28 @@ function cfxZones.getFlareColorStringFromZoneProperty(theZone, theProperty, defa
 	return default 
 end
 
+function dmlZone:getFlareColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
+	if not default then default = "red" end 
+	local s = self:getStringFromZoneProperty(theProperty, default)
+	s = s:lower()
+	s = dcsCommon.trim(s)
+	-- check numbers 
+	if (s == "rnd") then return "random" end 
+	if (s == "0") then return "green" end
+	if (s == "1") then return "red" end
+	if (s == "2") then return "white" end
+	if (s == "3") then return "yellow" end
+	if (s == "-1") then return "random" end  
+	
+	if s == "green" or
+	   s == "red" or
+	   s == "white" or
+	   s == "yellow" or 
+	   s == "random" then
+	return s end
+
+	return default 
+end
 
 --
 -- Zone-based wildcard processing
@@ -2473,6 +2874,11 @@ function cfxZones.processZoneStatics(inMsg, theZone)
 	if theZone then 
 		inMsg = inMsg:gsub("<z>", theZone.name)
 	end
+	return inMsg 
+end
+
+function dmlZone:processZoneStatics(inMsg, theZone)
+	inMsg = inMsg:gsub("<z>", self.name)
 	return inMsg 
 end
 
@@ -2767,11 +3173,32 @@ function cfxZones.getDCSOrigin(aZone)
 	return o
 end
 
+function dmlZone:getDCSOrigin()
+	local o = {}
+	if not self.dcsOrigin then 
+		trigger.action.outText("dmlZone (OOP): no dcsOrigin defined for zone <" .. self.name .. ">", 30)
+		o.x = 0
+		o.y = 0
+		o.z = 0
+	else
+		o.x = self.dcsOrigin.x
+		o.y = 0
+		o.z = self.dcsOrigin.z 
+	end 
+	return o
+end
+
 function cfxZones.getLinkedUnit(theZone)
 	if not theZone then return nil end 
 	if not theZone.linkedUnit then return nil end 
 	if not Unit.isExist(theZone.linkedUnit) then return nil end 
 	return theZone.linkedUnit 
+end
+
+function dmlZone:getLinkedUnit()
+	if not self.linkedUnit then return nil end 
+	if not Unit.isExist(self.linkedUnit) then return nil end 
+	return self.linkedUnit 
 end
 
 function cfxZones.getPoint(aZone, getHeight) -- always works, even linked, returned point can be reused
@@ -2794,6 +3221,34 @@ function cfxZones.getPoint(aZone, getHeight) -- always works, even linked, retur
 	local thePos = {}
 	thePos.x = aZone.point.x
 	thePos.z = aZone.point.z
+	if not getHeight then 
+		thePos.y = 0 -- aZone.y 
+	else 
+		thePos.y = land.getHeight({x = thePos.x, y = thePos.z})
+	end
+	
+	return thePos 
+end
+
+function dmlZone:getPoint(getHeight)
+	if not getHeight then getHeight = false end 
+	if self.linkedUnit then 
+		local theUnit = self.linkedUnit
+		-- has a link. is link existing?
+		if Unit.isExist(theUnit) then 
+			-- updates zone position 
+			self:centerZoneOnUnit(theUnit)
+			local dx = self.dx
+			local dy = self.dy
+			if self.useHeading then 
+				dx, dy = self:calcHeadingOffset(theUnit)
+			end
+			self:offsetZone(dx, dy)
+		end
+	end
+	local thePos = {}
+	thePos.x = self.point.x
+	thePos.z = self.point.z
 	if not getHeight then 
 		thePos.y = 0 -- aZone.y 
 	else 
@@ -2826,6 +3281,28 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	--trigger.action.outText("Link setup: dx=<" .. dx .. ">, dy=<" .. dy .. "> unit original hdg = <" .. math.floor(57.2958 * unitHeading)  .. ">", 30)
 end
 
+function dmlZone:linkUnitToZone(theUnit, dx, dy) -- note: dy is really Z, don't get confused!!!!
+	self.linkedUnit = theUnit
+	if not dx then dx = 0 end
+	if not dy then dy = 0 end 
+	self.dx = dx
+	self.dy = dy 
+	self.rxy = math.sqrt(dx * dx + dy * dy) -- radius 
+	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local bearingOffset = math.atan2(dy, dx) -- rads 
+	if bearingOffset < 0 then bearingOffset = bearingOffset + 2 * 3.141592 end 
+
+	local dPhi = bearingOffset - unitHeading
+	if dPhi < 0 then dPhi = dPhi + 2 * 3.141592 end
+	if (self.verbose and self.useHeading) then 
+		trigger.action.outText("Zone <" .. self.name .. "> is at <" .. math.floor(57.2958 * dPhi) .. "> relative to unit heading", 30)
+	end
+	self.dPhi = dPhi -- constant delta between unit heading and 
+	-- direction to zone 
+	self.uHdg = unitHeading -- original unit heading to turn other 
+	-- units if need be 
+end
+
 function cfxZones.zonesLinkedToUnit(theUnit) -- returns all zones linked to this unit 
 	if not theUnit then return {} end 
 	local linkedZones = {}
@@ -2855,6 +3332,17 @@ function cfxZones.calcHeadingOffset(aZone, theUnit)
 	--trigger.action.outText("zone bearing is " .. math.floor(zoneBearing * 57.2958) .. " dx = <" .. dx .. "> , dy = <" .. dy .. ">", 30)
 	return dx, -dy -- note: dy is z coord!!!!
 end
+
+function dmlZone:calcHeadingOffset(theUnit)
+	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local zoneBearing = unitHeading + self.dPhi 
+	if zoneBearing > 2 * 3.141592 then zoneBearing = zoneBearing - 2 * 3.141592 end 
+	-- in DCS, positive x is north (wtf?) and positive z is east 
+	local dy = (-self.rxy) * math.sin(zoneBearing)
+	local dx = self.rxy * math.cos(zoneBearing)
+	return dx, -dy -- note: dy is z coord!!!!
+end
+
 
 function cfxZones.updateMovingZones()
 	cfxZones.updateSchedule = timer.scheduleFunction(cfxZones.updateMovingZones, {}, timer.getTime() + 1/cfxZones.ups)
@@ -2902,7 +3390,6 @@ function cfxZones.updateMovingZones()
 end
 
 function cfxZones.initLink(theZone)
-
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 
 	theUnit = Unit.getByName(theZone.linkName)
@@ -2927,6 +3414,35 @@ function cfxZones.initLink(theZone)
 	else 
 		if theZone.verbose then 
 			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
+		end
+	end
+end
+
+function dmlZone:initLink()
+	self.linkBroken = true 
+	self.linkedUnit = nil 
+	theUnit = Unit.getByName(self.linkName)
+	if theUnit then
+
+		local dx = 0
+		local dz = 0
+		if self.useOffset or self.useHeading then 
+			local A = self:getDCSOrigin()
+			local B = theUnit:getPoint()
+			local delta = dcsCommon.vSub(A,B) 
+			dx = delta.x 
+			dz = delta.z
+		end
+		self:linkUnitToZone(theUnit, dx, dz) -- also sets theZone.linkedUnit
+
+		if self.verbose then 
+			trigger.action.outText("Link established for zone <" .. self.name .. "> to unit <" .. self.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
+		end 
+		self.linkBroken = nil 
+
+	else 
+		if self.verbose then 
+			trigger.action.outText("Linked unit: no unit <" .. self.linkName .. "> to link <" .. self.name .. "> to", 30)
 		end
 	end
 end
@@ -2967,6 +3483,7 @@ function cfxZones.startMovingZones()
 		
 	end
 end
+
 
 
 --
