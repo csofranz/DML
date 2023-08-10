@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "1.5.2"
+civAir.version = "2.0.0"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -23,7 +23,15 @@ civAir.version = "1.5.2"
 		  exclude list and include list 
 	1.5.1 added depart only and arrive only options for airfields 
 	1.5.2 fixed bugs inb verbosity 
-	
+	2.0.0 dmlZones 
+		  inbound zones 
+		  outbound zones 
+		  on start location is randomizes 30-70% of the way
+		  guarded 'no longer exist' warning for verbosity 
+		  changed unit naming from -civA to -GA
+		  strenghtened guard on testing against free slots for other units
+		  flights are now of random neutral countries 
+		  maxFlights synonym for maxTraffic
 	
 --]]--
 
@@ -48,22 +56,22 @@ civAir.trafficCenters = {}
 -- If the attribute's value is anything
 -- but "exclude", the closest airfield to the zone 
 -- is added to trafficCenters
-
 -- if you leave this list empty, and do not add airfields
 -- by zones, the list is automatically populated with all
 -- airfields in the map 
+-- if name starts with "***" then it is not an airfield, but zone
 		  
 civAir.excludeAirfields = {}
 -- list all airfields that must NOT be included in 
 -- civilian activities. Will be used for neither landing 
 -- nor departure. overrides any airfield that was included 
--- in trafficCenters. Here, Senaki is off limits for 
--- civilian air traffic
+-- in trafficCenters. 
 -- can be populated by zone on the map that have the 
 -- 'civAir' attribute with value "exclude"
 
 civAir.departOnly = {} -- use only to start from 
 civAir.landingOnly = {} -- use only to land at 
+civAir.inoutZones = {} -- off-map connector zones 
 
 civAir.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -72,57 +80,73 @@ civAir.requiredLibs = {
 
 civAir.activePlanes = {}
 civAir.idlePlanes = {}
+civAir.outboundFlights = {} -- only flights that are enroute to an outbound zone
 
 function civAir.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("civAirConfig") 
 	if not theZone then 
 		trigger.action.outText("***civA: NO config zone!", 30) 
-		return 
+		theZone = cfxZones.createSimpleZone("civAirConfig") 
 	end 
-	
-	trigger.action.outText("civA: found config zone!", 30) 
-	
+		
 	-- ok, for each property, load it if it exists
-	if cfxZones.hasProperty(theZone, "aircraftTypes")  then 
-		local theTypes = cfxZones.getStringFromZoneProperty(theZone, "aircraftTypes", "Yak-40")
+	if theZone:hasProperty("aircraftTypes")  then 
+		local theTypes = theZone:getStringFromZoneProperty( "aircraftTypes", civAir.aircraftTypes) -- "Yak-40")
 		local typeArray = dcsCommon.splitString(theTypes, ",")
 		typeArray = dcsCommon.trimArray(typeArray)
 		civAir.aircraftTypes = typeArray 
 	end
 	
-	if cfxZones.hasProperty(theZone, "ups")  then 
-		civAir.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 0.05)
+	if theZone:hasProperty("ups")  then 
+		civAir.ups = theZone:getNumberFromZoneProperty("ups", 0.05)
 		if civAir.ups < .0001 then civAir.ups = 0.05 end
 	end
 	
-	if cfxZones.hasProperty(theZone, "maxTraffic")  then 
-		civAir.maxTraffic = cfxZones.getNumberFromZoneProperty(theZone, "maxTraffic", 10)
+	if theZone:hasProperty("maxTraffic")  then 
+		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxTraffic", 10)
+	elseif theZone:hasProperty("maxFlights") then 
+		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxFlights", 10)
 	end
 	
-	if cfxZones.hasProperty(theZone, "maxIdle")  then 
-		civAir.maxIdle = cfxZones.getNumberFromZoneProperty(theZone, "maxIdle", 8 * 60)
+	if theZone:hasProperty("maxIdle")  then 
+		civAir.maxIdle = theZone:getNumberFromZoneProperty("maxIdle", 8 * 60)
 	end
 	
-	if cfxZones.hasProperty(theZone, "initialAirSpawns")  then 
-		civAir.initialAirSpawns = cfxZones.getBoolFromZoneProperty(theZone, "initialAirSpawns", true) 
+	if theZone:hasProperty("initialAirSpawns")  then 
+		civAir.initialAirSpawns = theZone:getBoolFromZoneProperty( "initialAirSpawns", true) 
 	end
 	
-	civAir.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 
+	civAir.verbose = theZone.verbose -- cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 
 end
 
 function civAir.processZone(theZone)
-	local value = cfxZones.getStringFromZoneProperty(theZone, "civAir", "")
+	local value = theZone:getStringFromZoneProperty("civAir", "")
 	local af = dcsCommon.getClosestAirbaseTo(theZone.point, 0) -- 0 = only airfields, not farp or ships 
+	local inoutName = "***" .. theZone:getName() 
+	
 	if af then 
 		local afName = af:getName()
 		value = value:lower()
-		if value == "exclude" then 
+		if value == "exclude" or value == "closed" then 
 			table.insert(civAir.excludeAirfields, afName)
-		elseif dcsCommon.stringStartsWith(value, "depart") or dcsCommon.stringStartsWith(value, "start") then 
+		elseif dcsCommon.stringStartsWith(value, "depart") or dcsCommon.stringStartsWith(value, "start") or dcsCommon.stringStartsWith(value, "take") then 
 			table.insert(civAir.departOnly, afName)
 		elseif dcsCommon.stringStartsWith(value, "land") or dcsCommon.stringStartsWith(value, "arriv") then
 			table.insert(civAir.landingOnly, afName)
+		elseif dcsCommon.stringStartsWith(value, "inb") then 
+			table.insert(civAir.departOnly, inoutName) -- start in inbound zone
+			civAir.inoutZones[inoutName] = theZone
+--			theZone.inbound = true 
+		elseif dcsCommon.stringStartsWith(value, "outb") then 
+			table.insert(civAir.landingOnly, inoutName)
+			civAir.inoutZones[inoutName] = theZone
+--			theZone.outbound = true
+		elseif dcsCommon.stringStartsWith(value, "in/out") then 
+			table.insert(civAir.trafficCenters, inoutName)
+			civAir.inoutZones[inoutName] = theZone
+--			theZone.inbound = true
+--			theZone.outbound = true 
 		else 
 			table.insert(civAir.trafficCenters, afName) -- note that adding the same twice makes it more likely to be picked 
 		end
@@ -142,10 +166,11 @@ function civAir.removePlaneGroupByName(aName)
 		return 
 	end 
 	if civAir.activePlanes[aName] then 
-		--trigger.action.outText("civA: REMOVING " .. aName .. " ***", 30) 
 		civAir.activePlanes[aName] = nil
 	else 
-		trigger.action.outText("civA: warning - ".. aName .." remove req but not found", 30) 
+		if civAir.verbose then 
+			trigger.action.outText("civA: warning - ".. aName .." remove req but not found", 30) 
+		end 
 	end
 end
 
@@ -207,10 +232,25 @@ function civAir.getTwoAirbases()
 		tries = tries + 1 -- only try 10 times
 	until fAB ~= sAB or tries > 10
 	
-	fAB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0)
-	sAB = dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0)
+	
+	local civA = {}
+	if not (dcsCommon.stringStartsWith(fAB, '***')) then 
+		civA.AB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0) 
+		civA.name = civA.AB:getName()
+	else 
+		civA.zone = civAir.inoutZones[fAB]
+		civA.name = civA.zone:getName()
+	end 
+	local civB = {}
+	if not (dcsCommon.stringStartsWith(sAB, '***')) then 
+		civB.AB = dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0) 
+		civB.name = civB.AB:getName()
+	else 
+		civB.zone = civAir.inoutZones[sAB]
+		civB.name = civB.zone:getName() 
+	end 
 
-	return fAB, sAB	
+	return civA, civB -- fAB, sAB	
 end
 
 function civAir.parkingIsFree(fromWP) 
@@ -222,9 +262,9 @@ function civAir.parkingIsFree(fromWP)
 	loc.z = fromWP.z 
 	
 	for name, aPlaneGroup in pairs(civAir.activePlanes) do
-		if aPlaneGroup:isExist() then 
+		if Group.isExist(aPlaneGroup) then 
 			local aPlane = aPlaneGroup:getUnit(1)			
-			if aPlane:isExist() then
+			if aPlane and Unit.isExist(aPlane) then
 				pos = aPlane:getPoint()
 				local delta = dcsCommon.dist(loc, pos)
 				if delta < 21 then 
@@ -242,21 +282,35 @@ end
 civAir.airStartSeparation = 0
 function civAir.createFlight(name, theTypeString, fromAirfield, toAirfield, inAirStart)
 	if not fromAirfield then 
-		trigger.action.outText("civA: NIL fromAirfield", 30)
+		trigger.action.outText("civA: NIL source", 30)
 		return nil 
 	end 
 	
 	if not toAirfield then 
-		trigger.action.outText("civA: NIL toAirfield", 30)
+		trigger.action.outText("civA: NIL destination", 30)
 		return nil 
 	end 
 	
+	local randomizeLoc = inAirStart
+	
 	local theGroup = dcsCommon.createEmptyAircraftGroupData (name)
-	local theAUnit = dcsCommon.createAircraftUnitData(name .. "-civA", theTypeString, false)
+	local theAUnit = dcsCommon.createAircraftUnitData(name .. "-GA", theTypeString, false)
 	theAUnit.payload.fuel = 100000
 	dcsCommon.addUnitToGroupData(theAUnit, theGroup)
 	
-	local fromWP = dcsCommon.createTakeOffFromParkingRoutePointData(fromAirfield)
+	local fromWP 
+	if fromAirfield.AB then 
+		fromWP = dcsCommon.createTakeOffFromParkingRoutePointData(fromAirfield.AB) 
+	else 
+		-- we start in air from inside inbound zone 
+		local p = fromAirfield.zone:createRandomPointInZone()
+		local alt = fromAirfield.zone:getNumberFromZoneProperty("alt", 8000)
+		fromWP = dcsCommon.createSimpleRoutePointData(p, alt)
+		theAUnit.alt = fromWP.alt
+		theAUnit.speed = fromWP.speed 
+		inAirStart = false -- it already is, no separation shenigans
+	end
+	
 	if not fromWP then 
 		trigger.action.outText("civA: fromWP create failed", 30)
 		return nil 
@@ -266,38 +320,81 @@ function civAir.createFlight(name, theTypeString, fromAirfield, toAirfield, inAi
 		fromWP.alt = fromWP.alt + 3000 + civAir.airStartSeparation -- 9000 ft overhead + separation
 		fromWP.action = "Turning Point"
 		fromWP.type = "Turning Point"
-			
+		
 		fromWP.speed = 150;
 		fromWP.airdromeId = nil 
 		
 		theAUnit.alt = fromWP.alt
 		theAUnit.speed = fromWP.speed 
 	end
-	-- sometimes, when landing kicks in too early, the plane lands 
-	-- at the wrong airfield. AI sucks. 
-	-- so we force overflight of target airfield 
-	local overheadWP = dcsCommon.createOverheadAirdromeRoutPintData(toAirfield)
-	local toWP = dcsCommon.createLandAtAerodromeRoutePointData(toAirfield)
-	if not toWP then 
-		trigger.action.outText("civA: toWP create failed", 30)
-		return nil 
-	end 
 	
-	if not civAir.parkingIsFree(fromWP) then 
-		trigger.action.outText("civA: failed free parking check for flight " .. name, 30)
-		return nil 
+	-- now look at destination: airfield or zone?
+	local zoneApproach = toAirfield.zone 
+	local toWP 
+	local overheadWP
+	if zoneApproach then 
+		-- we fly this plane to a zone, and then disappear it 
+		local p = zoneApproach:getPoint()
+		local alt = zoneApproach:getNumberFromZoneProperty("alt", 8000)
+		toWP = dcsCommon.createSimpleRoutePointData(p, alt)
+	else 
+		-- sometimes, when landing kicks in too early, the plane lands 
+		-- at the wrong airfield. AI sucks. 
+		-- so we force overflight of target airfield	
+		overheadWP = dcsCommon.createOverheadAirdromeRoutPintData(toAirfield.AB)
+		toWP = dcsCommon.createLandAtAerodromeRoutePointData(toAirfield.AB)
+		if not toWP then 
+			trigger.action.outText("civA: toWP create failed", 30)
+			return nil 
+		end 
+	
+		if not civAir.parkingIsFree(fromWP) then 
+			trigger.action.outText("civA: failed free parking check for flight " .. name, 30)
+			return nil 
+		end
+	end
+	
+	if randomizeLoc then 
+		-- make first wp to somewhere 30-70 towards toWP
+		local percent = (math.random(40) + 30) / 100
+		local mx = dcsCommon.lerp(fromWP.x, toWP.x, percent)
+		local my = dcsCommon.lerp(fromWP.y, toWP.y, percent)
+		fromWP.x = mx 
+		fromWP.y = my 
+		fromWP.speed = 150
+		fromWP.alt = 8000
+		theAUnit.alt = fromWP.alt
+		theAUnit.speed = fromWP.speed 
+	end
+	
+	if (not fromAirfield.AB) or randomizedLoc or inAirStart then 
+		-- set current heading correct towards toWP
+		local hdg = dcsCommon.bearingFromAtoBusingXY(fromWP, toWP)
+		theAUnit.heading = hdg 
+		theAUnit.psi = -hdg 
 	end
 	
 	dcsCommon.moveGroupDataTo(theGroup, 
 							  fromWP.x, 
 							  fromWP.y)
 	dcsCommon.addRoutePointForGroupData(theGroup, fromWP)
-	dcsCommon.addRoutePointForGroupData(theGroup, overheadWP)
+	if not zoneApproach then 
+		dcsCommon.addRoutePointForGroupData(theGroup, overheadWP)
+	end
 	dcsCommon.addRoutePointForGroupData(theGroup, toWP)
 	
 	-- spawn
 	local groupCat = Group.Category.AIRPLANE
-	local theSpawnedGroup = coalition.addGroup(82, groupCat, theGroup) -- 82 is UN peacekeepers
+	local allNeutral = dcsCommon.getCountriesForCoalition(0)
+	local aRandomNeutral = dcsCommon.pickRandom(allNeutral)
+	if not aRandomNeutral then 
+		trigger.action.outText("+++civA: WARNING: no neutral countries exist, flight is not neutral.", 30)
+	end
+	local theSpawnedGroup = coalition.addGroup(aRandomNeutral, groupCat, theGroup) -- 82 is UN peacekeepers
+	if zoneApproach then 
+		-- track this flight to target zone 
+		civAir.outboundFlights[name] = zoneApproach
+	end
 	return theSpawnedGroup
 end
 
@@ -312,7 +409,9 @@ function civAir.createNewFlight(inAirStart)
 		return 
 	end
 
-	local name = fAB:getName() .. "-" .. sAB:getName().. "/" .. civAir.flightCount
+	-- fAB and sAB are tables that have either .base or AB set
+
+	local name = fAB.name .. "-" .. sAB.name.. "/" .. civAir.flightCount
 	local TypeString = dcsCommon.pickRandom(civAir.aircraftTypes)
 	local theFlight = civAir.createFlight(name, TypeString, fAB, sAB, inAirStart)
 	
@@ -325,7 +424,7 @@ function civAir.createNewFlight(inAirStart)
 	civAir.addPlane(theFlight)  -- track it
 	
 	if civAir.verbose then 
-		trigger.action.outText("civA: created flight from <" .. fAB:getName() .. "> to <" .. sAB:getName() .. ">", 30) 
+		trigger.action.outText("civA: created flight from <" .. fAB.name .. "> to <" .. sAB.name .. ">", 30) 
 	end 
 end
 
@@ -340,8 +439,39 @@ function civAir.airStartPopulation()
 end
 
 -- 
--- U P D A T E   L O O P 
+-- U P D A T E   L O O P S
 --
+
+function civAir.trackOutbound()
+	timer.scheduleFunction(civAir.trackOutbound, {}, timer.getTime() + 10)
+	
+	-- iterate all flights that are outbound 
+	local filtered = {}
+	for gName, theZone in pairs(civAir.outboundFlights) do 
+		local theGroup = Group.getByName(gName)
+		if theGroup then 
+			local theUnit = theGroup:getUnit(1)
+			if theUnit and Unit.isExist(theUnit) then 
+				local p = theUnit:getPoint()
+				local t = theZone:getPoint()
+				local d = dcsCommon.distFlat(p, t)
+				if d > 3000 then -- works unless plane faster than 300m/s = 1080 km/h 
+					-- keep watching 
+					filtered[gName] = theZone
+				else
+					-- we can disappear the group
+					if civAir.verbose then 
+						trigger.action.outText("+++civA: flight <" .. gName .. "> has reached map outbound zone <" .. theZone:getName() .. "> and is removed", 30)
+					end 
+					Group.destroy(theGroup)
+				end
+			else 
+				trigger.action.outText("+++civ: lost unit in group <" .. gName .. "> heading for <" .. theZone:getName() .. ">", 30)
+			end
+		end		
+	end
+	civAir.outboundFlights = filtered 
+end
 
 function civAir.update()
 	-- reschedule me in the future. ups = updates per second. 
@@ -359,12 +489,15 @@ function civAir.update()
 	
 	for idx, name in pairs(removeMe) do 
 		civAir.activePlanes[name] = nil
-		trigger.action.outText("civA: warning - removed " .. name .. " from active roster, no longer exists", 30)
+		if civAir.verbose then 
+			trigger.action.outText("civA: removed " .. name .. " from active roster, no longer exists", 30)
+		end 
 	end 
 	
 	
 	-- now, run through all existing flights and update their 
 	-- idle times. also count how many planes there are 
+	-- so we can respawn if we are below max 
 	local planeNum = 0
 	local overduePlanes = {}
 	local now = timer.getTime()
@@ -372,18 +505,17 @@ function civAir.update()
 		local speed = 0
 		if aPlaneGroup:isExist() then 
 			local aPlane = aPlaneGroup:getUnit(1)
-			
-			if aPlane and aPlane:isExist() and aPlane:getLife() >= 1 then 
+			if aPlane and Unit.isExist(aPlane) and aPlane:getLife() >= 1 then
 				planeNum = planeNum + 1
 				local vel = aPlane:getVelocity()
 				speed = dcsCommon.mag(vel.x, vel.y, vel.z)		
 			else 
-				-- force removal of group 
+				-- force removal of group, plane no longer exists 
 				civAir.idlePlanes[name] = -1000
 				speed = 0
 			end
 		else 
-			-- force removal
+			-- force removal, group no longer exists
 			civAir.idlePlanes[name] = -1000
 			speed = 0			
 		end 
@@ -398,10 +530,9 @@ function civAir.update()
 				table.insert(overduePlanes, name)
 			end
 		else 
-			-- zero out idle plane
+			-- zero out idle plane, it's moving fast enough
 			civAir.idlePlanes[name] = nil			
 		end
-		--]]--
 	end
 	
 	-- see if we have less than max flights running
@@ -414,9 +545,12 @@ function civAir.update()
 	for idx, aName in pairs(overduePlanes) do 		
 		local aFlight = civAir.getPlane(aName) -- returns a group
 		civAir.removePlaneGroupByName(aName) -- remove from roster
-		if aFlight and aFlight:isExist() then 
+		if aFlight and Unit.isExist(aFlight) then 
 			-- destroy can only work if group isexist!
 			Group.destroy(aFlight) -- remember: flights are groups!
+			if civAir.verbose then 
+				trigger.action.outText("+++civA: removed flight <" .. aName .. "> for overtime.", 30)
+			end 
 		end 
 	end
 end
@@ -504,7 +638,9 @@ function civAir.start()
 	
 	-- start the update loop
 	civAir.update()
-		
+	-- start outbound tracking 
+	civAir.trackOutbound()
+	
 	-- say hi!
 	trigger.action.outText("cf/x civAir v" .. civAir.version .. " started.", 30)
 	return true 
@@ -518,10 +654,11 @@ end
  --[[--
   Additional ideas
   
-  - border zones: ac can airstart in there and disappear in there
   - callbacks for civ spawn / despawn
   - add civkill callback / redCivKill blueCivKill flag bangers
   - Helicopter support
-  - departure only, destination only 
   - add slot checking to see if other planes block it even though DCS claims the slot is free
+  - allow list of countries to choose civ air from 
+  - ability to force a flight from a source? How do we make a destination? currently not a good idea 
+  
  --]]--

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.0"
+dcsCommon.version = "2.9.2"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -166,7 +166,12 @@ dcsCommon.version = "2.9.0"
 2.9.0  - createPoint() moved from cfxZones
 	   - copyPoint() moved from cfxZones
 	   - numberArrayFromString() moved from cfxZones
-	   
+2.9.1  - new createSimpleRoutePointData()
+	   - createOverheadAirdromeRoutPintData corrected and legacy support added 
+	   - new bearingFromAtoBusingXY()
+	   - corrected verbosity for bearingFromAtoB
+	   - new getCountriesForCoalition()
+2.9.2  - updated task2text
 
 --]]--
 
@@ -182,6 +187,7 @@ dcsCommon.version = "2.9.0"
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
 	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50, Apache and Gazelle can't carry troops
 	dcsCommon.coalitionSides = {0, 1, 2}
+	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
 	-- lookup tables
 	dcsCommon.groupID2Name = {}
@@ -747,28 +753,60 @@ dcsCommon.version = "2.9.0"
 			return 0
 		end
 		if not B then
-			trigger.action.outText("WARNING: no 'A' in bearingFromAtoB", 30)
+			trigger.action.outText("WARNING: no 'B' in bearingFromAtoB", 30)
 			return 0
 		end
 		if not A.x then 
 			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
 			return 0
 		end
-		if not A.y then 
-			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
+		if not A.z then 
+			trigger.action.outText("WARNING: no 'A.z' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
 			return 0
 		end
 		if not B.x then 
 			trigger.action.outText("WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
 			return 0
 		end
-		if not B.y then 
-			trigger.action.outText("WARNING: no 'B.y' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
+		if not B.z then 
+			trigger.action.outText("WARNING: no 'B.z' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
 			return 0
 		end
 		
 		local dx = B.x - A.x
 		local dz = B.z - A.z
+		local bearing = math.atan2(dz, dx) -- in radiants
+		return bearing
+	end
+
+	function dcsCommon.bearingFromAtoBusingXY(A, B) -- coords in x, y 
+		if not A then 
+			trigger.action.outText("WARNING: no 'A' in bearingFromAtoBXY", 30)
+			return 0
+		end
+		if not B then
+			trigger.action.outText("WARNING: no 'B' in bearingFromAtoBXY", 30)
+			return 0
+		end
+		if not A.x then 
+			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY", 30)
+			return 0
+		end
+		if not A.y then 
+			trigger.action.outText("WARNING: no 'A.y' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY", 30)
+			return 0
+		end
+		if not B.x then 
+			trigger.action.outText("WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY", 30)
+			return 0
+		end
+		if not B.y then 
+			trigger.action.outText("WARNING: no 'B.y' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY", 30)
+			return 0
+		end
+		
+		local dx = B.x - A.x
+		local dz = B.y - A.y
 		local bearing = math.atan2(dz, dx) -- in radiants
 		return bearing
 	end
@@ -1116,7 +1154,7 @@ dcsCommon.version = "2.9.0"
 		-- coalition's countries 
 		-- we start with id=0 (Russia), go to id=85 (Slovenia), but skip id = 14
 		local i = 0
-		while i < 86 do 
+		while i < dcsCommon.maxCountry do -- 86 do 
 			if i ~= 14 then 
 				if (coalition.getCountryCoalition(i) == aCoalition) then return i end
 			end
@@ -1124,6 +1162,22 @@ dcsCommon.version = "2.9.0"
 		end
 		
 		return nil
+	end
+	
+	function dcsCommon.getCountriesForCoalition(aCoalition)
+		if not aCoalition then aCoalition = 0 end 
+		local allCty = {}
+		
+		local i = 0
+		while i < dcsCommon.maxCountry do 
+			if i ~= 14 then -- there is no county 14
+				if (coalition.getCountryCoalition(i) == aCoalition) then 
+					table.insert(allCty, i) 
+				end
+			end
+			i = i + 1
+		end
+		return allCty
 	end
 --
 --
@@ -1394,7 +1448,7 @@ dcsCommon.version = "2.9.0"
 		return rp
 	end
 
-	function dcsCommon.createOverheadAirdromeRoutPintData(aerodrome)
+	function dcsCommon.createOverheadAirdromeRoutePointData(aerodrome)
 		if not aerodrome then return nil end 
 		local rp = {}			
 		local p = aerodrome:getPoint()
@@ -1408,6 +1462,9 @@ dcsCommon.version = "2.9.0"
 		rp.alt_type = "BARO"
 		return rp
 	end
+	function dcsCommon.createOverheadAirdromeRoutPintData(aerodrome) -- backwards-compat to typo 
+		return dcsCommon.createOverheadAirdromeRoutePointData(aerodrome)
+	end 
 	
 
 	function dcsCommon.createLandAtAerodromeRoutePointData(aerodrome)
@@ -1418,7 +1475,7 @@ dcsCommon.version = "2.9.0"
 		rp.airdromeId = aerodrome:getID() 
 		rp.x = p.x
 		rp.y = p.z
-		rp.alt = p.y 
+		rp.alt = land.getHeight({x=p.x, y=p.z}) --p.y 
 		rp.action = "Landing"
 		rp.type = "Land"
 			
@@ -1427,6 +1484,19 @@ dcsCommon.version = "2.9.0"
 		return rp
 	end
 
+	function dcsCommon.createSimpleRoutePointData(p, alt)
+		if not alt then alt = 8000 end -- 24'000 feet 
+		local rp = {}
+		rp.x = p.x
+		rp.y = p.z
+		rp.alt = alt
+		rp.action = "Turning Point"
+		rp.type = "Turning Point"
+			
+		rp.speed = 133; -- in m/s? If so, that's 360 km/h 
+		rp.alt_type = "BARO"
+		return rp
+	end 
 	
 	function dcsCommon.createRPFormationData(findex) -- must be added as "task" to an RP. use 4 for Echelon right
 		local task = {}
@@ -2481,8 +2551,8 @@ end
 		
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
-			trigger.action.outText("=== dcsCommon vardump END", 30)
-			env.info("=== dcsCommon vardump END")
+			trigger.action.outText("=== dcsCommon vardump end", 30)
+			env.info("=== dcsCommon vardump end")
 		end
 	end
 	
@@ -2520,8 +2590,8 @@ end
 		
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
-			trigger.action.outText("=== dcsCommon vardump END", 30)
-			--env.info("=== dcsCommon vardump END")
+			trigger.action.outText("=== dcsCommon vardump end", 30)
+			--env.info("=== dcsCommon vardump end")
 		end
 	end
 		
@@ -2541,15 +2611,19 @@ end
 		if id == 0 then return "invalid" end
 		-- translate the event id to text
 		local events = {"shot", "hit", "takeoff", "land",
-						"crash", "eject", "refuel", "dead",
+						"crash", "eject", "refuel", "dead", -- 8
 						"pilot dead", "base captured", "mission start", "mission end", -- 12
-						"took control", "refuel stop", "birth", "human failure", 
-						"det. failure", "engine start", "engine stop", "player enter unit",
-						"player leave unit", "player comment", "start shoot", "end shoot",
-						"mark add", "mark changed", "makr removed", "kill", 
-						"score", "unit lost", "land after eject", "Paratrooper land", 
-						"chair discard after eject", "weapon add", "trigger zone", "landing quality mark",
-						"BDA", "max"}
+						"took control", "refuel stop", "birth", "human failure", -- 16 
+						"det. failure", "engine start", "engine stop", "player enter unit", -- 20
+						"player leave unit", "player comment", "start shoot", "end shoot", -- 24
+						"mark add", "mark changed", "mark removed", "kill", -- 28 
+						"score", "unit lost", "land after eject", "Paratrooper land", -- 32 
+						"chair discard after eject", "weapon add", "trigger zone", "landing quality mark", -- 36
+						"BDA", "AI Abort Mission", "DayNight", "Flight Time", -- 40
+						"Pilot Suicide", "player cap airfield", "emergency landing", "unit create task", -- 44
+						"unit delete task", "Simulation start", "weapon rearm", "weapon drop", -- 48
+						"unit task timeout", "unit task stage", 
+						"max"}
 		if id > #events then return "Unknown (ID=" .. id .. ")" end
 		return events[id]
 	end

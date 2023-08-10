@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "3.0.4"
+guardianAngel.version = "3.0.5"
 guardianAngel.ups = 10
 guardianAngel.name = "Guardian Angel" -- just in case someone accesses .name  
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
@@ -61,7 +61,11 @@ guardianAngel.requiredLibs = {
 	 3.0.3 - monitorItem() guards against loss of target (nil)
 	 3.0.4 - launchSound attribute 
 		   - interventionSound attribute 
-
+	 3.0.5 - better missiole names, their object IDs seem to have disappeared, also storing launcher name
+		   - msgTime to control how long warnings remain on the screen
+		   - disappear message now only on verbose 
+		   - dmlZones 
+		   
 
 This script detects missiles launched against protected aircraft an 
 removes them when they are about to hit
@@ -133,7 +137,7 @@ end
 --
 -- watch q items
 --
-function guardianAngel.createQItem(theWeapon, theTarget, threat)
+function guardianAngel.createQItem(theWeapon, theTarget, threat, launcher)
 	if not theWeapon then return nil end 
 	if not theTarget then return nil end 
 	if not theTarget:isExist() then return nil end 
@@ -142,8 +146,26 @@ function guardianAngel.createQItem(theWeapon, theTarget, threat)
 	-- watch it for re-targeting purposes 
 
 	local theItem = {}
+	local oName = tostring(theWeapon:getName())
+	if not oName or #oName < 1 then oName = dcsCommon.numberUUID() end 
+	local wName = ""
+	if theWeapon.getDisplayName then 
+		wName = theWeapon:getDisplayName() -- does this even exist any more?
+	elseif theWeapon.getTypeName then 
+		wName = theWeapon:getTypeName()
+	else 
+		wName = "<Generic>" 
+	end 
+	wName = wName .. "-" .. oName
+	local launcherName = launcher:getTypeName() .. " " .. launcher:getName()
+	
 	theItem.theWeapon = theWeapon -- weapon that we are tracking 
-	theItem.weaponName = theWeapon:getName()
+	theItem.weaponName = wName -- theWeapon:getName()
+	-- usually weapons have no 'name' except an ID, so let's get the 
+	-- type or display name. Weapons often have no display name.
+	if guardianAngel.verbose then 
+		trigger.action.outText("gA: tracking missile <" .. wName .. "> launched by <" .. launcherName .. ">", guardianAngel.msgTime)
+	end 
 	theItem.theTarget = theTarget
 	theItem.tGroup = theTarget:getGroup()
 	theItem.tID = theItem.tGroup:getID()
@@ -156,6 +178,7 @@ function guardianAngel.createQItem(theWeapon, theTarget, threat)
 	theItem.threat = threat 
 	theItem.lastDesc = "(new)"
 	theItem.timeStamp = timer.getTime() 
+	theItem.launcher = launcherName
 	return theItem 
 end
 
@@ -222,14 +245,17 @@ function guardianAngel.monitorItem(theItem)
 	if not w then return false end
 	if not w:isExist() then 
 		--if (not theItem.missed) and (not theItem.lostTrack) then 
-			local desc  = theItem.weaponName .. ": DISAPPEARED"
+			
+			--[[--
 			if guardianAngel.announcer and theItem.threat then 
+				local desc  = theItem.weaponName .. ": DISAPPEARED"
 				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
+					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 				else 
-					trigger.action.outText(desc, 30) 
+					trigger.action.outText(desc, guardianAngel.msgTime) 
 				end
 			end 
+			--]]--
 			if guardianAngel.verbose then
 				trigger.action.outText("+++gA: missile disappeared: <" .. theItem.weaponName .. ">, aimed at <" .. theItem.targetName .. ">",30)
 			end
@@ -277,13 +303,13 @@ function guardianAngel.monitorItem(theItem)
 			if isThreat and guardianAngel.announcer and guardianAngel.active then 
 				local desc = "Missile, missile, missile - now heading for " .. ctName .. "!"
 				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
+					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 					if guardianAngel.launchSound then 
 						local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
 						trigger.action.outSoundForGroup(ID, fileName)
 					end
 				else 
-					trigger.action.outText(desc, 30)
+					trigger.action.outText(desc, guardianAngel.msgTime)
 					if guardianAngel.launchSound then 
 						local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
 						trigger.action.outSound(fileName)
@@ -340,13 +366,13 @@ function guardianAngel.monitorItem(theItem)
 			
 			if guardianAngel.announcer then 
 				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
+					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 					if guardianAngel.interventionSound then 
 						local fileName = "l10n/DEFAULT/" .. guardianAngel.interventionSound
 						trigger.action.outSoundForGroup(ID, fileName)
 					end
 				else 
-					trigger.action.outText(desc, 30) 
+					trigger.action.outText(desc, guardianAngel.msgTime) 
 					if guardianAngel.interventionSound then 
 						local fileName = "l10n/DEFAULT/" .. guardianAngel.interventionSound
 						trigger.action.outSound(fileName)
@@ -375,9 +401,9 @@ function guardianAngel.monitorItem(theItem)
 			
 			if guardianAngel.announcer then 
 				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, 30) 
+					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 				else 
-					trigger.action.outText(desc, 30) 
+					trigger.action.outText(desc, guardianAngel.msgTime) 
 				end
 			end
 			guardianAngel.invokeCallbacks("intervention", theItem.targetName, theItem.weaponName)
@@ -591,6 +617,7 @@ function guardianAngel.somethingHappened(event)
 		-- if we get here, we have weapon aimed at a target 
 		local targetName = theTarget:getName()
 		local watchedUnit = guardianAngel.getWatchedUnitByName(targetName)
+		local launcher = theUnit 
 		guardianAngel.missilesAndTargets[theWeapon:getName()] = targetName
 		if not watchedUnit then 
 			-- we may still want to watch this if the missile 
@@ -599,14 +626,14 @@ function guardianAngel.somethingHappened(event)
 				trigger.action.outText("+++gA: missile <" .. theWeapon:getName() .. "> targeting <" .. targetName .. ">, not a threat", 30)
 			end
 			-- add it as no threat 
-			local theQItem = guardianAngel.createQItem(theWeapon, theTarget, false) -- this is not a threat, simply watch for re-target
+			local theQItem = guardianAngel.createQItem(theWeapon, theTarget, false, launcher) -- this is not a threat, simply watch for re-target
 			table.insert(guardianAngel.missilesInTheAir, theQItem)
 			return 
 		end -- fired at some other poor sucker, we don't care
 		
 		-- if we get here, someone fired a guided weapon at my watched units
 		-- create a new item for my queue
-		local theQItem = guardianAngel.createQItem(theWeapon, theTarget, true) -- this is watched
+		local theQItem = guardianAngel.createQItem(theWeapon, theTarget, true, launcher) -- this is watched
 		table.insert(guardianAngel.missilesInTheAir, theQItem)
 		guardianAngel.invokeCallbacks("launch", theQItem.targetName, theQItem.weaponName)
 		
@@ -624,13 +651,13 @@ function guardianAngel.somethingHappened(event)
 			-- currently, we always detect immediately 
 			-- can be moved to update()
 			if guardianAngel.private then 
-				trigger.action.outTextForGroup(grpID, "Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, 30)
+				trigger.action.outTextForGroup(grpID, "Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, guardianAngel.msgTime)
 				if guardianAngel.launchSound then 
 					local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
 					trigger.action.outSoundForGroup(grpID, fileName)
 				end
 			else 
-				trigger.action.outText("Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, 30)
+				trigger.action.outText("Missile, missile, missile, " .. oclock .. " o clock" .. vbInfo, guardianAngel.msgTime)
 				if guardianAngel.launchSound then 
 					local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
 					trigger.action.outSound(fileName)
@@ -847,40 +874,42 @@ function guardianAngel.readConfigZone()
 	end 
 	
 	
-	guardianAngel.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	guardianAngel.verbose = theZone:getBoolFromZoneProperty("verbose", false)
 	
-	guardianAngel.autoAddPlayer = cfxZones.getBoolFromZoneProperty(theZone, "autoAddPlayer", true)
-	guardianAngel.launchWarning = cfxZones.getBoolFromZoneProperty(theZone, "launchWarning", true)
-	guardianAngel.intervention = cfxZones.getBoolFromZoneProperty(theZone, "intervention", true)
-	guardianAngel.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
-	guardianAngel.private = cfxZones.getBoolFromZoneProperty(theZone, "private", false)
-	guardianAngel.explosion = cfxZones.getNumberFromZoneProperty(theZone, "explosion", -1)
-	guardianAngel.fxDistance = cfxZones.getNumberFromZoneProperty(theZone, "fxDistance", 500) 
+	guardianAngel.autoAddPlayer = theZone:getBoolFromZoneProperty("autoAddPlayer", true)
+	guardianAngel.launchWarning = theZone:getBoolFromZoneProperty("launchWarning", true)
+	guardianAngel.intervention = theZone:getBoolFromZoneProperty("intervention", true)
+	guardianAngel.announcer = theZone:getBoolFromZoneProperty( "announcer", true)
+	guardianAngel.private = theZone:getBoolFromZoneProperty("private", false)
+	guardianAngel.explosion = theZone:getNumberFromZoneProperty("explosion", -1)
+	guardianAngel.fxDistance = theZone:getNumberFromZoneProperty( "fxDistance", 500) 
 	
-	guardianAngel.active = cfxZones.getBoolFromZoneProperty(theZone, "active", true)
+	guardianAngel.active = theZone:getBoolFromZoneProperty("active", true)
 	
-	if cfxZones.hasProperty(theZone, "activate?") then 
-		guardianAngel.activate = cfxZones.getStringFromZoneProperty(theZone, "activate?", "*<none>")
-		guardianAngel.lastActivate = cfxZones.getFlagValue(guardianAngel.activate, theZone)
-	elseif cfxZones.hasProperty(theZone, "on?") then 
-		guardianAngel.activate = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>") 
-		guardianAngel.lastActivate = cfxZones.getFlagValue(guardianAngel.activate, theZone)
+	guardianAngel.msgTime = theZone:getNumberFromZoneProperty("msgTime", 30)
+	
+	if theZone:hasProperty("activate?") then 
+		guardianAngel.activate = theZone:getStringFromZoneProperty("activate?", "*<none>")
+		guardianAngel.lastActivate = theZone:getFlagValue(guardianAngel.activate)
+	elseif theZone:hasProperty("on?") then 
+		guardianAngel.activate = theZone:getStringFromZoneProperty("on?", "*<none>") 
+		guardianAngel.lastActivate = theZone:getFlagValue(guardianAngel.activate)
 	end
 	
-	if cfxZones.hasProperty(theZone, "deactivate?") then 
-		guardianAngel.deactivate = cfxZones.getStringFromZoneProperty(theZone, "deactivate?", "*<none>")
-		guardianAngel.lastDeActivate = cfxZones.getFlagValue(guardianAngel.deactivate, theZone)
-	elseif cfxZones.hasProperty(theZone, "off?") then 
-		guardianAngel.deactivate = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>") 
-		guardianAngel.lastDeActivate = cfxZones.getFlagValue(guardianAngel.deactivate, theZone)
+	if theZone:hasProperty("deactivate?") then 
+		guardianAngel.deactivate = theZone:getStringFromZoneProperty("deactivate?", "*<none>")
+		guardianAngel.lastDeActivate = theZone:getFlagValue(guardianAngel.deactivate)
+	elseif theZone:hasProperty("off?") then 
+		guardianAngel.deactivate = theZone:getStringFromZoneProperty("off?", "*<none>") 
+		guardianAngel.lastDeActivate = theZone:getFlagValue(guardianAngel.deactivate)
 	end
 	
-	if cfxZones.hasProperty(theZone, "launchSound") then 
-		guardianAngel.launchSound = cfxZones.getStringFromZoneProperty(theZone, "launchSound", "nosound")
+	if theZone:hasProperty("launchSound") then 
+		guardianAngel.launchSound = theZone:getStringFromZoneProperty("launchSound", "nosound")
 	end
 	
-	if cfxZones.hasProperty(theZone, "interventionSound") then 
-		guardianAngel.interventionSound = cfxZones.getStringFromZoneProperty(theZone, "interventionSound", "nosound")
+	if theZone:hasProperty("interventionSound") then 
+		guardianAngel.interventionSound = theZone:getStringFromZoneProperty("interventionSound", "nosound")
 	end
 	
 	guardianAngel.configZone = theZone 
@@ -894,7 +923,7 @@ end
 --
 
 function guardianAngel.processGuardianZone(theZone)
-	theZone.angelic = cfxZones.getBoolFromZoneProperty(theZone, "guardian", true)
+	theZone.angelic = theZone:getBoolFromZoneProperty("guardian", true)
 	
 	
 	if theZone.verbose or guardianAngel.verbose then 
@@ -947,7 +976,7 @@ function guardianAngel.start()
 end
 
 function guardianAngel.testCB(reason, targetName, weaponName)
-	trigger.action.outText("gA - CB for ".. reason .. ": " .. targetName .. " w: " .. weaponName, 30)
+	trigger.action.outText("gA - CB for ".. reason .. ": " .. targetName .. " w: " .. weaponName, guardianAngel.msgTime)
 end
 
 -- go go go 

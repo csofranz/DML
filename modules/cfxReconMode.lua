@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.1.4"
+cfxReconMode.version = "2.2.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -86,6 +86,10 @@ VERSION HISTORY
  2.1.3 - added cfxReconMode.name to allow direct acces with test zone flag 
  2.1.4 - canDetect() also checks if unit has been activated
          canDetect has strenghtened isExist() guard 
+ 2.2.0 - new marksLocked config attribute, defaults to false
+	   - new marksFadeAfter config attribute to control mark time 
+	   - dmlZones OOP upgrade 
+ 
 	   
  cfxReconMode is a script that allows units to perform reconnaissance
  missions and, after detecting units, marks them on the map with 
@@ -355,7 +359,7 @@ function cfxReconMode.placeMarkForUnit(location, theSide, theGroup)
 					theDesc, 
 					location, 
 					theSide, 
-					false, 
+					cfxReconMode.marksLocked, -- readOnly -- false, 
 					nil)
 	return theID
 end
@@ -492,7 +496,7 @@ function cfxReconMode.processZoneMessage(inMsg, theZone, theGroup)
 	
 	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
 	-- and <mgrs> with mgrs coords of zone point 
-	local currPoint = cfxZones.getPoint(theZone)
+	local currPoint = theZone:getPoint()
 	if theGroup and theGroup:isExist() then 
 		-- only use group's point when group exists and alive 
 		local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
@@ -529,7 +533,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end
 	
 	-- put a mark on the map 
-	if not silent and cfxReconMode.applyMarks then 
+	if (not silent) and cfxReconMode.applyMarks then 
 		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup)
 		local gName = theGroup:getName()
 		local args = {mySide, theScout, theGroup, theID, gName}
@@ -541,10 +545,9 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end 
 	
 	-- say something
-	if not silent and cfxReconMode.announcer then 
+	if (not silent) and cfxReconMode.announcer then 
 		local msg = cfxReconMode.generateSALT(theScout, theGroup)
 		trigger.action.outTextForCoalition(mySide, msg, cfxReconMode.reportTime)
---		trigger.action.outTextForCoalition(mySide, theScout:getName() .. " reports new ground contact " .. theGroup:getName(), 30)
 		if cfxReconMode.verbose then 
 			trigger.action.outText("+++rcn: announced for side " .. mySide, 30)
 		end 
@@ -554,7 +557,6 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end 
 	
 	-- see if it was a prio target 
-	--local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
 	if inList then 
 --		if cfxReconMode.announcer then 
 		if cfxReconMode.verbose then 
@@ -565,7 +567,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 		
 		-- increase prio flag 
 		if cfxReconMode.prioFlag then 
-			cfxZones.pollFlag(cfxReconMode.prioFlag, cfxReconMode.method, cfxReconMode.theZone)
+			cfxReconMode.theZone:pollFlag(cfxReconMode.prioFlag, cfxReconMode.method )
 		end
 		
 		-- see if we were passed additional info in zInfo 
@@ -583,7 +585,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 			end
 			
 			if zInfo.theFlag then 
-				cfxZones.pollFlag(zInfo.theFlag, cfxReconMode.method, zInfo.theZone)
+				zInfo.theZone:pollFlag(zInfo.theFlag, cfxReconMode.method)
 				if cfxReconMode.verbose or zInfo.theZone.verbose then 
 					trigger.action.outText("+++rcn: banging <" .. zInfo.theFlag .. "> for prio target zone <" .. zInfo.theZone.name .. ">",30)
 				end
@@ -595,7 +597,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	
 		-- increase normal flag 
 		if cfxReconMode.detectFlag then 
-			cfxZones.pollFlag(cfxReconMode.detectFlag, cfxReconMode.method, cfxReconMode.theZone)
+			cfxReconMode.theZone:pollFlag(cfxReconMode.detectFlag, cfxReconMode.method)
 		end
 	end
 end
@@ -655,7 +657,7 @@ function cfxReconMode.doDeActivate()
 	end
 end
 
-function cfxReconMode.updateQueues()
+function cfxReconSMode.updateQueues()
 	-- schedule next call 
 	timer.scheduleFunction(cfxReconMode.updateQueues, {}, timer.getTime() + 1/cfxReconMode.ups)
 	
@@ -681,7 +683,6 @@ function cfxReconMode.updateQueues()
 	-- the scouts array, move it to processed and then shrink
 	-- scouts table until it's empty. When empty, transfer all 
 	-- back and start cycle anew
-
 	local theFocusScoutName = nil 
 	local procCount = 0 -- no iterations done yet
 	for name, scout in pairs(cfxReconMode.scouts) do 
@@ -736,7 +737,6 @@ function cfxReconMode.autoRemove()
 	local toRemove = {}
 	-- scan all marked groups, and when they no longer exist, remove them 
 	for idx, args in pairs (cfxReconMode.activeMarks) do
-		-- args = {mySide, theScout, theGroup, theID, gName}
 		local gName = args[5]
 		if not cfxReconMode.isGroupStillAlive(gName) then 
 			-- remove mark, remove group from set 
@@ -766,7 +766,7 @@ function cfxReconMode.lateEvalPlayerUnit(theUnit)
 	for idx, theZone in pairs (cfxReconMode.scoutZones) do 
 		local isScout = theZone.isScout
 		local dynamic = theZone.dynamic
-		local inZone = cfxZones.pointInZone(p, theZone)
+		local inZone = theZone:pointInZone(p)
 		if inZone then 
 			if isScout then 
 				cfxReconMode.addToAllowedScoutList(aGroup, dynamic)
@@ -886,7 +886,6 @@ function cfxReconMode:onEvent(event)
 		end 
 		cfxReconMode.addScout(theUnit)
 	end
---	trigger.action.outText("+++rcn-onEvent: " .. event.id .. " for <" .. theUnit:getName() .. ">", 30)
 end
 
 --
@@ -984,68 +983,70 @@ function cfxReconMode.readConfigZone()
 		end 
 	end 
 	
-	cfxReconMode.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	cfxReconMode.verbose = theZone.verbose --cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 
-	cfxReconMode.autoRecon = cfxZones.getBoolFromZoneProperty(theZone, "autoRecon", true)
-	cfxReconMode.redScouts = cfxZones.getBoolFromZoneProperty(theZone, "redScouts", false)
-	cfxReconMode.blueScouts = cfxZones.getBoolFromZoneProperty(theZone, "blueScouts", true)	
-	cfxReconMode.greyScouts = cfxZones.getBoolFromZoneProperty(theZone, "greyScouts", false)
-	cfxReconMode.playerOnlyRecon = cfxZones.getBoolFromZoneProperty(theZone, "playerOnlyRecon", false)
-	cfxReconMode.reportNumbers = cfxZones.getBoolFromZoneProperty(theZone, "reportNumbers", true)
-	cfxReconMode.reportTime = cfxZones.getNumberFromZoneProperty(theZone, "reportTime", 30)
+	cfxReconMode.autoRecon = theZone:getBoolFromZoneProperty("autoRecon", true)
+	cfxReconMode.redScouts = theZone:getBoolFromZoneProperty("redScouts", false)
+	cfxReconMode.blueScouts = theZone:getBoolFromZoneProperty( "blueScouts", true)	
+	cfxReconMode.greyScouts = theZone:getBoolFromZoneProperty( "greyScouts", false)
+	cfxReconMode.playerOnlyRecon = theZone:getBoolFromZoneProperty("playerOnlyRecon", false)
+	cfxReconMode.reportNumbers = theZone:getBoolFromZoneProperty( "reportNumbers", true)
+	cfxReconMode.reportTime = theZone:getNumberFromZoneProperty( "reportTime", 30)
 	
-	cfxReconMode.detectionMinRange = cfxZones.getNumberFromZoneProperty(theZone, "detectionMinRange", 3000)
-	cfxReconMode.detectionMaxRange = cfxZones.getNumberFromZoneProperty(theZone, "detectionMaxRange", 12000)
-	cfxReconMode.maxAlt = cfxZones.getNumberFromZoneProperty(theZone, "maxAlt", 9000)
+	cfxReconMode.detectionMinRange = theZone:getNumberFromZoneProperty("detectionMinRange", 3000)
+	cfxReconMode.detectionMaxRange = theZone:getNumberFromZoneProperty("detectionMaxRange", 12000)
+	cfxReconMode.maxAlt = theZone:getNumberFromZoneProperty("maxAlt", 9000)
 	
-	if cfxZones.hasProperty(theZone, "prio+") then 
-		cfxReconMode.prioFlag = cfxZones.getStringFromZoneProperty(theZone, "prio+", "none")
-	elseif cfxZones.hasProperty(theZone, "prio!") then 
-		cfxReconMode.prioFlag = cfxZones.getStringFromZoneProperty(theZone, "prio!", "*<none>")
+	if theZone:hasProperty("prio+") then -- deprecated. remove next update 
+		cfxReconMode.prioFlag = theZone:getStringFromZoneProperty("prio+", "none")
+	elseif theZone:hasProperty("prio!") then 
+		cfxReconMode.prioFlag = theZone:getStringFromZoneProperty("prio!", "*<none>")
 	end
 	
-	if cfxZones.hasProperty(theZone, "detect+") then 
-		cfxReconMode.detectFlag = cfxZones.getStringFromZoneProperty(theZone, "detect+", "none")
-	elseif cfxZones.hasProperty(theZone, "detect!") then 
-		cfxReconMode.detectFlag = cfxZones.getStringFromZoneProperty(theZone, "detect!", "*<none>")
+	if theZone:hasProperty("detect+") then -- deprecated 
+		cfxReconMode.detectFlag = theZone:getStringFromZoneProperty("detect+", "none")
+	elseif theZone:hasProperty("detect!") then 
+		cfxReconMode.detectFlag = theZone:getStringFromZoneProperty("detect!", "*<none>")
 	end
 	
-	cfxReconMode.method = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "reconMethod") then 
-		cfxReconMode.method = cfxZones.getStringFromZoneProperty(theZone, "reconMethod", "inc")
+	cfxReconMode.method = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("reconMethod") then 
+		cfxReconMode.method = theZone:getStringFromZoneProperty("reconMethod", "inc")
 	end
 	
-	cfxReconMode.applyMarks = cfxZones.getBoolFromZoneProperty(theZone, "applyMarks", true)
-	cfxReconMode.announcer = cfxZones.getBoolFromZoneProperty(theZone, "announcer", true)
-	-- trigger.action.outText("recon: announcer is " .. dcsCommon.bool2Text(cfxReconMode.announcer), 30) -- announced
-	if cfxZones.hasProperty(theZone, "reconSound") then 
-		cfxReconMode.reconSound = cfxZones.getStringFromZoneProperty(theZone, "reconSound", "<nosound>")
+	cfxReconMode.applyMarks = theZone:getBoolFromZoneProperty( "applyMarks", true)
+	cfxReconMode.marksFadeAfter = theZone:getNumberFromZoneProperty("marksFadeAfter", 30*60) -- 30 minutes default 
+	cfxReconMode.marksLocked = theZone:getBoolFromZoneProperty("marksLocked", false) -- if true, players cannot remove the marks
+	cfxReconMode.announcer = theZone:getBoolFromZoneProperty( "announcer", true)
+
+	if theZone:hasProperty("reconSound") then 
+		cfxReconMode.reconSound = theZone:getStringFromZoneProperty("reconSound", "<nosound>")
 	end
 	
-	cfxReconMode.removeWhenDestroyed = cfxZones.getBoolFromZoneProperty(theZone, "autoRemove", true)
+	cfxReconMode.removeWhenDestroyed = theZone:getBoolFromZoneProperty("autoRemove", true)
 	
-	cfxReconMode.mgrs = cfxZones.getBoolFromZoneProperty(theZone, "mgrs", false)
+	cfxReconMode.mgrs = theZone:getBoolFromZoneProperty("mgrs", false)
 	
-	cfxReconMode.active = cfxZones.getBoolFromZoneProperty(theZone, "active", true)
-	if cfxZones.hasProperty(theZone, "activate?") then 
-		cfxReconMode.activate = cfxZones.getStringFromZoneProperty(theZone, "activate?", "*<none>")
-		cfxReconMode.lastActivate = cfxZones.getFlagValue(cfxReconMode.activate, theZone)
-	elseif cfxZones.hasProperty(theZone, "on?") then 
-		cfxReconMode.activate = cfxZones.getStringFromZoneProperty(theZone, "on?", "*<none>") 
-		cfxReconMode.lastActivate = cfxZones.getFlagValue(cfxReconMode.activate, theZone)
+	cfxReconMode.active = theZone:getBoolFromZoneProperty("active", true)
+	if theZone:hasProperty("activate?") then 
+		cfxReconMode.activate = theZone:getStringFromZoneProperty("activate?", "*<none>")
+		cfxReconMode.lastActivate = theZone:getFlagValue(cfxReconMode.activate)
+	elseif theZone:hasProperty("on?") then 
+		cfxReconMode.activate = theZone:getStringFromZoneProperty("on?", "*<none>") 
+		cfxReconMode.lastActivate = theZone:getFlagValue(cfxReconMode.activate)
 	end
 	
-	if cfxZones.hasProperty(theZone, "deactivate?") then 
-		cfxReconMode.deactivate = cfxZones.getStringFromZoneProperty(theZone, "deactivate?", "*<none>")
-		cfxReconMode.lastDeActivate = cfxZones.getFlagValue(cfxReconMode.deactivate, theZone)
-	elseif cfxZones.hasProperty(theZone, "off?") then 
-		cfxReconMode.deactivate = cfxZones.getStringFromZoneProperty(theZone, "off?", "*<none>") 
-		cfxReconMode.lastDeActivate = cfxZones.getFlagValue(cfxReconMode.deactivate, theZone)
+	if theZone:hasProperty("deactivate?") then 
+		cfxReconMode.deactivate = theZone:getStringFromZoneProperty("deactivate?", "*<none>")
+		cfxReconMode.lastDeActivate = theZone:getFlagValue(cfxReconMode.deactivate)
+	elseif theZone:hasProperty("off?") then 
+		cfxReconMode.deactivate = theZone:getStringFromZoneProperty("off?", "*<none>") 
+		cfxReconMode.lastDeActivate = theZone:getFlagValue(cfxReconMode.deactivate)
 	end
 	
-	cfxReconMode.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperial", false)
-	if cfxZones.hasProperty(theZone, "imperialUnits") then 
-		cfxReconMode.imperialUnits = cfxZones.getBoolFromZoneProperty(theZone, "imperialUnits", false)
+	cfxReconMode.imperialUnits = theZone:getBoolFromZoneProperty("imperial", false)
+	if theZone:hasProperty("imperialUnits") then 
+		cfxReconMode.imperialUnits = theZone:getBoolFromZoneProperty( "imperialUnits", false)
 	end
 	
 	cfxReconMode.theZone = theZone -- save this zone 
@@ -1057,24 +1058,24 @@ end
 
 
 function cfxReconMode.processReconZone(theZone) 
-	local theList = cfxZones.getStringFromZoneProperty(theZone, "recon", "prio")
+	local theList = theZone:getStringFromZoneProperty("recon", "prio")
 	theList = string.upper(theList)
 	local isBlack = dcsCommon.stringStartsWith(theList, "BLACK")
 
 	local zInfo = {}
 	zInfo.theZone = theZone
 	zInfo.isBlack = isBlack	
-	zInfo.silent = cfxZones.getBoolFromZoneProperty(theZone, "silent", false)
+	zInfo.silent = theZone:getBoolFromZoneProperty("silent", false)
 	
-	if cfxZones.hasProperty(theZone, "spotted!") then 
-		zInfo.theFlag = cfxZones.getStringFromZoneProperty(theZone, "spotted!", "*<none>")
+	if theZone:hasProperty("spotted!") then 
+		zInfo.theFlag = theZone:getStringFromZoneProperty("spotted!", "*<none>")
 	end
 	
-	if cfxZones.hasProperty(theZone, "prioMessage") then 
-		zInfo.prioMessage = cfxZones.getStringFromZoneProperty(theZone, "prioMessage", "<none>")
+	if theZone:hasProperty("prioMessage") then 
+		zInfo.prioMessage = theZone:getStringFromZoneProperty("prioMessage", "<none>")
 	end
 	
-	local dynamic = cfxZones.getBoolFromZoneProperty(theZone, "dynamic", false)
+	local dynamic = theZone:getBoolFromZoneProperty("dynamic", false)
 	zInfo.dynamic = dynamic 
 	local categ = 2 -- ground troops only
 	local allGroups = cfxZones.allGroupsInZone(theZone, categ)
@@ -1100,15 +1101,15 @@ function cfxReconMode.processReconZone(theZone)
 end
 
 function cfxReconMode.processScoutZone(theZone) 
-	local isScout = cfxZones.getBoolFromZoneProperty(theZone, "scout", true)
-	local dynamic = cfxZones.getBoolFromZoneProperty(theZone, "dynamic")
+	local isScout = theZone:getBoolFromZoneProperty("scout", true)
+	local dynamic = theZone:getBoolFromZoneProperty("dynamic")
 	theZone.dynamic = dynamic
 	theZone.isScout = isScout
 	
 	local categ = 0 -- aircraft
-	local allFixed = cfxZones.allGroupsInZone(theZone, categ)
+	local allFixed = theZone:allGroupsInZone(categ)
 	local categ = 1 -- helos
-	local allRotor = cfxZones.allGroupsInZone(theZone, categ)
+	local allRotor = theZone:allGroupsInZone(categ)
 	local allGroups = dcsCommon.combineTables(allFixed, allRotor)
 	for idx, aGroup in pairs(allGroups) do 
 		if isScout then 

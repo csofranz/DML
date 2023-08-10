@@ -149,6 +149,7 @@ cfxZones.version = "4.0.0"
 		  - getNumberFromZoneProperty() enforces number return even on default
 		  - immediate method switched to preceeding '#', to resolve conflict witzh 
 		    negative numbers, backwards compatibility with old (dysfunctional) method 
+- 4.0.1   - dmlZone:getName()
 --]]--
 
 --
@@ -3256,6 +3257,10 @@ function dmlZone:getPoint(getHeight)
 	end
 	
 	return thePos 
+end
+
+function dmlZone:getName() -- no cfxZones.bridge!
+	return self.name 
 end
 
 function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really Z, don't get confused!!!!

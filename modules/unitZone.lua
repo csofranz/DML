@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.4"
+unitZone.version = "1.2.5"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -17,6 +17,7 @@ unitZone.requiredLibs = {
 	1.2.3 - better guards for enterZone!, exitZone!, changeZone!
 		  - better guards for uzOn? and uzOff?
 	1.2.4 - more verbosity on uzDirect 
+	1.2.5 - reading config improvement
 		  
 --]]--
 
@@ -196,8 +197,9 @@ function unitZone.checkZoneStatus(theZone)
 	local playerCheck = theZone.matching == "player"
 	if playerCheck then 
 		-- we check the names for players only 
+		-- collector holds units, not groups 
 		for idx, pUnit in pairs(theGroups) do 
-			local puName=pUnit:getName()
+			local puName = pUnit:getName()
 			local hasMatch = false 
 			if theZone.lookForBeginsWith then 
 				hasMatch = dcsCommon.stringStartsWith(puName, lookFor)
@@ -323,10 +325,7 @@ end
 function unitZone.readConfigZone()
 	local theZone = cfxZones.getZoneByName("unitZoneConfig") 
 	if not theZone then 
-		if unitZone.verbose then 
-			trigger.action.outText("+++uZne: NO config zone!", 30)
-		end 
-		return 
+		theZone = cfxZones.createSimpleZone("unitZoneConfig")
 	end 
 	
 	unitZone.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
