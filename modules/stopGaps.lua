@@ -422,4 +422,3 @@ if not stopGap.start() then
 	trigger.action.outText("+++ aborted stopGap v" .. stopGap.version .. "  -- startup failed", 30)
 	stopGap = nil 
 end
-

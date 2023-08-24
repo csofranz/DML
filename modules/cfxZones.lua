@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.0.0"
+cfxZones.version = "4.0.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -150,6 +150,8 @@ cfxZones.version = "4.0.0"
 		  - immediate method switched to preceeding '#', to resolve conflict witzh 
 		    negative numbers, backwards compatibility with old (dysfunctional) method 
 - 4.0.1   - dmlZone:getName()
+- 4.0.2   - removed verbosity from declutterZone (both versions)
+
 --]]--
 
 --
@@ -963,17 +965,17 @@ end
 function cfxZones.declutterZone(theZone)
 	if not theZone then return end 
 	local theVol = cfxZones.getZoneVolume(theZone)
-	if theZone.verbose then 
-		dcsCommon.dumpVar2Str("vol", theVol)
-	end
+--	if theZone.verbose then 
+--		dcsCommon.dumpVar2Str("vol", theVol)
+--	end
 	world.removeJunk(theVol)
 end
 
 function dmlZone:declutterZone()
 	local theVol = cfxZones.getZoneVolume(self)
-	if self.verbose then 
-		dcsCommon.dumpVar2Str("vol", theVol)
-	end
+--	if self.verbose then 
+--		dcsCommon.dumpVar2Str("vol", theVol)
+--	end
 	world.removeJunk(theVol)
 end
 

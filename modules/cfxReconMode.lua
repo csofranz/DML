@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.2.0"
+cfxReconMode.version = "2.2.1"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -89,6 +89,7 @@ VERSION HISTORY
  2.2.0 - new marksLocked config attribute, defaults to false
 	   - new marksFadeAfter config attribute to control mark time 
 	   - dmlZones OOP upgrade 
+ 2.2.1 - fixed "cfxReconSMode" typo 
  
 	   
  cfxReconMode is a script that allows units to perform reconnaissance
@@ -657,7 +658,7 @@ function cfxReconMode.doDeActivate()
 	end
 end
 
-function cfxReconSMode.updateQueues()
+function cfxReconMode.updateQueues()
 	-- schedule next call 
 	timer.scheduleFunction(cfxReconMode.updateQueues, {}, timer.getTime() + 1/cfxReconMode.ups)
 	

@@ -1,5 +1,5 @@
 wiper = {}
-wiper.version = "1.1.0"
+wiper.version = "1.2.0"
 wiper.verbose = false 
 wiper.ups = 1 
 wiper.requiredLibs = {
@@ -11,7 +11,10 @@ wiper.wipers = {}
 	Version History
 	1.0.0 - Initial Version 
 	1.1.0 - added zone bounds check before wiping 
-	
+	1.2.0 - OOP dmlZones
+		  - categories can now be a list 
+		  - declutter opetion
+		  - if first category is 'none', zone will not wipe at all but may declutter 
 
 --]]--
 
@@ -34,30 +37,47 @@ end
 -- read zone 
 -- 
 function wiper.createWiperWithZone(theZone)
-	theZone.triggerWiperFlag = cfxZones.getStringFromZoneProperty(theZone, "wipe?", "*<none>")
+	theZone.triggerWiperFlag = theZone:getStringFromZoneProperty("wipe?", "*<none>")
 	
 	-- triggerWiperMethod
-	theZone.triggerWiperMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "triggerWiperMethod") then 
-		theZone.triggerWiperMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerWiperMethod", "change")
+	theZone.triggerWiperMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
+	if theZone:hasProperty("triggerWiperMethod") then 
+		theZone.triggerWiperMethod = theZone:getStringFromZoneProperty("triggerWiperMethod", "change")
 	end 
 	
 	if theZone.triggerWiperFlag then 
-		theZone.lastTriggerWiperValue = cfxZones.getFlagValue(theZone.triggerWiperFlag, theZone)
+		theZone.lastTriggerWiperValue = theZone:getFlagValue(theZone.triggerWiperFlag)
 	end
 
-	local theCat = cfxZones.getStringFromZoneProperty(theZone, "category", "static")
-	if cfxZones.hasProperty(theZone, "wipeCategory") then 
-		theCat = cfxZones.getStringFromZoneProperty(theZone, "wipeCategory", "static")
+	local theCat = theZone:getStringFromZoneProperty("category", "none")
+	if theZone:hasProperty("wipeCategory") then 
+		theCat = theZone:getStringFromZoneProperty("wipeCategory", "none")
 	end
 	if cfxZones.hasProperty(theZone, "wipeCat") then 
-		theCat = cfxZones.getStringFromZoneProperty(theZone, "wipeCat", "static")
+		theCat = theZone:getStringFromZoneProperty("wipeCat", "none")
 	end
+	local allCats = {} 
+	if dcsCommon.containsString(theCat, ",") then 
+		allCats = dcsCommon.splitString(theCat, ",")
+		allCats = dcsCommon.trimArray(allCats)
+	else 
+		allCats = {dcsCommon.trim(theCat)}
+	end
+	-- translate to category for each entry 
+	theZone.wipeCategory = {}
+	if allCats[1] == "none" then 
+--		theZone.wipeCategory = {} -- no category to wipe 
+	else
+		for idx, aCat in pairs (allCats) do 
+			table.insert(theZone.wipeCategory, dcsCommon.string2ObjectCat(aCat))
+		end	
+	end 
+--	theZone.wipeCategory = dcsCommon.string2ObjectCat(theCat)
 	
-	theZone.wipeCategory = dcsCommon.string2ObjectCat(theCat)
+	theZone.declutter = theZone:getBoolFromZoneProperty("declutter", false)
 	
-	if cfxZones.hasProperty(theZone, "wipeNamed") then 
-		theZone.wipeNamed = cfxZones.getStringFromZoneProperty(theZone, "wipeNamed", "<no name given>")
+	if theZone:hasProperty("wipeNamed") then 
+		theZone.wipeNamed = theZone:getStringFromZoneProperty("wipeNamed", "<no name given>")
 		theZone.oWipeNamed = theZone.wipeNamed -- save original 
 		-- assemble list of all names to wipe, including wildcard
 		local allNames = {} 
@@ -78,15 +98,13 @@ function wiper.createWiperWithZone(theZone)
 			end
 			theDict[shortName] = ew  
 			if wiper.verbose or theZone.verbose then 
-				trigger.action.outText("+++wpr: dict [".. shortName .."] = " .. dcsCommon.bool2Text(ew),30)
+				trigger.action.outText("+++wpr: dict [".. shortName .."], '*' = " .. dcsCommon.bool2Text(ew) .. " for <" .. theZone:getName() .. ">",30)
 			end 
 		end		
-		
 		theZone.wipeNamed = theDict
-		 
 	end 
 	
-	theZone.wipeInventory = cfxZones.getBoolFromZoneProperty(theZone, "wipeInventory", false)
+	theZone.wipeInventory = theZone:getBoolFromZoneProperty("wipeInventory", false)
 	
 	if wiper.verbose or theZone.verbose then 
 		trigger.action.outText("+++wpr: new wiper zone <".. theZone.name ..">", 30)
@@ -166,57 +184,72 @@ function wiper.isTriggered(theZone)
 		}
 	-- set up remaining arguments
 	local cat = theZone.wipeCategory -- Object.Category.STATIC
+	-- WARNING: as of version 1.2.0 cat is now a TABLE!!!
+	-- world.searchObjects supports cat tables according to https://wiki.hoggitworld.com/view/DCS_func_searchObjects
 	
-	-- now call search
-	world.searchObjects(cat, args, wiper.objectHandler, collector)
-	if #collector < 1 and (wiper.verbose or theZone.verbose) then
-		trigger.action.outText("+++wpr: world search returned zero elements for <" .. theZone.name .. "> (cat=" .. theZone.wipeCategory .. ")",30)
-	end
+	if #cat > 0 then 
+		-- now call search
+		world.searchObjects(cat, args, wiper.objectHandler, collector)
+		if #collector < 1 and (wiper.verbose or theZone.verbose) then
+			trigger.action.outText("+++wpr: world search returned zero elements for <" .. theZone.name .. "> (cat=<" .. dcsCommon.array2string(theZone.wipeCategory) .. ">)",30)
+		end
 
-	-- wipe'em!
-	for idx, anObject in pairs(collector) do
-		local doWipe = true 
+		-- wipe'em!
+		for idx, anObject in pairs(collector) do
+			local doWipe = true 
 
-		-- see if we filter to only named objects 
-		if theZone.wipeNamed then
-			doWipe = false 
-			local oName = tostring(anObject:getName()) -- prevent number mismatch 
-			for wipeName, beginsWith in pairs(theZone.wipeNamed) do 
-				if beginsWith then 
-					doWipe = doWipe or dcsCommon.stringStartsWith(oName, wipeName)
-				else 
-					doWipe = doWipe or oName == wipeName
+			-- see if we filter to only named objects 
+			if theZone.wipeNamed then
+				doWipe = false 
+				local oName = tostring(anObject:getName()) -- prevent number mismatch 
+				for wipeName, beginsWith in pairs(theZone.wipeNamed) do 
+					if beginsWith then 
+						doWipe = doWipe or dcsCommon.stringStartsWith(oName, wipeName)
+					else 
+						doWipe = doWipe or oName == wipeName
+					end
+				end
+				
+				if wiper.verbose or theZone.verbose then 
+					if not doWipe then 
+						trigger.action.outText("+++wpr: <"..oName.."> not removed, name restriction <" .. theZone.oWipeNamed .. "> not met.",30)
+					end
 				end
 			end
-			
-			if wiper.verbose or theZone.verbose then 
-				if not doWipe then 
-					trigger.action.outText("+++wpr: <"..oName.."> not removed, name restriction <" .. theZone.oWipeNamed .. "> not met.",30)
+
+			-- now also filter by position in zone 
+			local uP = anObject:getPoint()
+			if doWipe and (not cfxZones.isPointInsideZone(uP, theZone)) then 
+				doWipe = false 
+				if wiper.verbose or theZone.verbose then
+					trigger.action.outText("+++wpr: <" .. anObject:getName() .."> not removed, outside zone <" .. theZone.name .. "> bounds.",30)
+				end
+			end
+
+			if doWipe then 
+				if wiper.verbose or theZone.verbose then 
+					trigger.action.outText("+++wpr: wiping " .. anObject:getName(), 30)
+				end 
+				anObject:destroy()
+			else 
+				if wiper.verbose or theZone.verbose then 
+					trigger.action.outText("+++wpr: spared object <" .. anObject:getName() .. ">",30)
 				end
 			end
 		end
-
-		-- now also filter by position in zone 
-		local uP = anObject:getPoint()
-		if doWipe and (not cfxZones.isPointInsideZone(uP, theZone)) then 
-			doWipe = false 
-			if wiper.verbose or theZone.verbose then
-				trigger.action.outText("+++wpr: <" .. anObject:getName() .."> not removed, outside zone <" .. theZone.name .. "> bounds.",30)
-			end
+	else 
+		if theZone.verbose or wiper.verbose then 
+			trigger.action.outText("+++wpr: <" .. theZone:getName() .. "> has no categories to remove, skipping", 30)
 		end
-
-		if doWipe then 
-			if wiper.verbose or theZone.verbose then 
-				trigger.action.outText("+++wpr: wiping " .. anObject:getName(), 30)
-			end 
-			anObject:destroy()
-		else 
-			if wiper.verbose or theZone.verbose then 
-				trigger.action.outText("+++wpr: spared object <" .. anObject:getName() .. ">",30)
-			end
-		end
-	end
+	end 
 	
+	-- declutter pass if requested 
+	if theZone.declutter then 
+		if theZone.verbose or wiper.verbose then 
+			trigger.action.outText("+++wpr: decluttering <" .. theZone:getName() .. ">", 30)
+		end 
+		theZone:declutterZone()
+	end
 	
 end
 
