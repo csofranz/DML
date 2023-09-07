@@ -389,7 +389,7 @@ function noGap.start()
 	-- connect event handler
 	world.addEventHandler(noGap)
 	
-	-- start update in 10 seconds 
+	-- start update in 1 second 
 	timer.scheduleFunction(noGap.update, {}, timer.getTime() + 1)
 	
 	-- say hi!

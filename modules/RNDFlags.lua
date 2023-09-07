@@ -109,7 +109,11 @@ function rndFlags.createRNDWithZone(theZone)
 	
 	
 	if theZone.triggerFlag then 
-		theZone.lastTriggerValue = cfxZones.getFlagValue(theZone.triggerFlag, theZone) --trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
+		theZone.lastTriggerValue = cfxZones.getFlagValue(theZone.triggerFlag, theZone) 
+		if rndFlags.verbose or theZone.verbose then 
+			trigger.action.outText("+++RND: randomizer in <" .. theZone:getName() .. "> triggers on flag <" .. theZone.triggerFlag .. ">", 30)
+		end
+		--trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
 	end
 	
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)

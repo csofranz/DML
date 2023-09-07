@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.8.0"
+cloneZones.version = "1.8.2"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -98,6 +98,8 @@ cloneZones.respawnOnGroupID = true
 	1.8.0 - OOP cfxZones 
 		  - removed "empty+1" as planned
 		  - upgraded config zone parsing 
+	1.8.1 - clone zone definition now supports quads
+	1.8.2 - on pre-wipe, delay respawn by 0.5s to avoid 'dropping' statics
 	
 	
 --]]--
@@ -166,8 +168,9 @@ function cloneZones.partOfGroupDataInZone(theZone, theUnits)
 		uP.x = aUnit.x 
 		uP.y = 0
 		uP.z = aUnit.y -- !! y-z
-		local dist = dcsCommon.dist(uP, zP)
-		if dist <= theZone.radius then return true  end 
+		--local dist = dcsCommon.dist(uP, zP)
+		--if dist <= theZone.radius then return true  end 
+		if theZone:pointInZone(uP) then return true end 
 	end 
 	return false 
 end
@@ -314,14 +317,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.moveRoute = theZone:getBoolFromZoneProperty("moveRoute", false)
 	
 	theZone.preWipe = theZone:getBoolFromZoneProperty("preWipe", false)
-	
-	-- to be deprecated
-	--[[--
-	if theZone:hasProperty("empty+1") then 
-		theZone.emptyFlag = theZone:getStringFromZoneProperty("empty+1", "<None>") -- note string on number default
-	end
-	--]]--
-	
+		
 	if theZone:hasProperty("empty!") then 
 		theZone.emptyBangFlag = theZone:getStringFromZoneProperty("empty!", "<None>") -- note string on number default
 	end
@@ -1542,9 +1538,11 @@ function cloneZones.spawnWithCloner(theZone)
 	end
 
 	-- pre-Wipe?
+	local didPrewipe = false 
 	if theZone.preWipe then 
 		cloneZones.despawnAll(theZone)
 		cloneZones.invokeCallbacks(theZone, "wiped", {})
+		didPrewipe = true 
 	end
 	
 	-- declutter?
@@ -1555,6 +1553,19 @@ function cloneZones.spawnWithCloner(theZone)
 		end
 	end
 	
+	local args = {theZone = theZone, templateZone = templateZone}
+	if didPrewipe then -- delay spawning to allow revoval to take place
+		timer.scheduleFunction(cloneZones.doClone, args, timer.getTime() + 0.5)
+	else -- can do immediately 
+		cloneZones.doClone(args)
+	end
+
+end
+
+-- deferrable clone method.
+function cloneZones.doClone(args)
+	local theZone = args.theZone
+	local templateZone = args.templateZone
 	local theClones, theStatics = cloneZones.spawnWithTemplateForZone(templateZone, theZone)
 	-- reset hasClones so we know our spawns are full and we can 
 	-- detect complete destruction
@@ -1569,7 +1580,7 @@ function cloneZones.spawnWithCloner(theZone)
 		theZone.mySpawns = {}
 		theZone.myStatics = {}
 	end
-end
+end 
 
 function cloneZones.countLiveUnits(theZone)
 	if not theZone then return 0 end 

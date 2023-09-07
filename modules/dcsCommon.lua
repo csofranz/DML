@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.2"
+dcsCommon.version = "2.9.3"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -171,8 +171,8 @@ dcsCommon.version = "2.9.2"
 	   - new bearingFromAtoBusingXY()
 	   - corrected verbosity for bearingFromAtoB
 	   - new getCountriesForCoalition()
-2.9.2  - updated task2text
-
+2.9.2  - updated event2text
+2.9.3  - getAirbasesWhoseNameContains now supports category tables for filtering 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -495,7 +495,8 @@ dcsCommon.version = "2.9.2"
 
 	-- getAirbasesWhoseNameContains - get all airbases containing 
 	-- a name. filterCat is optional and can be aerodrome (0), farp (1), ship (2)
-	-- filterCoalition is optional and can be 0 (neutral), 1 (red), 2 (blue) 
+	-- filterCoalition is optional and can be 0 (neutral), 1 (red), 2 (blue) or 
+	-- a table containing categories, e.g. {0, 2} = airfields and ships but not farps 
 	-- if no name given or aName = "*", then all bases are returned prior to filtering 
 	function dcsCommon.getAirbasesWhoseNameContains(aName, filterCat, filterCoalition)
 		--trigger.action.outText("getAB(name): enter with " .. aName, 30)
@@ -510,11 +511,20 @@ dcsCommon.version = "2.9.2"
 				--if aName ~= "*" then 
 				--	trigger.action.outText("getAB(name): matched " .. airBaseName, 30)
 				--end 
-				local doAdd = true 
+				local doAdd = true  
 				if filterCat then 
-					-- make sure the airbase is of that category 
-					local airCat = dcsCommon.getAirbaseCat(aBase)
-					doAdd = doAdd and airCat == filterCat 
+					local aCat = dcsCommon.getAirbaseCat(aBase)
+					if type(filterCat) == "table" then 
+						local hit = false
+						for idx, fCat in pairs(filterCat) do 
+							if fCat == aCat then hit = true end
+						end
+						doAdd = doAdd and hit 
+					else 
+						-- make sure the airbase is of that category 
+						local airCat = aCat
+						doAdd = doAdd and airCat == filterCat 
+					end
 				end
 				
 				if filterCoalition then 

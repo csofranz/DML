@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.0.2"
+cfxZones.version = "4.0.3"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -151,6 +151,8 @@ cfxZones.version = "4.0.2"
 		    negative numbers, backwards compatibility with old (dysfunctional) method 
 - 4.0.1   - dmlZone:getName()
 - 4.0.2   - removed verbosity from declutterZone (both versions)
+- 4.0.3   - new processDynamicVZU()
+	      - wildcard uses processDynamicVZU
 
 --]]--
 
@@ -3101,6 +3103,41 @@ function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
 	return outMsg
 end
 
+-- process reference that can be flag, Zone, or unit.
+-- i.e. <coa: xyz>
+function cfxZones.processDynamicVZU(inMsg)
+local locales = {"coa",}
+	local outMsg = inMsg
+	local uHead = 0
+	for idx, aLocale in pairs(locales) do 
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "")
+				param = string.gsub(param, ">","")
+				-- find zone or unit
+				param = dcsCommon.trim(param)
+				local tZone = cfxZones.getZoneByName(param)
+				local tUnit = Unit.getByName(param)
+
+				local locString = "err"
+				if aLocale == "coa" then
+					coa = trigger.misc.getUserFlag(param)
+					if tZone then coa = tZone.owner end 
+					if zUnit then coa = tUnit:getCoalition() end 
+					locString = dcsCommon.coalition2Text(coa)
+				end
+
+				outMsg = string.gsub(outMsg, pattern, locString, 1) -- only one sub!
+			end -- if startloc
+		until not startLoc
+	end -- for all locales 
+	return outMsg
+end
+
 function cfxZones.rspMapper360(directionInDegrees, numResponses)
 	-- maps responses around a clock. Clock has 12 'responses' (12, 1, .., 11), 
 	-- with the first (12) also mapping to the last half arc 
@@ -3148,7 +3185,8 @@ function cfxZones.processStringWildcards(inMsg, theZone, timeFormat, imperialUni
 	theMsg = cfxZones.processDynamicTime(theMsg, theZone, timeFormat)
 	-- process <lat/lon/ele/mgrs/lle/latlon/alt/vel/hdg/rhdg/type/player: zone/unit>
 	theMsg = cfxZones.processDynamicLoc(theMsg, imperialUnits, responses)
-
+    -- process values that can be derived from flag (default), zone or unit 
+	theMsg = cfxZones.processDynamicVZU(theMsg)
 	return theMsg
 end
 
