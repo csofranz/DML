@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "1.2.5"
+unitZone.version = "2.0.0"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -18,7 +18,15 @@ unitZone.requiredLibs = {
 		  - better guards for uzOn? and uzOff?
 	1.2.4 - more verbosity on uzDirect 
 	1.2.5 - reading config improvement
-		  
+	2.0.0 - matchAll option (internal, automatic look for "*" in names)
+		  - lookFor defaults to "*"
+		  - OOP dmlZones
+		  - uzDirect correctly initialized at start 
+		  - synonyms uzDirect#, uzDirectInv#
+		  - uzDirectInv better support
+		  - unitZone now used to define the coalition, coalition DEPRECATED
+		  - filter synonym 
+		  - direct#, directInv# synonyms 
 --]]--
 
 unitZone.unitZones = {}
@@ -63,81 +71,117 @@ end
 
 function unitZone.createUnitZone(theZone)
 	-- start val - a range
-	theZone.lookFor = cfxZones.getStringFromZoneProperty(theZone, "lookFor", "cfx no unit supplied") 
-	if dcsCommon.stringEndsWith(theZone.lookFor, "*") then 
-		theZone.lookForBeginsWith = true 
+	theZone.lookFor = theZone:getStringFromZoneProperty("lookFor", "*") -- default to match all  
+	if theZone.lookFor == "*" then 
+		theZone.matchAll = true 
+		if theZone.verbose or unitZone.verbose then 
+			trigger.action.outText("+++uZne: zone <" .. theZone.name .. "> set up to matche all names", 30)
+		end
+	elseif dcsCommon.stringEndsWith(theZone.lookFor, "*") then 
+		theZone.lookForBeginsWith = true
+		theZone.matchAll = false
 		theZone.lookFor = dcsCommon.removeEnding(theZone.lookFor, "*") 
 	end
 	
-	theZone.matching = cfxZones.getStringFromZoneProperty(theZone, "matching", "group") -- group, player [, name, type]
+	theZone.matching = theZone:getStringFromZoneProperty("matching", "group") -- group, player [, name, type]
 	theZone.matching = dcsCommon.trim(theZone.matching:lower())
 	if theZone.matching == "groups" then theZone.matching = "group" end -- some simplification 
 	if theZone.matching == "players" then theZone.matching = "player" end -- some simplification 
 
 	-- coalition 
-	theZone.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "coalition", 0) -- 0 = all
-	if cfxZones.hasProperty(theZone, "uzCoalition") then 
-		theZone.uzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "uzCoalition", 0)
+	theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("unitZone", 0) -- now with main attribute
+	-- DEPRECATED 2023 SEPT: provided for legacy compatibility
+	if theZone:hasProperty("coalition") then 
+		theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("coalition", 0) -- 0 = all
+	elseif theZone:hasProperty("uzCoalition") then 
+		theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("uzCoalition", 0)
 	end
 	
-	if unitZone.verbose or theZone.verbose then 
-		trigger.action.outText("+++uZne: set coa " .. theZone.uzCoalition .. " for <" .. theZone.name .. ">", 30)
-	end
-
 	-- DML Method 
-	theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "uzMethod") then 
-		theZone.uzMethod = cfxZones.getStringFromZoneProperty(theZone, "uzMethod", "inc")
+	theZone.uzMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("uzMethod") then 
+		theZone.uzMethod = theZone:getStringFromZoneProperty("uzMethod", "inc")
 	end
 
-	if cfxZones.hasProperty(theZone, "enterZone!") then 
-		theZone.enterZone = cfxZones.getStringFromZoneProperty(theZone, "enterZone!", "*<none>")
+	if theZone:hasProperty("enterZone!") then 
+		theZone.enterZone = theZone:getStringFromZoneProperty("enterZone!", "*<none>")
 	end 
-	if cfxZones.hasProperty(theZone, "exitZone!") then 
-		theZone.exitZone = cfxZones.getStringFromZoneProperty(theZone, "exitZone!", "*<none>")
-	end 
-	
-	if cfxZones.hasProperty(theZone, "changeZone!") then 
-		theZone.changeZone = cfxZones.getStringFromZoneProperty(theZone, "changeZone!", "*<none>")
+	if theZone:hasProperty("exitZone!") then 
+		theZone.exitZone = theZone:getStringFromZoneProperty("exitZone!", "*<none>")
 	end 
 	
-	if cfxZones.hasProperty(theZone, "filterFor") then 
-		local filterString = cfxZones.getStringFromZoneProperty(theZone, "filterFor", "1") -- ground 
+	if theZone:hasProperty("changeZone!") then 
+		theZone.changeZone = theZone:getStringFromZoneProperty("changeZone!", "*<none>")
+	end 
+	
+	if theZone:hasProperty("filterFor") then 
+		local filterString = theZone:getStringFromZoneProperty( "filterFor", "1") -- ground 
 		theZone.filterFor = unitZone.string2cat(filterString)
 		if unitZone.verbose or theZone.verbose then 
 			trigger.action.outText("+++uZne: filtering " .. theZone.filterFor .. " in " .. theZone.name, 30)
 		end 
+	elseif theZone:hasProperty("filter") then 
+		local filterString = theZone:getStringFromZoneProperty( "filter", "1") -- ground 
+		theZone.filterFor = unitZone.string2cat(filterString)
+		if unitZone.verbose or theZone.verbose then 
+			trigger.action.outText("+++uZne: filtering " .. theZone.filterFor .. " in " .. theZone.name, 30)
+		end
 	end	
 	
 	-- uzDirect
-	if cfxZones.hasProperty(theZone, "uzDirect") then
-		theZone.uzDirect = cfxZones.getStringFromZoneProperty(theZone, "uzDirect", "*<none>")
+	if theZone:hasProperty("uzDirect") then
+		theZone.uzDirect = theZone:getStringFromZoneProperty("uzDirect", "*<none>")
+	elseif
+		theZone:hasProperty("uzDirect#") then
+		theZone.uzDirect = theZone:getStringFromZoneProperty("uzDirect#", "*<none>")
+	elseif
+		theZone:hasProperty("direct#") then
+		theZone.uzDirect = theZone:getStringFromZoneProperty("direct#", "*<none>")
 	end 
-	if cfxZones.hasProperty(theZone, "uzDirectInv") then
-		theZone.uzDirectInv = cfxZones.getStringFromZoneProperty(theZone, "uzDirectInv", "*<none>")
+	if theZone:hasProperty("uzDirectInv") then
+		theZone.uzDirectInv = theZone:getStringFromZoneProperty("uzDirectInv", "*<none>")
+	elseif theZone:hasProperty("uzDirectInv#") then
+		theZone.uzDirectInv = theZone:getStringFromZoneProperty("uzDirectInv#", "*<none>")
+	elseif theZone:hasProperty("directInv#") then
+		theZone.uzDirectInv = theZone:getStringFromZoneProperty("directInv#", "*<none>")
 	end 
 	
 	-- on/off flags
 	theZone.uzPaused = false -- we are turned on 
-	if cfxZones.hasProperty(theZone, "uzOn?") then 
-		theZone.triggerOnFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOn?", "*<none1>")
-		theZone.lastTriggerOnValue = cfxZones.getFlagValue(theZone.triggerOnFlag, theZone)
+	if theZone:hasProperty("uzOn?") then 
+		theZone.triggerOnFlag = theZone:getStringFromZoneProperty("uzOn?", "*<none1>")
+		theZone.lastTriggerOnValue = theZone:getFlagValue(theZone.triggerOnFlag)
 	end 
 	
-	if cfxZones.hasProperty(theZone, "uzOff?") then 
-		theZone.triggerOffFlag = cfxZones.getStringFromZoneProperty(theZone, "uzOff?", "*<none2>")
-		theZone.lastTriggerOffValue = cfxZones.getFlagValue(theZone.triggerOffFlag, theZone)
+	if theZone:hasProperty("uzOff?") then 
+		theZone.triggerOffFlag = theZone:getStringFromZoneProperty("uzOff?", "*<none2>")
+		theZone.lastTriggerOffValue = theZone:getFlagValue(theZone.triggerOffFlag)
 	end 
 	
-	theZone.uzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "uzTriggerMethod") then 
-		theZone.uzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "uzTriggerMethod", "change")
+	theZone.uzTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
+	if theZone:hasProperty("uzTriggerMethod") then 
+		theZone.uzTriggerMethod = theZone:getStringFromZoneProperty("uzTriggerMethod", "change")
 	end 
 	
 	-- now get initial zone status ?
 	theZone.lastStatus = unitZone.checkZoneStatus(theZone)
+	if theZone.uzDirect then 
+		if newState then 
+			theZone:setFlagValue(theZone.uzDirect, 1)
+		else 
+			theZone:setFlagValue(theZone.uzDirect, 0)
+		end
+	end
+	if theZone.uzDirectInv then 
+		if newState then 
+			theZone:setFlagValue(theZone.uzDirectInv, 0)
+		else 
+			theZone:setFlagValue(theZone.uzDirectInv, 1)
+		end
+	end
+	
 	if unitZone.verbose or theZone.verbose then 
-		trigger.action.outText("+++uZne: processsed unit zone " .. theZone.name, 30)
+		trigger.action.outText("+++uZne: processsed unit zone <" .. theZone.name .. "> with status = (" .. dcsCommon.bool2Text(theZone.lastStatus) .. ")", 30)
 	end
 	
 end
@@ -148,7 +192,7 @@ end
 --
 
 function unitZone.collectGroups(theZone)
-	local collector = {}
+	local collector = {} -- players: units, groups: groups
 	if theZone.matching == "player" then 
 		-- collect all players matching coalition
 		if theZone.uzCoalition == 1 or theZone.uzCoalition == 0 then 
@@ -166,16 +210,14 @@ function unitZone.collectGroups(theZone)
 	elseif theZone.matching == "group" then 
 		if theZone.uzCoalition == 1 or theZone.uzCoalition == 0 then 
 			local allGroups = coalition.getGroups(1, theZone.filterFor)
-
-			for idx, pUnit in pairs(allGroups) do 
-				table.insert(collector, pUnit)
+			for idx, aGroup in pairs(allGroups) do 
+				table.insert(collector, aGroup)
 			end
 		end 
 		if theZone.uzCoalition == 2 or theZone.uzCoalition == 0 then 
 			local allGroups = coalition.getGroups(2, theZone.filterFor)
-
-			for idx, pUnit in pairs(allGroups) do 
-				table.insert(collector, pUnit)
+			for idx, aGroup in pairs(allGroups) do 
+				table.insert(collector, aGroup)
 			end
 		end
 	else 
@@ -197,15 +239,17 @@ function unitZone.checkZoneStatus(theZone)
 	local playerCheck = theZone.matching == "player"
 	if playerCheck then 
 		-- we check the names for players only 
-		-- collector holds units, not groups 
-		for idx, pUnit in pairs(theGroups) do 
+		-- collector holds units for players, not groups 
+		for idx, pUnit in pairs(theGroups) do
 			local puName = pUnit:getName()
-			local hasMatch = false 
-			if theZone.lookForBeginsWith then 
-				hasMatch = dcsCommon.stringStartsWith(puName, lookFor)
-			else 
-				hasMatch = puName == lookFor 
-			end
+			local hasMatch = theZone.matchAll 
+			if not hasMatch then 
+				if theZone.lookForBeginsWith then 
+					hasMatch = dcsCommon.stringStartsWith(puName, lookFor)
+				else 
+					hasMatch = puName == lookFor 
+				end
+			end 
 			if hasMatch then 
 				if cfxZones.unitInZone(pUnit, theZone) then 
 					return true
@@ -214,20 +258,21 @@ function unitZone.checkZoneStatus(theZone)
 		end 
         
 	else 
-		-- we perform group check 
+		-- we perform group check. 
 		for idx, aGroup in pairs(theGroups) do 
 			local gName=aGroup:getName()
-			local hasMatch = false 
-			if theZone.lookForBeginsWith then 
-				hasMatch = dcsCommon.stringStartsWith(gName, lookFor)
-			else 
-				hasMatch = gName == lookFor 
-			end
+			local hasMatch = theZone.matchAll
+			if not hasMatch then 
+				if theZone.lookForBeginsWith then 
+					hasMatch = dcsCommon.stringStartsWith(gName, lookFor)
+				else 
+					hasMatch = gName == lookFor 
+				end
+			end 
 			if hasMatch and aGroup:isExist() then 
 				-- check all living units in zone 
 				local gUnits = aGroup:getUnits()
 				for idy, aUnit in pairs (gUnits) do
-					--trigger.action.outText("trying " .. gName,10)
 					if cfxZones.unitInZone(aUnit, theZone) then 
 						return true
 					end
@@ -244,18 +289,18 @@ end
 function unitZone.bangState(theZone, newState)
 	
 	if theZone.changeZone then 
-		cfxZones.pollFlag(theZone.changeZone, theZone.uzMethod, theZone)
+		theZone:pollFlag(theZone.changeZone, theZone.uzMethod)
 	end 
 	if newState then 
 		if theZone.enterZone then 
-			cfxZones.pollFlag(theZone.enterZone, theZone.uzMethod, theZone)
+			theZone:pollFlag(theZone.enterZone, theZone.uzMethod)
 			if unitZone.verbose then 
 				trigger.action.outText("+++uZone: banging enter! with <" .. theZone.uzMethod .. "> on <" .. theZone.enterZone .. "> for " .. theZone.name, 30)
 			end
 		end
 	else 
 		if theZone.exitZone then 
-			cfxZones.pollFlag(theZone.exitZone, theZone.uzMethod, theZone)
+			theZone:pollFlag(theZone.exitZone, theZone.uzMethod)
 			if unitZone.verbose then 
 				trigger.action.outText("+++uZone: banging exit! with <" .. theZone.uzMethod .. "> on <" .. theZone.exitZone .. "> for " .. theZone.name, 30)
 			end
@@ -269,14 +314,16 @@ function unitZone.update()
 		
 	for idx, aZone in pairs(unitZone.unitZones) do
 		-- check if we need to pause/unpause 
-		if aZone.triggerOnFlag and cfxZones.testZoneFlag(aZone, aZone.triggerOnFlag, aZone.uzTriggerMethod, "lastTriggerOnValue") then 
+		if aZone.triggerOnFlag and 
+		   aZone:testZoneFlag( aZone.triggerOnFlag, aZone.uzTriggerMethod, "lastTriggerOnValue") then 
 			if unitZone.verbose or aZone.verbose then 
 				trigger.action.outText("+++uZone: turning " .. aZone.name .. " on", 30)
 			end 
 			aZone.uzPaused = false 
 		end
 		
-		if aZone.triggerOffFlag and cfxZones.testZoneFlag(aZone, aZone.triggerOffFlag, aZone.uzTriggerMethod, "lastTriggerOffValue") then 
+		if aZone.triggerOffFlag and 
+		   aZone:testZoneFlag(aZone.triggerOffFlag, aZone.uzTriggerMethod, "lastTriggerOffValue") then 
 			if unitZone.verbose or aZone.verbose then 
 				trigger.action.outText("+++uZone: turning " .. aZone.name .. " OFF", 30)
 			end 
@@ -299,9 +346,9 @@ function unitZone.update()
 					trigger.action.outText("+++uZone: <" .. aZone.name .. "> setting uzDirect <" .. aZone.uzDirect .. "> to ".. dcsCommon.bool2Num(newState), 30)
 				end
 				if newState then 
-					cfxZones.setFlagValueMult(aZone.uzDirect, 1, aZone)
+					aZone:setFlagValue(aZone.uzDirect, 1)
 				else 
-					cfxZones.setFlagValueMult(aZone.uzDirect, 0, aZone)
+					aZone:setFlagValue(aZone.uzDirect, 0)
 				end
 			end
 			if aZone.uzDirectInv then 
@@ -310,9 +357,9 @@ function unitZone.update()
 					trigger.action.outText("+++uZone: <" .. aZone.name .. "> setting INVuzDirect <" .. aZone.uzDirectInv .. "> to ".. dcsCommon.bool2Num(invState), 30)
 				end
 				if newState then 
-					cfxZones.setFlagValueMult(aZone.uzDirectInv, 0, aZone)
+					aZone:setFlagValue(aZone.uzDirectInv, 0)
 				else 
-					cfxZones.setFlagValueMult(aZone.uzDirectInv, 1, aZone)
+					aZone:setFlagValue(aZone.uzDirectInv, 1)
 				end
 			end
 		end 
@@ -323,6 +370,7 @@ end
 -- Config & Start
 --
 function unitZone.readConfigZone()
+	unitZone.name = "unitZoneConfig"
 	local theZone = cfxZones.getZoneByName("unitZoneConfig") 
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("unitZoneConfig")
@@ -370,6 +418,6 @@ if not unitZone.start() then
 	unitZone = nil 
 end
 
---ToDo: matching: name, name wildcard, type  
+
 --ToDo: add 'neutral' support and add 'both' option 
 --ToDo: add API 

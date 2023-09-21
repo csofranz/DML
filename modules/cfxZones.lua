@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.0.3"
+cfxZones.version = "4.0.5"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -153,6 +153,10 @@ cfxZones.version = "4.0.3"
 - 4.0.2   - removed verbosity from declutterZone (both versions)
 - 4.0.3   - new processDynamicVZU()
 	      - wildcard uses processDynamicVZU
+- 4.0.4   - setFlagValue now supports multiple flags (OOP and classic)
+		  - doSetFlagValue optimizations 
+- 4.0.5   - dynamicAB wildcard 
+		  - processDynamicValueVU
 
 --]]--
 
@@ -1781,6 +1785,14 @@ function cfxZones.expandFlagName(theFlag, theZone)
 	return theFlag
 end
 
+function dmlZone:setFlagValue(theFlag, theValue)
+	cfxZones.setFlagValueMult(theFlag, theValue, self)
+end
+
+function cfxZones.setFlagValue(theFlag, theValue, theZone)
+	cfxZones.setFlagValueMult(theFlag, theValue, theZone)
+end
+
 function cfxZones.setFlagValueMult(theFlag, theValue, theZone)
 	local allFlags = {}
 	if dcsCommon.containsString(theFlag, ",") then 
@@ -1796,11 +1808,11 @@ function cfxZones.setFlagValueMult(theFlag, theValue, theZone)
 		aFlag = dcsCommon.trim(aFlag)
 		-- note: mey require range preprocessing, but that's not
 		-- a priority 
-		cfxZones.setFlagValue(aFlag, theValue, theZone)
+		cfxZones.doSetFlagValue(aFlag, theValue, theZone)
 	end 
 end
 
-function cfxZones.setFlagValue(theFlag, theValue, theZone)
+function cfxZones.doSetFlagValue(theFlag, theValue, theZone)
 	local zoneName = "<dummy>"
 	if not theZone then 
 		trigger.action.outText("+++Zne: no zone on setFlagValue", 30) -- mod me for detector
@@ -1809,19 +1821,13 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	end
 	
 	if type(theFlag) == "number" then 
-		-- straight set, ME flag 
+		-- straight set, oldschool ME flag 
 		trigger.action.setUserFlag(theFlag, theValue)
 		return 
 	end
 	
 	-- we assume it's a string now
-	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces
-	local nFlag = tonumber(theFlag) 
-	if nFlag then 
-		trigger.action.setUserFlag(theFlag, theValue)
-		return 
-	end
-	
+	theFlag = dcsCommon.trim(theFlag) -- clear leading/trailing spaces	
 	-- some QoL: detect "<none>"
 	if dcsCommon.containsString(theFlag, "<none>") then 
 		trigger.action.outText("+++Zone: warning - setFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30) -- if error, intended break
@@ -1834,9 +1840,6 @@ function cfxZones.setFlagValue(theFlag, theValue, theZone)
 	trigger.action.setUserFlag(theFlag, theValue)
 end 
 
-function dmlZone:setFlagValue(theFlag, theValue)
-	cfxZones.setFlagValue(theFlag, theValue, self)
-end
 
 
 function cfxZones.getFlagValue(theFlag, theZone)
@@ -3110,16 +3113,16 @@ local locales = {"coa",}
 	local outMsg = inMsg
 	local uHead = 0
 	for idx, aLocale in pairs(locales) do 
-		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>"
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>" -- e.g. "<coa: flag Name>
 		repeat -- iterate all patterns one by one 
 			local startLoc, endLoc = string.find(outMsg, pattern)
 			if startLoc then
 				local theValParam = string.sub(outMsg, startLoc, endLoc)
 				-- strip lead and trailer 
-				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "")
-				param = string.gsub(param, ">","")
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "") -- remove "<coa:"
+				param = string.gsub(param, ">","") -- remove trailing ">"
 				-- find zone or unit
-				param = dcsCommon.trim(param)
+				param = dcsCommon.trim(param) -- param = "flag Name"
 				local tZone = cfxZones.getZoneByName(param)
 				local tUnit = Unit.getByName(param)
 
@@ -3127,7 +3130,7 @@ local locales = {"coa",}
 				if aLocale == "coa" then
 					coa = trigger.misc.getUserFlag(param)
 					if tZone then coa = tZone.owner end 
-					if zUnit then coa = tUnit:getCoalition() end 
+					if tUnit and Unit:isExist(tUnit) then coa = tUnit:getCoalition() end 
 					locString = dcsCommon.coalition2Text(coa)
 				end
 
@@ -3135,6 +3138,83 @@ local locales = {"coa",}
 			end -- if startloc
 		until not startLoc
 	end -- for all locales 
+	return outMsg
+end
+
+-- process two-value vars that can be flag or unit and return interpreted value
+-- i.e. <alive: Aerial-1-1>
+function cfxZones.processDynamicValueVU(inMsg)
+local locales = {"yes", "true", "alive", "in"}
+	local outMsg = inMsg
+	local uHead = 0
+	for idx, aLocale in pairs(locales) do 
+		local pattern = "<" .. aLocale .. ":%s*[%s%w%*%d%.%-_]+>" -- e.g. "<yes: flagOrUnitName>
+		repeat -- iterate all patterns one by one 
+			local startLoc, endLoc = string.find(outMsg, pattern)
+			if startLoc then
+				local theValParam = string.sub(outMsg, startLoc, endLoc)
+				-- strip lead and trailer 
+				local param = string.gsub(theValParam, "<" .. aLocale .. ":%s*", "") -- remove "<alive:"
+				param = string.gsub(param, ">","") -- remove trailing ">"
+				-- find zone or unit
+				param = dcsCommon.trim(param) -- param = "flagOrUnitName"
+				local tUnit = Unit.getByName(param)
+				local yesNo = trigger.misc.getUserFlag(param) ~= 0
+				if tUnit then yesNo = Unit.isExist(tUnit) end
+				local locString = "err"
+				if aLocale == "yes" then					
+					if yesNo then locString = "yes" else locString = "no" end
+				elseif aLocale == "true" then 
+					if yesNo then locString = "true" else locString = "false" end 
+				elseif aLocale == "alive" then 
+					if yesNo then locString = "alive" else locString = "dead" end
+				elseif aLocale == "in" then 
+					if yesNo then locString = "in" else locString = "out" end
+				end
+
+				outMsg = string.gsub(outMsg, pattern, locString, 1) -- only one sub!
+			end -- if startloc
+		until not startLoc
+	end -- for all locales 
+	return outMsg
+end
+
+function cfxZones.processDynamicAB(inMsg, locale)
+	local outMsg = inMsg
+	if not locale then locale = "A/B" end 
+	
+	-- <A/B: flagOrUnitName [val A | val B]>
+	local replacerValPattern = "<".. locale .. ":%s*[%s%w%*%d%.%-_]+" .. "%[[%s%w]+|[%s%w]+%]"..">"
+	repeat 
+		local startLoc, endLoc = string.find(outMsg, replacerValPattern)
+		if startLoc then 
+			local rp = string.sub(outMsg, startLoc, endLoc)
+			-- get val/unit name 
+			local valA, valB = string.find(rp, ":%s*[%s%w%*%d%.%-_]+%[")
+			local val = string.sub(rp, valA+1, valB-1)
+			val = dcsCommon.trim(val)
+			-- get left and right 
+			local leftA, leftB = string.find(rp, "%[[%s%w]+|" ) -- from "[" to "|"
+			local rightA, rightB = string.find(rp, "|[%s%w]+%]") -- from "|" to "]"
+			left = string.sub(rp, leftA+1, leftB-1)
+			left = dcsCommon.trim(left)
+			right = string.sub(rp, rightA+1, rightB-1)
+			right = dcsCommon.trim(right)		
+--			trigger.action.outText("+++replacer pattern <" .. rp .. "> found, val = <" .. val .. ">, A = <" .. left .. ">, B = <" .. right .. ">", 30)
+			local yesno = false
+			-- see if unit exists
+			local theUnit = Unit.getByName(val)
+			if theUnit then 
+				yesno = Unit:isExist(theUnit)
+			else 
+				yesno = trigger.misc.getUserFlag(val) ~= 0
+			end
+
+			local locString = left 
+			if yesno then locString = right end 
+			outMsg = string.gsub(outMsg, replacerValPattern, locString, 1)
+		end
+	until not startLoc 
 	return outMsg
 end
 
@@ -3187,6 +3267,8 @@ function cfxZones.processStringWildcards(inMsg, theZone, timeFormat, imperialUni
 	theMsg = cfxZones.processDynamicLoc(theMsg, imperialUnits, responses)
     -- process values that can be derived from flag (default), zone or unit 
 	theMsg = cfxZones.processDynamicVZU(theMsg)
+	theMsg = cfxZones.processDynamicAB(theMsg)
+	theMsg = cfxZones.processDynamicValueVU(theMsg)
 	return theMsg
 end
 

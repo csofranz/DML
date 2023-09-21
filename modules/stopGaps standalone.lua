@@ -1,10 +1,12 @@
 stopGap = {}
-stopGap.version = "1.0.6 STANDALONE"
+stopGap.version = "1.0.9 STANDALONE"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true 
 stopGap.ignoreMe = "-sg"
 stopGap.spIgnore = "-sp" -- only single-player ignored 
 stopGap.isMP = false 
+stopGap.running = true 
+stopGap.refreshInterval = -1 -- seconds to refresh all statics. -1 = never, 3600 = once every hour 
 
 --[[--
 	Written and (c) 2023 by Christian Franz 
@@ -29,6 +31,9 @@ stopGap.isMP = false
 	1.0.5 - (DML-only additions)
 	1.0.6 - can detect stopGapGUI active on server
 		  - supports "-sp" for single-player only suppress
+	1.0.7 - (DML-only internal cool stuff)
+	1.0.8 - added refreshInterval option as requested 
+	1.0.9 - optimization when turning on stopgap
 --]]--
 
 stopGap.standInGroups ={}
@@ -175,7 +180,7 @@ end
 
 function stopGap.initGaps()
 	-- when we enter, all slots are emptry 
-	-- and we populate all slots 
+	-- and we populate all empty slots 
 	-- with their static representations 
 	for name, group in pairs (cfxMX.playerGroupByName) do 
 		-- check to see if this group is on the ground at parking 
@@ -194,13 +199,11 @@ function stopGap.initGaps()
 				end
 			else 
 				-- replace all groups entirely with static objects 
-				---local allUnits = group.units
 				local theStaticGroup = stopGap.createStandInsForMXGroup(group)
 				-- remember this static group by its real name 
 				stopGap.standInGroups[group.name] = theStaticGroup
 			end
 		end -- if groundtstart
-
 	end
 end
 
@@ -212,13 +215,29 @@ function stopGap.turnOff()
 		end
 	end
 	stopGap.standInGroups = {}
+	stopGap.running = false 
 end
 
 function stopGap.turnOn()
-	-- populate all empty (non-taken) slots with stand-ins
+	-- populate all empty (un-occupied) slots with stand-ins
 	stopGap.initGaps()
+	stopGap.running = true 
 end
 
+function stopGap.refreshAll() -- restore all statics 
+	if stopGap.refreshInterval > 0 then 
+		-- re-schedule invocation 
+		timer.scheduleFunction(stopGap.refreshAll, {}, timer.getTime() + stopGap.refreshInterval)
+		if stopGap.running then 
+			stopGap.turnOff() -- kill all statics 
+			-- turn back on in half a second 
+			timer.scheduleFunction(stopGap.turnOn, {}, timer.getTime() + 0.5)
+		end
+		if stopGap.verbose then 
+			trigger.action.outText("+++stopG: refreshing all static", 30)
+		end
+	end
+end
 -- 
 -- event handling 
 --
@@ -271,6 +290,7 @@ function stopGap.update()
 			stopGap.turnOff()
 			stopGap.isMP = true 
 			stopGap.turnOn()
+			return
 		end 
 	end
 	
@@ -349,8 +369,13 @@ function stopGap.start()
 	-- connect event handler
 	world.addEventHandler(stopGap)
 	
-	-- start update in 10 seconds 
+	-- start update in 1 second 
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
+	
+	-- start refresh cycle if refresh (>0)
+	if stopGap.refreshInterval > 0 then 
+		timer.scheduleFunction(stopGap.refreshAll, {}, timer.getTime() + stopGap.refreshInterval)
+	end
 	
 	-- say hi!
 	local mp = " (SP - <" .. sgDetect .. ">)"

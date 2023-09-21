@@ -1,10 +1,13 @@
 stopGap = {}
-stopGap.version = "1.0.7"
+stopGap.version = "1.0.8"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
 stopGap.spIgnore = "-sp" -- only single-player ignored 
 stopGap.isMP = false 
+stopGap.running = true 
+stopGap.refreshInterval = -1 -- seconds to refresh all statics. -1 = never, 3600 = once every hour 
+
 
 stopGap.requiredLibs = {
 	"dcsCommon",
@@ -42,6 +45,10 @@ stopGap.requiredLibs = {
 	1.0.6 - spIgnore '-sp' 
 	1.0.7 - migrated to OOP zones 
 		  - corrected ssbEnabled config from sbb to ssb 
+	1.0.8 - added refreshInterval option as requested 
+		  - refresh attribute config zone 
+	1.0.9 - in line with standalone (optimization not required for DML)
+	
 --]]--
 
 stopGap.standInGroups = {}
@@ -187,11 +194,28 @@ function stopGap.turnOff()
 		end
 	end
 	stopGap.standInGroups = {}
+	stopGap.running = false 
 end
 
 function stopGap.turnOn()
 	-- populate all empty (non-taken) slots with stand-ins
 	stopGap.initGaps()
+	stopGap.running = true 
+end
+
+function stopGap.refreshAll() -- restore all statics 
+	if stopGap.refreshInterval > 0 then 
+		-- re-schedule invocation 
+		timer.scheduleFunction(stopGap.refreshAll, {}, timer.getTime() + stopGap.refreshInterval)
+		if stopGap.running then 
+			stopGap.turnOff() -- kill all statics 
+			-- turn back on in half a second 
+			timer.scheduleFunction(stopGap.turnOn, {}, timer.getTime() + 0.5)
+		end
+		if stopGap.verbose then 
+			trigger.action.outText("+++stopG: refreshing all static", 30)
+		end
+	end
 end
 -- 
 -- event handling 
@@ -366,6 +390,8 @@ function stopGap.readConfigZone(theZone)
 			trigger.action.outText("+++StopG: turned off", 30)		
 		end 
 	end
+	
+	stopGap.refreshInterval = theZone:getNumberFromZoneProperty("refresh", -1) -- default: no refresh
 end
 
 --
@@ -407,8 +433,13 @@ function stopGap.start()
 	-- connect event handler
 	world.addEventHandler(stopGap)
 	
-	-- start update in 10 seconds 
+	-- start update in 1 second 
 	timer.scheduleFunction(stopGap.update, {}, timer.getTime() + 1)
+	
+	-- start refresh cycle if refresh (>0)
+	if stopGap.refreshInterval > 0 then 
+		timer.scheduleFunction(stopGap.refreshAll, {}, timer.getTime() + stopGap.refreshInterval)
+	end
 	
 	-- say hi!
 	local mp = " (SP - <" .. sgDetect .. ">)"
