@@ -1,9 +1,10 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "2.4.1"
+cfxHeloTroops.version = "3.0.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
 cfxHeloTroops.pickupRange = 100 -- meters 
+cfxHeloTroops.requestRange = 500 -- meters
 --
 --[[--
  VERSION HISTORY
@@ -32,7 +33,11 @@ cfxHeloTroops.pickupRange = 100 -- meters
 	   - removed restriction to only apply to helicopters in anticipation of the C-130 Hercules appearing in the game
  2.4.1 - new actionSound attribute, sound plays to group whenever 
          troops have boarded or disembarked
-
+ 3.0.0 - added requestable cloner support 
+	   - harmonized spawning invocations across cloners and spawners 
+	   - dmlZones 
+	   - requestRange attribute
+ 
 --]]--
 --
 -- cfxHeloTroops -- a module to pick up and drop infantry. 
@@ -158,13 +163,11 @@ function cfxHeloTroops.heloLanded(theUnit)
 	cfxHeloTroops.setCommsMenu(conf.unit)
 end
 
-
 --
 --
 -- Helo took off
 --
 --
-
 function cfxHeloTroops.heloDeparted(theUnit)
 	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then return end
 	
@@ -206,17 +209,14 @@ function cfxHeloTroops.cleanHelo(theUnit)
 			end 
 		end
 	end
-	
 	conf.troopsOnBoard = {}
 end
 
 function cfxHeloTroops.heloCrashed(theUnit)
 	if not dcsCommon.isTroopCarrier(theUnit, cfxHeloTroops.troopCarriers) then return 
 	end
-	
 	-- clean up 
 	cfxHeloTroops.cleanHelo(theUnit)
-	
 end
 
 --
@@ -252,7 +252,6 @@ function cfxHeloTroops.removeComms(theUnit)
 	conf.id = id
 	conf.unit = theUnit 
 	
-
 	cfxHeloTroops.removeCommsFromConfig(conf)
 end
 
@@ -371,16 +370,15 @@ function cfxHeloTroops.addGroundMenu(conf)
 		return
 	end
 	
-	-- case 2A: no troops aboard, and spawners in range 
-	--          that are requestable 
+	-- case 2A: no troops aboard, and requestable spawners/cloners in range 
 	local p = conf.unit:getPosition().p
 	local mySide = conf.unit:getCoalition() 
-	
-	if cfxSpawnZones then 
-		-- only if SpawnZones is implemented 
-		local availableSpawnersRaw = cfxSpawnZones.getRequestableSpawnersInRange(p, 500, mySide)
-		-- DONE: requestable spawners must check for troop compatibility 
-		local availableSpawners = {}
+
+	-- collect available spawn zones 
+	local availableSpawners = {}
+	if cfxSpawnZones then -- only if SpawnZones is implemented 
+		local availableSpawnersRaw = cfxSpawnZones.getRequestableSpawnersInRange(p, cfxHeloTroops.requestRange, mySide)
+		
 		for idx, aSpawner in pairs(availableSpawnersRaw) do 
 			-- filter all spawners that spawn "illegal" troops
 			local theTypes = aSpawner.types
@@ -403,26 +401,55 @@ function cfxHeloTroops.addGroundMenu(conf)
 				table.insert(availableSpawners, aSpawner)
 			end
 		end
-		
-		local numSpawners = #availableSpawners
-		if numSpawners > 5 then numSpawners = 5 end 
-		while numSpawners > 0 do
-			-- for each spawner in range, create a 
-			-- spawn menu item
-			local spawner = availableSpawners[numSpawners]
-			local theName = spawner.baseName 
-			local comm = "Request <" .. theName .. "> troops for transport" -- .. math.floor(aTeam.dist) .. "m away"
-			local theCommand =  missionCommands.addCommandForGroup(
-				conf.id, 
-				comm,
-				conf.myMainMenu,
-				cfxHeloTroops.redirectSpawnGroup, 
-				{conf, spawner}
-				)
-			table.insert(conf.myCommands, theCommand)
-			numSpawners = numSpawners - 1
-		end
+	end 
 	
+	-- collect available clone zones 
+	if cloneZones then 
+		local availableSpawnersRaw = cloneZones.getRequestableClonersInRange(p, cfxHeloTroops.requestRange, mySide)
+		for idx, aSpawner in pairs(availableSpawnersRaw) do 
+			-- filter all spawners that spawn "illegal" troops or have none
+			local theTypes = aSpawner.allTypes
+			local allLegal = true
+			local numTypes = dcsCommon.getSizeOfTable(theTypes)
+			if numTypes > 0 then 
+				for aType, cnt in pairs(theTypes) do
+					if cfxHeloTroops.legalTroops then 
+						if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, aType) then 
+							allLegal = false 
+						end
+					else 
+						if not dcsCommon.typeIsInfantry(aType) then 
+							allLegal = false 
+						end
+					end
+				end
+			else 
+				allegal = false 
+			end
+			
+			if allLegal then 
+				table.insert(availableSpawners, aSpawner)
+			end
+		end
+	end
+	
+	local numSpawners = #availableSpawners
+	if numSpawners > 5 then numSpawners = 5 end 
+	while numSpawners > 0 do
+		-- for each spawner in range, create a 
+		-- spawn menu item
+		local spawner = availableSpawners[numSpawners]
+		local theName = spawner.baseName 
+		local comm = "Request <" .. theName .. "> troops for transport" -- .. math.floor(aTeam.dist) .. "m away"
+		local theCommand =  missionCommands.addCommandForGroup(
+			conf.id, 
+			comm,
+			conf.myMainMenu,
+			cfxHeloTroops.redirectSpawnGroup, 
+			{conf, spawner}
+			)
+		table.insert(conf.myCommands, theCommand)
+		numSpawners = numSpawners - 1
 	end
 	
 	-- case 2B: no troops aboard. see if there are troops around 
@@ -440,7 +467,6 @@ function cfxHeloTroops.addGroundMenu(conf)
 	-- now limit the options to the five closest legal groups
 	local numUnits = #unitsToLoad
 	if numUnits > 5 then numUnits = 5 end
-	
 	if numUnits < 1 then 
 		local theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
@@ -469,8 +495,6 @@ function cfxHeloTroops.addGroundMenu(conf)
 				)
 		table.insert(conf.myCommands, theCommand)
 	end
-	
-	
 end
 
 function cfxHeloTroops.filterTroopsByType(unitsToLoad)
@@ -546,7 +570,6 @@ end
 --
 -- Deploying Troops
 --
-
 function cfxHeloTroops.redirectDeployTroops(args)
 	timer.scheduleFunction(cfxHeloTroops.doDeployTroops, args, timer.getTime() + 0.1)
 end
@@ -626,8 +649,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 		trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> revoke 'wait' orders, proceed with <".. orders .. ">", 30)
 	end
 	
-	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m ratius around choppa
-	--local theCoalition = theUnit:getCountry() -- make it choppers country
+	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m radius around choppa
 	local theCoalition = theUnit:getGroup():getCoalition() -- make it choppers COALITION
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 												
@@ -649,7 +671,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	troop.destination = dest -- transfer target zone for attackzone oders
 	cfxGroundTroops.addGroundTroopsToPool(troop) -- will schedule move orders
 	trigger.action.outTextForGroup(conf.id, "<" .. theGroup:getName() .. "> have deployed to the ground with orders " .. orders .. "!", 30)
-	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
+	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) 
 	-- see if this is tracked by a tracker, and pass them back so 
 	-- they can un-limbo 
 	if groupTracker then 
@@ -664,7 +686,6 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 		end
 	end
 end
-
 
 --
 -- Loading Troops
@@ -755,7 +776,7 @@ end
 function cfxHeloTroops.doSpawnGroup(args)
 	local conf = args[1]
 	local theSpawner = args[2]
-	
+	-- NOTE: theSpawner can be of type cfxSpawnZone !!!OR!!! cfxCloneZones
 	-- make sure cooldown on spawner has timed out, else 
 	-- notify that you have to wait 
 	local now = timer.getTime()
@@ -765,13 +786,13 @@ function cfxHeloTroops.doSpawnGroup(args)
 		return 
 	end
 	
-	cfxSpawnZones.spawnWithSpawner(theSpawner)
+	--cfxSpawnZones.spawnWithSpawner(theSpawner) -- old code 
+	theSpawner.spawnWithSpawner(theSpawner) -- can be both spawner and cloner 
 	trigger.action.outTextForGroup(conf.id, "Deploying <" .. theSpawner.baseName .. "> now...", 30)
 	
 	-- reset all comms so we can include new troops 
 	-- into load menu 
 	timer.scheduleFunction(cfxHeloTroops.delayedCommsResetForUnit, {conf.unit, "ignore"}, now + 1.0)
-	
 end
 
 -- 
@@ -859,14 +880,13 @@ function cfxHeloTroops.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("heloTroopsConfig") 
 	if not theZone then 
-		trigger.action.outText("+++heloT: no config zone!", 30) 
 		theZone = cfxZones.createSimpleZone("heloTroopsConfig")
 	end 
 
-	cfxHeloTroops.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	cfxHeloTroops.verbose = theZone:getBoolFromZoneProperty("verbose", false)
 	
-	if cfxZones.hasProperty(theZone, "legalTroops") then 
-		local theTypesString = cfxZones.getStringFromZoneProperty(theZone, "legalTroops", "")
+	if theZone:hasProperty("legalTroops") then 
+		local theTypesString = theZone:getStringFromZoneProperty("legalTroops", "")
 		local unitTypes = dcsCommon.splitString(aSpawner.types, ",")
 		if #unitTypes < 1 then 
 			unitTypes = {"Soldier AK", "Infantry AK", "Infantry AK ver2", "Infantry AK ver3", "Infantry AK Ins", "Soldier M249", "Soldier M4 GRG", "Soldier M4", "Soldier RPG", "Paratrooper AKS-74", "Paratrooper RPG-16", "Stinger comm dsr", "Stinger comm", "Soldier stinger", "SA-18 Igla-S comm", "SA-18 Igla-S manpad", "Igla manpad INS", "SA-18 Igla comm", "SA-18 Igla manpad",} -- default 
@@ -876,18 +896,19 @@ function cfxHeloTroops.readConfigZone()
 		cfxHeloTroops.legalTroops = unitTypes
 	end	
 	
-	cfxHeloTroops.troopWeight = cfxZones.getNumberFromZoneProperty(theZone, "troopWeight", 100) -- kg average weight per trooper 
+	cfxHeloTroops.troopWeight = theZone:getNumberFromZoneProperty("troopWeight", 100) -- kg average weight per trooper 
 	
-	cfxHeloTroops.autoDrop = cfxZones.getBoolFromZoneProperty(theZone, "autoDrop", false)	
-	cfxHeloTroops.autoPickup = cfxZones.getBoolFromZoneProperty(theZone, "autoPickup", false)
-	cfxHeloTroops.pickupRange = cfxZones.getNumberFromZoneProperty(theZone, "pickupRange", 100)
-	cfxHeloTroops.combatDropScore = cfxZones.getNumberFromZoneProperty(theZone, "combatDropScore", 200)
+	cfxHeloTroops.autoDrop = theZone:getBoolFromZoneProperty("autoDrop", false)	
+	cfxHeloTroops.autoPickup = theZone:getBoolFromZoneProperty("autoPickup", false)
+	cfxHeloTroops.pickupRange = theZone:getNumberFromZoneProperty("pickupRange", 100)
+	cfxHeloTroops.combatDropScore = theZone:getNumberFromZoneProperty( "combatDropScore", 200)
 	
-	cfxHeloTroops.actionSound = cfxZones.getStringFromZoneProperty(theZone, "actionSound", "Quest Snare 3.wav")
+	cfxHeloTroops.actionSound = theZone:getStringFromZoneProperty("actionSound", "Quest Snare 3.wav")
 	
+	cfxHeloTroops.requestRange = theZone:getNumberFromZoneProperty("requestRange", 500)
 	-- add own troop carriers 
-	if cfxZones.hasProperty(theZone, "troopCarriers") then 
-		local tc = cfxZones.getStringFromZoneProperty(theZone, "troopCarriers", "UH-1D")
+	if theZone:hasProperty("troopCarriers") then 
+		local tc = theZone:getStringFromZoneProperty("troopCarriers", "UH-1D")
 		tc = dcsCommon.splitString(tc, ",")
 		cfxHeloTroops.troopCarriers = dcsCommon.trimArray(tc)
 	end

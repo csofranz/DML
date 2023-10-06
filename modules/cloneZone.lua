@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.8.2"
+cloneZones.version = "1.9.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -100,8 +100,12 @@ cloneZones.respawnOnGroupID = true
 		  - upgraded config zone parsing 
 	1.8.1 - clone zone definition now supports quads
 	1.8.2 - on pre-wipe, delay respawn by 0.5s to avoid 'dropping' statics
-	
-	
+	1.9.0 - minor clean-up for synonyms
+		  - spawnWithSpawner alias for HeloTroops etc requestable SPAWN
+		  - requestable attribute 
+		  - cooldown attribute 
+		  - cloner collects all types used 
+		  - groupScheme attribute
 --]]--
 
 --
@@ -194,7 +198,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: new cloner <" .. theZone.name ..">", 30)
 	end
-	
+	theZone.spawnWithSpawner = cloneZones.spawnWithSpawner
 	theZone.myUniqueCounter = cloneZones.lclUniqueCounter -- init local counter
 	
 	local localZones = cloneZones.allGroupsInZoneByData(theZone)  
@@ -226,11 +230,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.source = theZone:getStringFromZoneProperty("source", "<none>")
 		if theZone.source == "<none>" then theZone.source = nil end 
 	end 
+	theZone.allTypes = {} -- names of all types
 	
 	if not theZone.source then 
 		theZone.cloneNames = {} -- names of the groups. only present in template spawners
-		theZone.staticNames = {} -- names of all statics. only present in templates
-		
+		theZone.staticNames = {} -- names of all statics. only present in templates	 
 		for idx, aGroup in pairs(localZones) do
 			local gName = aGroup:getName()
 			if gName then 
@@ -239,10 +243,19 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 				-- now get group data and save a lookup for 
 				-- resolving internal references 
 				local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(gName)
+				-- iterate all units and save their individual types
+				for idy, aUnit in pairs(rawData.units) do 
+					local theType = aUnit.type 
+--					trigger.action.outText("proccing type <" .. theType .. ">", 30)
+					if not theZone.allTypes[theType] then 
+						theZone.allTypes[theType] = 1 -- first one
+					else 
+						theZone.allTypes[theType] = theZone.allTypes[theType] + 1 -- increment
+					end 
+				end 
 				local origID = rawData.groupId
 			end 	
 		end
-		
 		for idx, aStatic in pairs (localObjects) do 
 			local sName = aStatic:getName()
 			if sName then 
@@ -277,17 +290,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	-- f? and spawn? and other synonyms map to the same 
 	if theZone:hasProperty("f?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("f?", "none")
-	end
-	
-	if theZone:hasProperty("in?") then 
+	elseif theZone:hasProperty("in?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("in?", "none")
-	end
-	
-	if theZone:hasProperty("spawn?") then 
+	elseif theZone:hasProperty("spawn?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("spawn?", "none")
-	end
-	
-	if theZone:hasProperty("clone?") then 
+	elseif theZone:hasProperty("clone?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("clone?", "none")
 	end
 	
@@ -298,19 +305,18 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	-- deSpawn?
 	if theZone:hasProperty("deSpawn?") then 
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deSpawn?", "none")
-	end
-	
-	if theZone:hasProperty("deClone?") then 
+	elseif theZone:hasProperty("deClone?") then 
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deClone?", "none")
-	end
-	
-	if theZone:hasProperty("wipe?") then 
+	elseif theZone:hasProperty("wipe?") then 
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty("wipe?", "none")
 	end
 	
 	if theZone.deSpawnFlag then 
 		theZone.lastDeSpawnValue = theZone:getFlagValue(theZone.deSpawnFlag)
 	end
+	
+	theZone.cooldown = theZone:getNumberFromZoneProperty("cooldown", -1) -- anything > 0 activates cd 
+	theZone.lastSpawnTimeStamp = -10000
 	
 	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
 	
@@ -354,6 +360,15 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		end
 	end
 
+	-- interface to requestable, must be unsourced!
+	if theZone:hasProperty("requestable") then 
+		theZone.requestable = theZone:getBoolFromZoneProperty( "requestable", false)
+		theZone.baseName = theZone.name -- backward compatibility with HeloTroops 
+		if theZone.source then 
+			trigger.action.outText("WARNING: cloner <" .. theZone.name .. "> has 'source' attribute and is marked 'requestable' - this can result in unrequestable clones", 30)
+		end
+	end
+
 	-- randomized locations on spawn 
 	theZone.rndLoc = theZone:getBoolFromZoneProperty("randomizedLoc", false)
 	if theZone:hasProperty("rndLoc") then 
@@ -380,9 +395,14 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.nameScheme = theZone:getStringFromZoneProperty( "nameScheme", "<o>-<uid>") -- default to [<original name> "-" <uuid>] 
 	end
 	
+	if theZone:hasProperty("groupScheme") then 
+		theZone.groupScheme = theZone:getStringFromZoneProperty("groupScheme", "<o>-<uid>")
+	end 
+	
 	if theZone.identical and theZone.nameScheme then
-		trigger.action.outText("+++clnZ: WARNING - clone zone <" .. theZone.name .. "> has both IDENTICAL and NAMESCHEME attributes. nameScheme is ignored.", 30)
-		theZone.nameScheme = nil 
+		trigger.action.outText("+++clnZ: WARNING - clone zone <" .. theZone.name .. "> has both IDENTICAL and NAMESCHEME/GROUPSCHEME attributes. nameScheme is ignored.", 30)
+		theZone.nameScheme = nil
+		theZone.groupScheme = nil 
 	end
 	-- we end with clear plate 
 end
@@ -629,14 +649,19 @@ end
 
 function cloneZones.uniqueNameGroupData(theData, theCloneZone, sourceName)
 	if not sourceName then sourceName = theCloneZone.name end 
-	theData.name = dcsCommon.uuid(theData.name)
+	if not theCloneZone.groupScheme then 
+		theData.name = dcsCommon.uuid(theData.name)
+	else 
+		theData.name = cloneZones.nameFromSchema(theCloneZone.groupScheme, theData.name, theCloneZone, sourceName, 1)
+	end 
+	
+	local schema = theCloneZone.nameScheme	
 	local units = theData.units 
 	local iterCount = 1 
 	local newName = "none"
 	local allNames = {} -- enforce unique names inside group
 	for idx, aUnit in pairs(units) do 
 		if theCloneZone and theCloneZone.nameScheme then
-			local schema = theCloneZone.nameScheme
 			newName, iterCount = cloneZones.nameFromSchema(schema, aUnit.name, theCloneZone, sourceName, iterCount)
 			
 			-- make sure that this name is has not been generated yet
@@ -1490,6 +1515,16 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	return spawnedGroups, spawnedStatics 
 end
 
+-- retro-fit for helo troops and others to provide 'requestable' support 
+function cloneZones.spawnWithSpawner(theZone)
+	-- analog to cfxSpawnZones.spawnWithSpawner(theSpawner)
+	-- glue code for helo troops and other modules 
+	
+	-- we may want to check if cloner isn't emtpy first 
+	
+	cloneZones.spawnWithCloner(theZone)
+end 
+
 function cloneZones.spawnWithCloner(theZone) 
 	if not theZone then 
 		trigger.action.outText("+++clnZ: nil zone on spawnWithCloner", 30)
@@ -1500,11 +1535,24 @@ function cloneZones.spawnWithCloner(theZone)
 		return 
 	end 
 	
+	-- see if we are on cooldown. If so, exit 
+	if theZone.cooldown > 0 then 
+		local now = timer.getTime() 
+		if now < theZone.lastSpawnTimeStamp + theZone.cooldown then 
+			if theZone.verbose or cloneZones.verbose then 
+				trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> still on cool-down, no clone cycle", 30)
+			end 
+			return
+		else 
+			theZone.lastSpawnTimeStamp = now 
+		end 
+	end 
+	
 	-- force spawn with this spawner 
 	local templateZone = theZone
 	if theZone.source then 
 		-- we use a different zone for templates
-		-- souce can be a comma separated list
+		-- source can be a comma separated list
 		local templateName = theZone.source
 		if dcsCommon.containsString(templateName, ",") then 
 			local allNames = templateName 
@@ -1615,18 +1663,8 @@ function cloneZones.hasLiveUnits(theZone)
 	if theZone.mySpawns then 
 		for idx, aGroup in pairs(theZone.mySpawns) do 
 			if aGroup:isExist() then 
-				-- an easier/faster method would be to invoke 
-				-- aGroup:getSize()
 				local uNum = aGroup:getSize()
 				if uNum > 0 then return true end 
-				--[[
-				local allUnits = aGroup:getUnits()
-				for idy, aUnit in pairs(allUnits) do 
-					if aUnit:isExist() and aUnit:getLife() >= 1 then 
-						return true
-					end
-				end
-				--]]--
 			end
 		end
 	end 
@@ -1640,6 +1678,49 @@ function cloneZones.hasLiveUnits(theZone)
 	end
 	
 	return false
+end
+
+function cloneZones.resolveOwningCoalition(theZone)
+	if not theZone.masterOwner then return theZone.owner end 
+	local masterZone = cfxZones.getZoneByName(theZone.masterOwner)
+	if not masterZone then 
+		trigger.action.outText("+++clnZ: cloner " .. theZone.name .. " could not find master owner <" .. theZone.masterOwner .. ">", 30)
+		return theZone.owner 
+	end
+	return masterZone.owner 
+end
+
+function cloneZones.getRequestableClonersInRange(aPoint, aRange, aSide)
+	if not aSide then aSide = 0 end  
+	if not aRange then aRange = 200 end 
+	if not aPoint then return {} end 
+
+	local theSpawners = {}
+	for idx, aZone in pairs(cloneZones.cloners) do 
+		-- iterate all zones and collect those that match 
+		local hasMatch = true 
+		local delta = dcsCommon.distFlat(aPoint, aZone:getPoint())
+		if delta > aRange then hasMatch = false end 
+		if aSide ~= 0 then 
+			-- check if side is correct for owned zone 
+			local resolved = cloneZones.resolveOwningCoalition(aZone)
+			--if resolved ~= 0 and resolved ~= aSide then
+			if resolved == 0 or resolved ~= aSide then			
+				-- failed ownership test. must match and not be zero
+				hasMatch = false
+			end
+		end
+				
+		if not aZone.requestable then 
+			hasMatch = false 
+		end
+		
+		if hasMatch then 
+			table.insert(theSpawners, aZone)
+		end
+	end
+	
+	return theSpawners
 end
 
 --
@@ -1672,14 +1753,7 @@ function cloneZones.update()
 		-- empty handling 
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
 		if isEmpty then 
-			-- see if we need to bang a flag 
-			--[[--
-			if aZone.emptyFlag then 
-				--cloneZones.pollFlag(aZone.emptyFlag)
-				cfxZones.pollFlag(aZone.emptyFlag, 'inc', aZone)
-			end 
-			--]]--
-			
+			-- see if we need to bang a flag 			
 			if aZone.emptyBangFlag then 
 				aZone:pollFlag(aZone.emptyBangFlag, aZone.cloneMethod)
 				if cloneZones.verbose then 
@@ -2049,8 +2123,6 @@ end
 		- FAC Assign group 
 	- set freq for unit 
 	
-	-- fixedName: immutable name, no safe renaming. always use ID and name without changing it. very special use case.
 	nameTest - optional safety / debug feature that will name-test each unit that is about to be spawned for replacement. Maybe auto turn on when verbose is set?
-	identical - make a clone of template and do not touch name nor id. will fully replace 
 	make example where transport can be different plane types but have same name 
 --]]--

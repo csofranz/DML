@@ -15,6 +15,10 @@ raiseFlag.flags = {}
 	1.1.0 - DML update
 	1.2.0 - Watchflag update 
 	1.2.1 - support for 'inc', 'dec', 'flip'
+	2.0.0 - dmlZones
+	      - full method support  
+		  - full DML upgrade 
+		  - method attribute (synonym to 'value' 
 	
 --]]--
 function raiseFlag.addRaiseFlag(theZone)
@@ -43,22 +47,28 @@ function raiseFlag.createRaiseFlagWithZone(theZone)
 		theZone.raiseFlag = cfxZones.getStringFromZoneProperty(theZone, "raiseFlag!", "<none>") -- the flag to raise 
 	end 
 	
-	theZone.flagValue = cfxZones.getStringFromZoneProperty(theZone, "value", "inc") -- value to set to. default is command 'inc' 
+	-- pre-method DML raiseFlag is now upgraded to method.
+	-- flagValue now carries the method
+	if theZone:hasProperty("value") then -- backward compatibility
+		theZone.flagValue = theZone:getStringFromZoneProperty("value", "inc") -- value to set to. default is command 'inc'
+	else 
+		theZone.flagValue = theZone:getStringFromZoneProperty("method", "inc")
+	end
 	theZone.flagValue = theZone.flagValue:lower()
 
-	theZone.minAfterTime, theZone.maxAfterTime = cfxZones.getPositiveRangeFromZoneProperty(theZone, "afterTime", -1)
+	theZone.minAfterTime, theZone.maxAfterTime = theZone:getPositiveRangeFromZoneProperty("afterTime", -1)
 
 	-- method for triggering 
 	-- watchflag:
 	-- triggerMethod
-	theZone.raiseTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "raiseTriggerMethod") then 
-		theZone.raiseTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "raiseTriggerMethod", "change")
+	theZone.raiseTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if theZone:hasProperty("raiseTriggerMethod") then 
+		theZone.raiseTriggerMethod = theZone:getStringFromZoneProperty("raiseTriggerMethod", "change")
 	end
 
-	if cfxZones.hasProperty(theZone, "stopFlag?") then 
-		theZone.triggerStopFlag = cfxZones.getStringFromZoneProperty(theZone, "stopFlag?", "none")
-		theZone.lastTriggerStopValue = cfxZones.getFlagValue(theZone.triggerStopFlag, theZone) -- save last value
+	if theZone:hasProperty("stopFlag?") then 
+		theZone.triggerStopFlag = theZone:getStringFromZoneProperty( "stopFlag?", "none")
+		theZone.lastTriggerStopValue = theZone:getFlagValue(theZone.triggerStopFlag) -- save last value
 	end
 	
 	theZone.scheduleID = nil 
@@ -80,6 +90,12 @@ function raiseFlag.triggered(args)
 	if theZone.raiseStopped then return end 
 	-- if we get here, we aren't stopped and do the flag pull
 	local command = theZone.flagValue
+	theZone:pollFlag(theZone.raiseFlag, command)
+	if raiseFlag.verbose or theZone.verbose then 
+		trigger.action.outText("+++rFlg - raising <" .. theZone.raiseFlag .. "> with method '" .. command .. "'" ,30)
+	end
+		
+	--[[--	
 	command = dcsCommon.trim(command)
 	if command == "inc" or command == "dec" or command == "flip" then 
 		cfxZones.pollFlag(theZone.raiseFlag, command, theZone)
@@ -92,6 +108,7 @@ function raiseFlag.triggered(args)
 			trigger.action.outText("+++rFlg - raising <" .. theZone.raiseFlag .. "> to value: " .. theZone.flagValue ,30)
 		end
 	end
+	--]]--
 end
 
 --
@@ -103,20 +120,10 @@ function raiseFlag.update()
 		
 	for idx, aZone in pairs(raiseFlag.flags) do
 		-- make sure to re-start before reading time limit
-		if cfxZones.testZoneFlag(aZone, aZone.triggerStopFlag, aZone.raiseTriggerMethod, "lastTriggerStopValue") then
+		if aZone:testZoneFlag(aZone.triggerStopFlag, aZone.raiseTriggerMethod, "lastTriggerStopValue") then
 			theZone.raiseStopped = true -- we are done, no flag! 
 		end
 		
-		-- old code 
-		--[[--
-		if aZone.triggerStopFlag then 
-			local currTriggerVal = cfxZones.getFlagValue(aZone.triggerStopFlag, theZone)
-			if currTriggerVal ~= aZone.lastTriggerStopValue
-			then 
-				theZone.raiseStopped = true -- we are done, no flag! 
-			end
-		end
-		--]]--
 	end
 end
 
@@ -127,13 +134,10 @@ end
 function raiseFlag.readConfigZone()
 	local theZone = cfxZones.getZoneByName("raiseFlagConfig") 
 	if not theZone then 
-		if raiseFlag.verbose then 
-			trigger.action.outText("+++rFlg: NO config zone!", 30)
-		end 
-		return 
+		theZone = cfxZones.createSimpleZone("raiseFlagConfig")
 	end 
 	
-	raiseFlag.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	raiseFlag.verbose = theZone.verbose
 	
 	if raiseFlag.verbose then 
 		trigger.action.outText("+++rFlg: read config", 30)
@@ -178,6 +182,3 @@ if not raiseFlag.start() then
 	trigger.action.outText("cfx Raise Flag aborted: missing libraries", 30)
 	raiseFlag = nil 
 end
-
--- add rnd(a,b) support to value 
--- better: if value is a range, make it a random. problem: negative values are legal, so we need formula

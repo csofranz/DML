@@ -1,5 +1,5 @@
 airfield = {}
-airfield.version = "1.0.0"
+airfield.version = "1.1.0"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -15,15 +15,21 @@ airfield.farps = false
 	
 	Version History
 	1.0.0 - initial release 
-	
+	1.1.0 - added 'fixed' attribute
+		  - added 'farps' attribute to individual zones 
+		  - allow zone.local farps designation 
+	      - always checks farp cap events 
+		  - added verbosity
 --]]--
 
 --
 -- setting up airfield
 --
 function airfield.createAirFieldFromZone(theZone)
+	theZone.farps = theZone:getBoolFromZoneProperty("farps", false)
+
 	local filterCat = 0
-	if airfield.farps then filterCat = {0, 1} end -- bases and farps
+	if (airfield.farps or theZone.farps) then filterCat = {0, 1} end -- bases and farps
 	local p = theZone:getPoint()
 	local theBase = dcsCommon.getClosestAirbaseTo(p, filterCat)
 	theZone.airfield = theBase
@@ -72,11 +78,25 @@ function airfield.createAirFieldFromZone(theZone)
 		trigger.action.setUserFlag(theZone.ownedBy, theZone.owner)
 	end
 	
+	-- if fixed attribute, we switch to that color and keep it fixed.
+	-- can be overridden by either makeXX or autoCap.
+	if theZone:hasProperty("fixed") then 
+		local theFixed = theZone:getCoalitionFromZoneProperty("fixed")
+		local theAirfield = theZone.airfield
+		airfield.assumeControl(theZone) -- turn off capturable 
+		theAirfield:setCoalition(theFixed)
+		theZone.owner = theFixed
+	end
+	
 	-- index by name, and warn if duplicate associate 
 	if airfield.myAirfields[theZone.afName] then 
 		trigger.action.outText("+++airF: WARNING - zone <" .. theZone:getName() .. "> redefines airfield <" .. theZone.afName .. ">, discarded!", 30)
 	else 
 		airfield.myAirfields[theZone.afName] = theZone
+	end
+	
+	if theZone.verbose or airfield.verbose then 
+		trigger.action.outText("+++airF: airfield zone <" .. theZone.name .. "> associates with <" .. theZone.afName .. ">, current owner is <" .. theZone.owner .. ">", 30)
 	end
 end
 
@@ -137,14 +157,14 @@ function airfield:onEvent(event)
 		local desc = theBase:getDesc()
 		local bName = theBase:getName()
 		local cat = desc.category -- never get cat directly!
-		if cat == 1 then 
+--[[--		if cat == 1 then 
 			if not airfield.farps then 
 				if airfield.verbose then 
 					trigger.action.outText("+++airF: ignored cap event for FARP <" .. bName .. ">", 30)
 				end
 				return
 			end
-		end
+		end --]]
 		if airfield.verbose then 
 			trigger.action.outText("+++airF: cap event for <" .. bName .. ">, cat = (" .. cat .. ")", 30)
 		end

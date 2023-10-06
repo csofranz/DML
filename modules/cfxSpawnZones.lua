@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "1.7.5"
+cfxSpawnZones.version = "2.0.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -68,27 +68,10 @@ cfxSpawnZones.spawnedGroups = {}
    1.7.4 - wait-attackZone fixes
    1.7.5 - improved verbosity on spawning 
          - getRequestableSpawnersInRange() ignores height for distance 
-
-  
-  - types    - type strings, comma separated 
- see here: https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
-
-  - country  - defaults to 2 (usa) -- see here https://wiki.hoggitworld.com/view/DCS_enum_country
-    some important: 0 = Russia, 2 = US, 82 = UN neutral
-    country is converted to coalition and then assigned to
-    Joint Task Force <side> upon spawn
-
-  - formation - default is  circle_out; other formations are 
-	- line - left lo right (west-east) facing north
-    - line_V - vertical line, facing north
-    - chevron - west-east, point growing to north 
-    - scattered, random
-    - circle, circle_forward (all fact north)
-	- circle-in (all face in)
-    - circle-out (all face out)
-    - grid, square, rect arrayed in optimal grid
-    - 2deep, 2cols two columns, deep 
-    - 2wide 2 columns wide (2 deep) 
+   2.0.0 - dmlZones
+		 - moved "types" to spawner 
+		 - baseName defaults to zone name, as it is safe for naming
+         - spawnWithSpawner direct link in spawner to spawnZones
   --]]--
   
 cfxSpawnZones.allSpawners = {}
@@ -115,103 +98,101 @@ function cfxSpawnZones.createSpawner(inZone)
 	local theSpawner = {}
 	theSpawner.zone = inZone
 	theSpawner.name = inZone.name 
-	
+	theSpawner.spawnWithSpawner = cfxSpawnZones.spawnWithSpawner
 	-- interface to groupTracker 
 	-- WARNING: attaches to ZONE, not spawner object
-	if cfxZones.hasProperty(inZone, "trackWith:") then 
-		inZone.trackWith = cfxZones.getStringFromZoneProperty(inZone, "trackWith:", "<None>")
+	if inZone:hasProperty("trackWith:") then 
+		inZone.trackWith = inZone:getStringFromZoneProperty("trackWith:", "<None>")
 	end
 	
 	-- interface to delicates 
-	if cfxZones.hasProperty(inZone, "useDelicates") then 
-		theSpawner.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>"))
+	if inZone:hasProperty("useDelicates") then 
+		theSpawner.delicateName = dcsCommon.trim(inZone:getStringFromZoneProperty("useDelicates", "<none>"))
 		if theSpawner.delicateName == "*" then theSpawner.delicateName = inZone.name end 
 	end
 	
-	
 	-- connect with ME if a trigger flag is given 
-	if cfxZones.hasProperty(inZone, "f?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
+	if inZone:hasProperty("f?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty("f?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	elseif inZone:hasProperty("spawn?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty("spawn?", "none")
+		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
+	elseif inZone:hasProperty("spawnUnits?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty( "spawnObject?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	
-	-- synonyms spawn? and spawnObject?
-	if cfxZones.hasProperty(inZone, "spawn?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
-		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
-	end
-	
-	if cfxZones.hasProperty(inZone, "spawnUnits?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObject?", "none")
-		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
-	end
-	
-	if cfxZones.hasProperty(inZone, "activate?") then 
-		theSpawner.activateFlag = cfxZones.getStringFromZoneProperty(inZone, "activate?", "none")
+	if inZone:hasProperty("activate?") then 
+		theSpawner.activateFlag = inZone:getStringFromZoneProperty( "activate?", "none")
 		theSpawner.lastActivateValue = trigger.misc.getUserFlag(theSpawner.activateFlag)
 	end
 	
-	if cfxZones.hasProperty(inZone, "pause?") then 
-		theSpawner.pauseFlag = cfxZones.getStringFromZoneProperty(inZone, "pause?", "none")
+	if inZone:hasProperty("pause?") then 
+		theSpawner.pauseFlag = inZone:getStringFromZoneProperty("pause?", "none")
 		theSpawner.lastPauseValue = trigger.misc.getUserFlag(theSpawner.pauseFlag)
 	end
 	
-	theSpawner.types = cfxZones.getZoneProperty(inZone, "types")
-	--theSpawner.owner = cfxZones.getCoalitionFromZoneProperty(inZone, "owner", 0)
-	-- synthesize types * typeMult
-	local n = cfxZones.getNumberFromZoneProperty(inZone, "typeMult", 1)
-	local repeater = ""
-	if n < 1 then n = 1 end 
-	while n > 1 do 
-		repeater = repeater .. "," .. theSpawner.types
-		n = n - 1
+	if inZone:hasProperty("types") then 
+		theSpawner.types = inZone:getStringFromZoneProperty("types", "Soldier M4")
+	else 
+		theSpawner.types = inZone:getStringFromZoneProperty("spawner", "Soldier M4")
 	end
-	theSpawner.types = theSpawner.types .. repeater 
+	-- synthesize types * typeMult
+	if inZone:hasProperty("typeMult") then 
+		local n = inZone:getNumberFromZoneProperty("typeMult", 1)
+		local repeater = ""
+		if n < 1 then n = 1 end 
+		while n > 1 do 
+			repeater = repeater .. "," .. theSpawner.types
+			n = n - 1
+		end
+		theSpawner.types = theSpawner.types .. repeater 
+	end
 	
-	theSpawner.country = cfxZones.getNumberFromZoneProperty(inZone, "country", 0) -- coalition2county(theSpawner.owner)
-	theSpawner.masterZoneName = cfxZones.getStringFromZoneProperty(inZone, "masterOwner", "")
-	if theSpawner.masterZoneName == "" then theSpawner.masterZoneName = nil end 
+	theSpawner.country = inZone:getNumberFromZoneProperty("country", 0)
+	if inZone:hasProperty("masterOwner") then 
+		theSpawner.masterZoneName = inZone:getStringFromZoneProperty("masterOwner", "")
+		if theSpawner.masterZoneName == "" then theSpawner.masterZoneName = nil end 
+	end 
 	
 	theSpawner.rawOwner = coalition.getCountryCoalition(theSpawner.country)
-	--theSpawner.baseName = cfxZones.getZoneProperty(inZone, "baseName")
-	theSpawner.baseName = cfxZones.getStringFromZoneProperty(inZone, "baseName", dcsCommon.uuid("SpwnDflt"))
+	-- theSpawner.baseName = inZone:getStringFromZoneProperty("baseName", dcsCommon.uuid("SpwnDflt"))
+	theSpawner.baseName = inZone:getStringFromZoneProperty("baseName", "*")
 	theSpawner.baseName = dcsCommon.trim(theSpawner.baseName)
 	if theSpawner.baseName == "*" then 
 		theSpawner.baseName = inZone.name -- convenience shortcut
 	end
 	
-	theSpawner.cooldown = cfxZones.getNumberFromZoneProperty(inZone, "cooldown", 60)
-	theSpawner.autoRemove = cfxZones.getBoolFromZoneProperty(inZone, "autoRemove", false)
-	theSpawner.lastSpawnTimeStamp = -10000 -- just init so it will always work
-	theSpawner.heading = cfxZones.getNumberFromZoneProperty(inZone, "heading", 0)
-	--trigger.action.outText("+++spwn: zone " .. inZone.name .. " owner " .. theSpawner.owner " --> ctry " .. theSpawner.country, 30)
-	
+	theSpawner.cooldown = inZone:getNumberFromZoneProperty("cooldown", 60)
+	theSpawner.autoRemove = inZone:getBoolFromZoneProperty("autoRemove", false)
+	theSpawner.lastSpawnTimeStamp = -10000 -- init so it will always work
+	theSpawner.heading = inZone:getNumberFromZoneProperty("heading", 0)	
 	theSpawner.cdTimer = 0 -- used for cooldown. if timer.getTime < this value, don't spawn
 	theSpawner.cdStarted = false -- used to initiate cooldown when theSpawn disappears
 	theSpawner.count = 1 -- used to create names, and count how many groups created
 	theSpawner.theSpawn = nil -- link to last spawned group
-	theSpawner.formation = "circle_out"
-	theSpawner.formation = cfxZones.getStringFromZoneProperty(inZone, "formation", "circle_out")
-	theSpawner.paused = cfxZones.getBoolFromZoneProperty(inZone, "paused", false)
+	theSpawner.formation = inZone:getStringFromZoneProperty("formation", "circle_out")
+	theSpawner.paused = inZone:getBoolFromZoneProperty("paused", false)
 	-- orders are always converted to all lower case 
-	theSpawner.orders = cfxZones.getStringFromZoneProperty(inZone, "orders", "guard"):lower() 
+	theSpawner.orders = inZone:getStringFromZoneProperty("orders", "guard"):lower() 
 	-- used to assign orders, default is 'guard', use "laze" to make them laze targets. can be 'wait-' which may auto-convert to 'guard' after pick-up by helo, to be handled outside.
 	-- use "train" to tell them to HOLD WEAPONS, don't move and don't participate in loop, so we have in effect target dummies
 	-- can also use order 'dummy' or 'dummies' to switch to train
 	if theSpawner.orders:lower() == "dummy" or theSpawner.orders:lower() == "dummies" then theSpawner.orders = "train" end 
 	if theSpawner.orders:lower() == "training" then theSpawner.orders = "train" end 
 	
-	theSpawner.range = cfxZones.getNumberFromZoneProperty(inZone, "range", 300) -- if we have a range, for example enemy detection for Lasing or engage range
-	theSpawner.maxSpawns = cfxZones.getNumberFromZoneProperty(inZone, "maxSpawns", -1) -- if there is a limit on how many troops can spawn. -1 = endless spawns
-	theSpawner.requestable = cfxZones.getBoolFromZoneProperty(inZone, "requestable", false)
+	theSpawner.range = inZone:getNumberFromZoneProperty("range", 300) -- if we have a range, for example enemy detection for Lasing or engage range
+	theSpawner.maxSpawns = inZone:getNumberFromZoneProperty("maxSpawns", -1) -- if there is a limit on how many troops can spawn. -1 = endless spawns
+	theSpawner.requestable = inZone:getBoolFromZoneProperty( "requestable", false)
 	if theSpawner.requestable then 
 		theSpawner.paused = true 
 		if inZone.verbose or cfxSpawnZones.verbose then 
 			trigger.action.outText("+++spwn: spawner <" .. inZone.name .. "> paused: requestable enabled", 30)
 		end
 	end
-	if cfxZones.hasProperty(inZone, "target") then 
-		theSpawner.target = cfxZones.getStringFromZoneProperty(inZone, "target", "")
+	if inZone:hasProperty("target") then 
+		theSpawner.target = inZone:getStringFromZoneProperty("target", "")
 		if theSpawner.target == "" then -- this is the defaut case 
 			theSpawner.target = nil 
 		end

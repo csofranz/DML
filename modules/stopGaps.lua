@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.0.8"
+stopGap.version = "1.0.9"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
