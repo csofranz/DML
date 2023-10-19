@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.0.0"
+cfxSpawnZones.version = "2.0.1"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -72,6 +72,7 @@ cfxSpawnZones.spawnedGroups = {}
 		 - moved "types" to spawner 
 		 - baseName defaults to zone name, as it is safe for naming
          - spawnWithSpawner direct link in spawner to spawnZones
+   2.0.1 - fix in verifySpawnOwnership() when not master zone found 
   --]]--
   
 cfxSpawnZones.allSpawners = {}
@@ -275,6 +276,7 @@ function cfxSpawnZones.verifySpawnOwnership(spawner)
 	local masterZone = cfxZones.getZoneByName(spawner.masterZoneName)
 	if not masterZone then 
 		trigger.action.outText("spawner " .. spawner.name .. " DID NOT FIND MASTER ZONE <" .. spawner.masterZoneName .. ">", 30)
+		return false 
 	end
 	
 	if not masterZone.owner then 

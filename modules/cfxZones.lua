@@ -1,117 +1,14 @@
 cfxZones = {}
-cfxZones.version = "4.0.5"
+cfxZones.version = "4.0.7"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
 -- by scripting.
 --
--- Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
+-- Copyright (c) 2021 - 2023 by Christian Franz and cf/x AG
 --
 
 --[[-- VERSION HISTORY
- - 2.2.4 - getCoalitionFromZoneProperty
-         - getStringFromZoneProperty
- - 2.2.5 - createGroundUnitsInZoneForCoalition corrected coalition --> country 
- - 2.2.6 - getVectorFromZoneProperty(theZone, theProperty, defaultVal)
- - 2.2.7 - allow 'yes' as 'true' for boolean attribute 
- - 2.2.8 - getBoolFromZoneProperty supports default 
-		 - cfxZones.hasProperty
- - 2.3.0 - property names are case insensitive 
- - 2.3.1 - getCoalitionFromZoneProperty allows 0, 1, 2 also
- - 2.4.0 - all zones look for owner attribute, and set it to 0 (neutral) if not present 
- - 2.4.1 - getBoolFromZoneProperty upgraded by expected bool 
-         - markZoneWithSmoke raised by 3 meters
- - 2.4.2 - getClosestZone also returns delta 
- - 2.4.3 - getCoalitionFromZoneProperty() accepts 'all' as neutral 
-		   createUniqueZoneName()
-		   getStringFromZoneProperty returns default if property value = ""
-		   corrected bug in addZoneToManagedZones
- - 2.4.4 - getPoint(aZone) returns uip-to-date pos for linked and normal zones
-         - linkUnit can use "useOffset" property to keep relative position
- - 2.4.5 - updated various methods to support getPoint when referencing 
-           zone.point  
- - 2.4.6 - corrected spelling in markZoneWithSmoke
- - 2.4.7 - copy reference to dcs zone into cfx zone 
- - 2.4.8 - getAllZoneProperties
- - 2.4.9 - createSimpleZone no longer requires location 
-         - parse dcs adds empty .properties = {} if none tehre 
-		 - createCircleZone adds empty properties 
-		 - createPolyZone adds empty properties 
- - 2.4.10 - pickRandomZoneFrom now defaults to all cfxZones.zones
-	      - getBoolFromZoneProperty also recognizes 0, 1
-		  - removed autostart
- - 2.4.11 - removed typo in get closest zone 
- - 2.4.12 - getStringFromZoneProperty
- - 2.5.0  - harden getZoneProperty and all getPropertyXXXX
- - 2.5.1  - markZoneWithSmoke supports alt attribute 
- - 2.5.2  - getPoint also writes through to zone itself for optimization
-          - new method getPositiveRangeFromZoneProperty(theZone, theProperty, default)
- - 2.5.3  - new getAllGroupsInZone()
- - 2.5.4  - cleaned up getZoneProperty break on no properties 
-		  - extractPropertyFromDCS trims key and property 
- - 2.5.5  - pollFlag() centralized for banging 
-          - allStaticsInZone
- - 2.5.6  - flag accessor setFlagValue(), getFlagValue()  
-		  - pollFlag supports theZone as final parameter
-		  - randomDelayFromPositiveRange
-		  - isMEFlag
- - 2.5.7  - pollFlag supports dml flags
- - 2.5.8  - flagArrayFromString
-		  - getFlagNumber invokes tonumber() before returning result 
- - 2.5.9  - removed pass-back flag in getPoint() 
- - 2.6.0  - testZoneFlag() method based flag testing
- - 2.6.1  - Watchflag parsing of zone condition for number-named flags
-          - case insensitive
-		  - verbose for zone-local accepted (but not acted upon)
-		  - hasProperty now offers active information when looking for '*?' and '*!'
- - 2.7.0  - doPollFlag - fully support multiple flags per bang!
- - 2.7.1  - setFlagValueMult()
- - 2.7.2  - '261 repair'
- - 2.7.3  - testZoneFlag returns mathodResult, lastVal
-          - evalFlagMethodImmediate()
- - 2.7.4  - doPollFlag supports immediate number setting 
- - 2.7.5  - more QoL checks when mixing up ? and ! for attributes
- - 2.7.6  - trim for getBoolFromZoneProperty and getStringFromZoneProperty
- - 2.7.7  - randomInRange()
-          - show number of zones 
- - 2.7.8  - inc method now triggers if curr value > last value 
-          - dec method noew triggers when curr value < last value 
-		  - testFlagByMethodForZone supports lohi, hilo transitions 
-		  - doPollFlag supports 'pulse'
-		  - pulseFlag
-		  - unpulse 
-- 2.7.9   - getFlagValue QoL for <none>
-          - setFlagValue QoL for <none>
-- 2.8.0	  - new allGroupNamesInZone()
-- 2.8.1   - new zonesLinkedToUnit()  
-- 2.8.2   - flagArrayFromString trims elements before range check 
-- 2.8.3   - new verifyMethod()
-          - changed extractPropertyFromDCS() to also match attributes with blanks like "the Attr" to "theAttr"
-		  - new expandFlagName()
-- 2.8.4   - fixed bug in setFlagValue()
-- 2.8.5   - createGroundUnitsInZoneForCoalition() now always passes back a copy of the group data 
-          - data also contains cty = country and cat = category for easy spawn
-          - getFlagValue additional zone name guards 
-- 2.8.6   - fix in getFlagValue for missing delay 
-- 2.8.7   - update isPointInsideZone(thePoint, theZone, radiusIncrease) - new radiusIncrease
-          - isPointInsideZone() returns delta as well
-- 2.9.0   - linked zones can useOffset and useHeading 
-		  - getPoint update 
-		  - pointInZone understands useOrig
-		  - allStaticsInZone supports useOrig 
-		  - dPhi for zones with useHeading 
-		  - uHdg for zones with useHading, contains linked unit's original heading
-		  - Late-linking implemented:
-		  - linkUnit works for late-activating units 
-		  - linkUnit now also works for player / clients, dynamic (re-)linking 
-		  - linkUnit uses zone's origin for all calculations 
-- 2.9.1   - new evalRemainder()
-		  - pollFlag supports +/- for immediate numbers, flags, number flags in parantheses
-		  - stronger guards in hasProperty 
-- 2.9.2   - new createRandomPointInPolyZone()
-          - createRandomZoneInZone uses createRandomPointInPolyZone
-		  - new createRandomPointInZone()
-		  - new randomPointInZone()
 - 3.0.0   - support for DCS 2.8 linkUnit attribute, integration with 
             linedUnit and warning.
 		  - initZoneVerbosity()
@@ -157,6 +54,8 @@ cfxZones.version = "4.0.5"
 		  - doSetFlagValue optimizations 
 - 4.0.5   - dynamicAB wildcard 
 		  - processDynamicValueVU
+- 4.0.6   - hash mark forgotten QoL
+- 4.0.7   - drawZone()
 
 --]]--
 
@@ -2209,6 +2108,30 @@ end
 
 
 --
+-- Drawing a Zone
+--
+
+function cfxZones.drawZone(theZone, lineColor, fillColor, markID)
+	if not theZone then return 0 end 
+	if not lineColor then lineColor = {0.8, 0.8, 0.8, 1.0} end
+	if not fillColor then fillColor = {0.8, 0.8, 0.8, 0.2} end 
+	if not markID then markID = dcsCommon.numberUUID() end 
+	
+	if theZone.isCircle then 
+		trigger.action.circleToAll(-1, markID, theZone.point, theZone.radius, lineColor, fillColor, 1, true, "")
+	else 
+		local poly = theZone.poly
+		trigger.action.quadToAll(-1, markID, poly[4], poly[3], poly[2], poly[1], lineColor, fillColor, 1, true, "") -- note: left winding to get fill color
+	end
+	
+	return markID
+end
+
+function dmlZone:drawZone(lineColor, fillColor, markID)
+	return cfxZones.drawZone(self, lineColor, fillColor, markID)
+end
+
+--
 -- ===================
 -- PROPERTY PROCESSING
 -- =================== 
@@ -2440,6 +2363,14 @@ function cfxZones.hasProperty(theZone, theProperty)
 			local lessOp = theProperty:sub(1,-2)
 			if cfxZones.getZoneProperty(theZone, lessOp) ~= nil then 
 				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be missing a colon (':') at end", 30)
+			end
+			return false 
+		end
+		
+		if string.sub(theProperty, -1) == "#" then 
+			local lessOp = theProperty:sub(1,-2)
+			if cfxZones.getZoneProperty(theZone, lessOp) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. theZone.name .. "'s property <" .. lessOp .. "> may be missing a hash mark ('#') at end", 30)
 			end
 			return false 
 		end

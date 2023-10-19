@@ -1444,11 +1444,11 @@ function cfxPlayerScore.start()
 	-- identify and process a score table zones
 	local theZone = cfxZones.getZoneByName("playerScoreTable") 
 	if not theZone then 
-		trigger.action.outText("+++scr: no score table!", 30) 
+--		trigger.action.outText("+++scr: no score table!", 30) 
 	else 
 		-- read all into my types registry, replacing whatever is there
 		cfxPlayerScore.typeScore = cfxZones.getAllZoneProperties(theZone)
-		trigger.action.outText("+++scr: read score table", 30) 
+--		trigger.action.outText("+++scr: read score table", 30) 
 	end 
 	
 	-- read score tiggers and values
@@ -1486,7 +1486,7 @@ function cfxPlayerScore.start()
 	-- now read my config zone 
 	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
 	if not theZone then 
-		trigger.action.outText("+++pScr: no config!", 30) 
+--		trigger.action.outText("+++pScr: no config!", 30) 
 		theZone = cfxZones.createSimpleZone("playerScoreConfig")
 	end 
 	cfxPlayerScore.readConfigZone(theZone)

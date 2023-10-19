@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.3.0"
+messenger.version = "2.3.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -68,6 +68,7 @@ messenger.messengers = {}
 			unit as reference point for relative wildcards. Always broadcasts to coalition. Can be used to broadcase 'eye in the sky' type information
 		  - fixed verbosity bug 
 	2.3.0 - cfxZones OOP switch
+	2.3.1 - triggering message AFTER the on/off switches are tested
 	
 --]]--
 
@@ -444,14 +445,7 @@ function messenger.update()
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
-		if aZone:testZoneFlag(aZone.triggerMessagerFlag, aZone.msgTriggerMethod, "lastMessageTriggerValue") then 
-			if messenger.verbose or aZone.verbose then 
-					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
-				end
-			messenger.isTriggered(aZone)
-		end 
 		
-		-- old trigger code 		
 		if aZone:testZoneFlag(aZone.messageOffFlag, aZone.msgTriggerMethod, "lastMessageOff") then 
 			aZone.messageOff = true
 			if messenger.verbose or aZone.verbose then 
@@ -465,6 +459,15 @@ function messenger.update()
 				trigger.action.outText("+++msg: messenger <" .. aZone.name .. "> turned ON", 30)
 			end
 		end
+
+		if aZone:testZoneFlag(aZone.triggerMessagerFlag, aZone.msgTriggerMethod, "lastMessageTriggerValue") then 
+			if messenger.verbose or aZone.verbose then 
+					trigger.action.outText("+++msgr: triggered on in? for <".. aZone.name ..">", 30)
+				end
+			messenger.isTriggered(aZone)
+		end 
+
+
 	end
 end
 

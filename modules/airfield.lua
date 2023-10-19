@@ -1,5 +1,5 @@
 airfield = {}
-airfield.version = "1.1.0"
+airfield.version = "1.1.2"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -7,7 +7,7 @@ airfield.requiredLibs = {
 airfield.verbose = false 
 airfield.myAirfields = {} -- indexed by name 
 airfield.farps = false 
-
+airfield.gracePeriod = 3
 --[[--
 	This module generates signals when the nearest airfield changes hands, 
 	can force the coalition of an airfield, and always provides the 
@@ -20,12 +20,17 @@ airfield.farps = false
 		  - allow zone.local farps designation 
 	      - always checks farp cap events 
 		  - added verbosity
+	1.1.1 - GC grace period correction of ownership 
+	1.1.2 - 'show' attribute 
+			line color attributes per zone 
+			line color defaults in config
 --]]--
 
 --
 -- setting up airfield
 --
 function airfield.createAirFieldFromZone(theZone)
+--trigger.action.outText("Enter airfield for <" .. theZone.name  .. ">", 30)
 	theZone.farps = theZone:getBoolFromZoneProperty("farps", false)
 
 	local filterCat = 0
@@ -34,17 +39,18 @@ function airfield.createAirFieldFromZone(theZone)
 	local theBase = dcsCommon.getClosestAirbaseTo(p, filterCat)
 	theZone.airfield = theBase
 	theZone.afName = theBase:getName() 
-	if airfield.verbose then 
-		trigger.action.outText("+++airF: zone <" .. theZone:getName() .. "> associates with <" .. theZone.afName .. ">", 30)
+	
+		-- set zone's owner 
+	theZone.owner = theBase:getCoalition()
+	theZone.mismatchCount = airfield.gracePeriod
+	if theZone.verbose or airfield.verbose then 
+		trigger.action.outText("+++airF: airfield zone <" .. theZone.name .. "> associates with <" .. theZone.afName .. ">, current owner is <" .. theZone.owner .. ">", 30)
 	end
 	
 	-- methods 
 	theZone.method = theZone:getStringFromZoneProperty("method", "inc")
 	theZone.triggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
-	
-	-- set zone's owner 
-	theZone.owner = theBase:getCoalition()
-	
+		
 	if theZone:hasProperty("red!") then 
 		theZone.redCap = theZone:getStringFromZoneProperty("red!")
 	end
@@ -90,14 +96,77 @@ function airfield.createAirFieldFromZone(theZone)
 	
 	-- index by name, and warn if duplicate associate 
 	if airfield.myAirfields[theZone.afName] then 
-		trigger.action.outText("+++airF: WARNING - zone <" .. theZone:getName() .. "> redefines airfield <" .. theZone.afName .. ">, discarded!", 30)
+		trigger.action.outText("+++airF: WARNING - zone <" .. theZone.name .. "> redefines airfield <" .. theZone.afName .. ">, discarded!", 30)
 	else 
 		airfield.myAirfields[theZone.afName] = theZone
 	end
 	
-	if theZone.verbose or airfield.verbose then 
-		trigger.action.outText("+++airF: airfield zone <" .. theZone.name .. "> associates with <" .. theZone.afName .. ">, current owner is <" .. theZone.owner .. ">", 30)
+	theZone.show = theZone:getBoolFromZoneProperty("show", false)
+	theZone.ownerMark = nil 
+	
+	-- individual colors, else default from config 
+	theZone.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", airfield.redLine)
+	theZone.redFill = theZone:getRGBAVectorFromZoneProperty("redFill", airfield.redFill)
+	theZone.blueLine = theZone:getRGBAVectorFromZoneProperty("blueLine", airfield.blueLine)
+	theZone.blueFill = theZone:getRGBAVectorFromZoneProperty("blueFill", airfield.blueFill)
+	theZone.neutralLine = theZone:getRGBAVectorFromZoneProperty("neutralLine", airfield.neutralLine)
+	theZone.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", airfield.neutralFill)
+	
+	airfield.showAirfield(theZone)
+	
+--trigger.action.outText("Exit airfield for <" .. theZone.name  .. ">", 30)
+	
+end
+
+function airfield.showAirfield(theZone)
+	if not theZone then return end  
+	if theZone.ownerMark then 
+		-- remove previous mark 
+		trigger.action.removeMark(theZone.ownerMark)
+		theZone.ownerMark = nil 
+	end 
+	if not theZone.show then return end -- we don't show in map
+	
+	local lineColor = theZone.redLine -- {1.0, 0, 0, 1.0} -- red  
+	local fillColor = theZone.redFill -- {1.0, 0, 0, 0.2} -- red 
+	local owner = theZone.owner
+	if owner == 2 then 
+		lineColor = theZone.blueLine -- {0.0, 0, 1.0, 1.0}
+		fillColor = theZone.blueFill -- {0.0, 0, 1.0, 0.2}
+	elseif owner == 0 or owner == 3 then 
+		lineColor = theZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
+		fillColor = theZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
+	
+	-- always center on airfield, always 2km radius
+	local markID = dcsCommon.numberUUID()
+	local radius = 2000 -- meters 
+	local p = theZone.airfield:getPoint()
+	-- if there are runways, we center on first runway 
+	local rws = theZone.airfield:getRunways()
+	if rws then -- all airfields and farps have runways, but that array isnt filled for FARPS
+		local rw1 = rws[1]
+		if rw1 then 
+			p.x = rw1.position.x 
+			p.z = rw1.position.z
+			if airfield.verbose or theZone.verbose then 
+				trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has rw1, x=" .. p.x .. ", z=" .. p.z, 30)
+			end
+		else 
+			if airfield.verbose or theZone.verbose then 
+				trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has no rw1", 30)
+			end
+		end
+	else 
+		if airfield.verbose or theZone.verbose then 
+			trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has no runways", 30)
+		end
+	end 
+	p.y = 0 
+	
+	trigger.action.circleToAll(-1, markID, p, radius, lineColor, fillColor, 1, true, "")
+	theZone.ownerMark = markID 
+	
 end
 
 function airfield.assumeControl(theZone)
@@ -131,6 +200,8 @@ function airfield.airfieldCaptured(theBase)
 	if theZone.verbose or airfield.verbose then 
 		trigger.action.outText("+++airF: handling capture event/command for airfield <" .. bName .. "> with zone <" .. theZone:getName() .. ">", 30)
 	end
+
+	airfield.showAirfield(theZone) -- show if enabled
 
 	-- outputs
 	if theZone.ownedBy then 
@@ -218,6 +289,39 @@ function airfield.update()
 	end
 end
 
+
+function airfield.GC()
+	timer.scheduleFunction(airfield.GC, {}, timer.getTime() + 2)
+	for afName, theZone in pairs(airfield.myAirfields) do 
+		local theAirfield = theZone.airfield
+		local afOwner = theAirfield:getCoalition()
+		if afOwner == theZone.owner then 
+			theZone.mismatchCount = airfield.gracePeriod
+			-- all quiet
+		elseif  afOwner == 3 then
+			-- contested
+			if theZone.verbose or airfield.verbose then 
+				trigger.action.outText("+++airF: airfield <" .. theZone.name .. ">: ownership is contested.", 30)
+			end
+		else 
+			if theZone.mismatchCount > 0 then 
+				if theZone.verbose or airfield.verbose then 
+					trigger.action.outText("we have a problem with owner for <" .. theZone.name .. ">: afO = <" .. afOwner .. ">, zo = <" .. theZone.owner .. ">, grace count = <" ..  theZone.mismatchCount..">", 30)
+				end
+				theZone.mismatchCount = theZone.mismatchCount - 1
+			else 
+				airfield.airfieldCaptured(theAirfield)
+				theZone.mismatchCount = airfield.gracePeriod
+				if theZone.verbose or airfield.verbose then 
+					trigger.action.outText("+++airF: corrected ownership after grace period", 30)
+				end
+			end
+
+		end
+	end
+
+end
+
 --
 -- LOAD / SAVE 
 -- 
@@ -289,6 +393,13 @@ function airfield.readConfig()
 	airfield.verbose = theZone.verbose 
 	airfield.farps = theZone:getBoolFromZoneProperty("farps", false)
 	
+	-- colors for line and fill 
+	airfield.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", {1.0, 0, 0, 1.0})
+	airfield.redFill = theZone:getRGBAVectorFromZoneProperty("redFill", {1.0, 0, 0, 0.2})
+	airfield.blueLine = theZone:getRGBAVectorFromZoneProperty("blueLine", {0.0, 0, 1.0, 1.0})
+	airfield.blueFill = theZone:getRGBAVectorFromZoneProperty("blueFill", {0.0, 0, 1.0, 0.2})
+	airfield.neutralLine = theZone:getRGBAVectorFromZoneProperty("neutralLine", {0.8, 0.8, 0.8, 1.0})
+	airfield.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", {0.8, 0.8, 0.8, 0.2})
 end
 
 function airfield.start()
@@ -319,6 +430,9 @@ function airfield.start()
 	
 	-- start update in 1 second 
 	timer.scheduleFunction(airfield.update, {}, timer.getTime() + 1)
+	
+	-- start GC 
+	timer.scheduleFunction(airfield.GC, {}, timer.getTime() + 2)
 	
 	trigger.action.outText("cfx airfield v" .. airfield.version .. " loaded.", 30)
 	return true 
