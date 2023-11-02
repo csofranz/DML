@@ -43,11 +43,7 @@ cfxOwnedZones.initialized = false
  owned zones is a module that manages conquerable zones and keeps a record
  of who owns the zone based on rules  
 
- 
- *** EXTENTDS ZONES ***, so compatible with cfxZones, pilotSafe (limited airframes), may conflict with FARPZones 
-
-
- owned zones are identified by the 'owner' property. It can be initially set to nothing (default), NEUTRAL, RED or BLUE
+ *** EXTENTDS ZONES ***
 
  when a zone changes hands, a callback can be installed to be told of that fact
  callback has the format (zone, newOwner, formerOwner) with zone being the Zone, and new owner and former owners

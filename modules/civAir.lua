@@ -98,10 +98,10 @@ function civAir.readConfigZone()
 		civAir.aircraftTypes = typeArray 
 	end
 	
-	if theZone:hasProperty("ups")  then 
+--	if theZone:hasProperty("ups")  then 
 		civAir.ups = theZone:getNumberFromZoneProperty("ups", 0.05)
 		if civAir.ups < .0001 then civAir.ups = 0.05 end
-	end
+--	end
 	
 	if theZone:hasProperty("maxTraffic")  then 
 		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxTraffic", 10)
@@ -109,15 +109,15 @@ function civAir.readConfigZone()
 		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxFlights", 10)
 	end
 	
-	if theZone:hasProperty("maxIdle")  then 
+--	if theZone:hasProperty("maxIdle")  then 
 		civAir.maxIdle = theZone:getNumberFromZoneProperty("maxIdle", 8 * 60)
-	end
+--	end
 	
-	if theZone:hasProperty("initialAirSpawns")  then 
+--	if theZone:hasProperty("initialAirSpawns")  then 
 		civAir.initialAirSpawns = theZone:getBoolFromZoneProperty( "initialAirSpawns", true) 
-	end
+--	end
 	
-	civAir.verbose = theZone.verbose -- cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 
+	civAir.verbose = theZone.verbose 
 end
 
 function civAir.processZone(theZone)

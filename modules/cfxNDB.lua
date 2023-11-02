@@ -1,5 +1,5 @@
 cfxNDB = {}
-cfxNDB.version = "1.2.1"
+cfxNDB.version = "1.3.0"
 
 --[[--
 	cfxNDB:
@@ -26,6 +26,7 @@ cfxNDB.version = "1.2.1"
 	      - update only when moving and delta > maxDelta 
 		  - zone-local verbosity support
 		  - better config defaulting 
+	1.3.0 - dmlZones 
 		  
 --]]--
 
@@ -104,42 +105,42 @@ function cfxNDB.stopNDB(theNDB)
 end
 
 function cfxNDB.createNDBWithZone(theZone)
-	theZone.freq = cfxZones.getNumberFromZoneProperty(theZone, "NDB", 124) -- in MHz
+	theZone.freq = theZone:getNumberFromZoneProperty("NDB", 124) -- in MHz
 	-- convert MHz to Hz
 	theZone.freq = theZone.freq * 1000000 -- Hz
-	theZone.fm = cfxZones.getBoolFromZoneProperty(theZone, "fm", false) 
-	theZone.ndbSound = cfxZones.getStringFromZoneProperty(theZone, "soundFile", "<none>")
-	theZone.power = cfxZones.getNumberFromZoneProperty(theZone, "watts", cfxNDB.power)
+	theZone.fm = theZone:getBoolFromZoneProperty("fm", false) 
+	theZone.ndbSound = theZone:getStringFromZoneProperty("soundFile", "<none>")
+	theZone.power = theZone:getNumberFromZoneProperty("watts", cfxNDB.power)
 	theZone.loop = true -- always. NDB always loops
 	-- UNSUPPORTED refresh. Although read individually, it only works 
 	-- when LARGER than module's refresh.
-	theZone.ndbRefresh = cfxZones.getNumberFromZoneProperty(theZone, "ndbRefresh", cfxNDB.refresh) -- only used if linked
+	theZone.ndbRefresh = theZone:getNumberFromZoneProperty("ndbRefresh", cfxNDB.refresh) -- only used if linked
 	theZone.ndbRefreshTime = timer.getTime() + theZone.ndbRefresh -- only used with linkedUnit, but set up nonetheless
 	
 	-- paused 
-	theZone.paused = cfxZones.getBoolFromZoneProperty(theZone, "paused", false) 
+	theZone.paused = theZone:getBoolFromZoneProperty("paused", false) 
 	
 	-- watchflags 
-	theZone.ndbTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "ndbTriggerMethod") then 
-		theZone.ndbTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "ndbTriggerMethod", "change")
+	theZone.ndbTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if theZone:hasProperty("ndbTriggerMethod") then 
+		theZone.ndbTriggerMethod = theZone:getStringFromZoneProperty("ndbTriggerMethod", "change")
 	end 
 	
 	-- on/offf query flags 
-	if cfxZones.hasProperty(theZone, "on?") then 
-		theZone.onFlag = cfxZones.getStringFromZoneProperty(theZone, "on?", "none")
+	if theZone:hasProperty("on?") then 
+		theZone.onFlag = theZone:getStringFromZoneProperty("on?", "none")
 	end
 	
 	if theZone.onFlag then 
-		theZone.onFlagVal = cfxZones.getFlagValue(theZone.onFlag, theZone) -- trigger.misc.getUserFlag(theZone.onFlag) -- save last value
+		theZone.onFlagVal = theZone:getFlagValue(theZone.onFlag) -- save last value
 	end
 	
-	if cfxZones.hasProperty(theZone, "off?") then 
-		theZone.offFlag = cfxZones.getStringFromZoneProperty(theZone, "off?", "none")
+	if theZone:hasProperty("off?") then 
+		theZone.offFlag = theZone:getStringFromZoneProperty("off?", "none")
 	end
 	
 	if theZone.offFlag then 
-		theZone.offFlagVal = cfxZones.getFlagValue(theZone.offFlag, theZone) --trigger.misc.getUserFlag(theZone.offFlag) -- save last value
+		theZone.offFlagVal = theZone:getFlagValue(theZone.offFlag) -- save last value
 	end
 	
 	-- start it 
@@ -170,7 +171,7 @@ function cfxNDB.update()
 				if not theNDB.lastLoc then 
 					cfxNDB.startNDB(theNDB) -- never was started 
 				else 
-					local loc = cfxZones.getPoint(theNDB) -- y === 0
+					local loc = theNDB:getPoint() -- y === 0
 					loc.y = land.getHeight({x = loc.x, y = loc.z}) -- get y from land
 					local delta = dcsCommon.dist(loc, theNDB.lastLoc)
 					if delta > cfxNDB.maxDist then 
@@ -182,17 +183,15 @@ function cfxNDB.update()
 		end
 		
 		-- now check triggers to start/stop 
-		if cfxZones.testZoneFlag(theNDB, theNDB.onFlag, theNDB.ndbTriggerMethod, "onFlagVal") then
+		if theNDB:testZoneFlag(theNDB.onFlag, theNDB.ndbTriggerMethod, "onFlagVal") then
 			-- yupp, trigger start 
 			cfxNDB.startNDB(theNDB)
 		end
 		
-		
-		if cfxZones.testZoneFlag(theNDB, theNDB.offFlag, theNDB.ndbTriggerMethod, "offFlagVal") then
+		if theNDB:testZoneFlag(theNDB.offFlag, theNDB.ndbTriggerMethod, "offFlagVal") then
 			-- yupp, trigger start 
 			cfxNDB.stopNDB(theNDB)
 		end 
-		
 	end
 end
 
@@ -205,10 +204,10 @@ function cfxNDB.readConfig()
 		theZone = cfxZones.createSimpleZone("ndbConfig")
 	end 
 	
-	cfxNDB.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false) 	
-	cfxNDB.ndbRefresh = cfxZones.getNumberFromZoneProperty(theZone, "ndbRefresh", 10)
+	cfxNDB.verbose = theZone.verbose 
+	cfxNDB.ndbRefresh = theZone:getNumberFromZoneProperty("ndbRefresh", 10)
 	
-	cfxNDB.maxDist = cfxZones.getNumberFromZoneProperty(theZone, "maxDist", 50) -- max 50m error for movement
+	cfxNDB.maxDist = theZone:getNumberFromZoneProperty("maxDist", 50) -- max 50m error for movement
 	
 	if cfxNDB.verbose then 
 		trigger.action.outText("***ndb: read config", 30) 

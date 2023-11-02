@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.1.0"
+radioMenu.version = "2.1.1"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -31,6 +31,7 @@ radioMenu.menus = {}
 			ackA, ackB, ackC, ackD attributes 
 			valA-D now define full method, not just values 
 			full wildcard support for ack and cooldown 
+	2.1.1 - outMessage now works correctly 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -355,7 +356,7 @@ function radioMenu.radioOutMsg(ack, gid, theZone)
 	-- group processing. only if gid>0 and cfxMX 
 	local theMsg = ack
 	if (gid > 0) and cfxMX then 
-		local gName = cfxMX.cfxMX.groupNamesByID[gid]
+		local gName = cfxMX.groupNamesByID[gid]
 		theMsg = theMsg:gsub("<group>", gName)
 	end
 

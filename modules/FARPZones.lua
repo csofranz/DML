@@ -22,8 +22,6 @@ FARPZones.verbose = false
 FARPZones.requiredLibs = {
 	"dcsCommon", 
 	"cfxZones", -- Zones, of course 
---	"cfxCommander", -- to make troops do stuff
---	"cfxGroundTroops", -- generic when dropping troops
 }
 
 -- *** DOES NOT EXTEND ZONES, USES OWN STRUCT ***

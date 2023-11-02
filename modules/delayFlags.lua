@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.3.0"
+delayFlag.version = "1.4.0"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -38,6 +38,8 @@ delayFlag.flags = {}
 	      - continueDelay 
 		  - delayLeft
 	1.3.0 - persistence
+	1.4.0 - dmlZones 
+		  - delayLeft#
 	
 --]]--
 
@@ -64,70 +66,70 @@ end
 --
 function delayFlag.createTimerWithZone(theZone)
 	-- delay
-	theZone.delayMin, theZone.delayMax = cfxZones.getPositiveRangeFromZoneProperty(theZone, "timeDelay", 1) -- same as zone signature 
+	theZone.delayMin, theZone.delayMax = theZone:getPositiveRangeFromZoneProperty("timeDelay", 1) -- same as zone signature 
 	if delayFlag.verbose or theZone.verbose then 
 		trigger.action.outText("+++dlyF: time delay is <" .. theZone.delayMin .. ", " .. theZone.delayMax .. "> seconds", 30)
 	end
 
 	-- watchflags:
 	-- triggerMethod
-	theZone.delayTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	theZone.delayTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
 
-	if cfxZones.hasProperty(theZone, "delayTriggerMethod") then 
-		theZone.delayTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "delayTriggerMethod", "change")
+	if theZone:hasProperty("delayTriggerMethod") then 
+		theZone.delayTriggerMethod = theZone:getStringFromZoneProperty("delayTriggerMethod", "change")
 	end
 
 	-- trigger flag 
-	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
-	end
-	
-	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
-	end
-	
-	if cfxZones.hasProperty(theZone, "startDelay?") then 
-		theZone.triggerDelayFlag = cfxZones.getStringFromZoneProperty(theZone, "startDelay?", "none")
+	if theZone:hasProperty("f?") then 
+		theZone.triggerDelayFlag = theZone:getStringFromZoneProperty("f?", "none")
+	elseif theZone:hasProperty("in?") then 
+		theZone.triggerDelayFlag = theZone:getStringFromZoneProperty("in?", "none")
+	elseif theZone:hasProperty("startDelay?") then 
+		theZone.triggerDelayFlag = theZone:getStringFromZoneProperty("startDelay?", "none")
 	end
 	
 	if theZone.triggerDelayFlag then 
-		theZone.lastDelayTriggerValue = cfxZones.getFlagValue(theZone.triggerDelayFlag, theZone) -- trigger.misc.getUserFlag(theZone.triggerDelayFlag) -- save last value
+		theZone.lastDelayTriggerValue = theZone:getFlagValue(theZone.triggerDelayFlag)
 	end
 	
 	
-	theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
+	theZone.delayMethod = theZone:getStringFromZoneProperty("method", "inc")
 	
-	if cfxZones.hasProperty(theZone, "delayMethod") then
-		theZone.delayMethod = cfxZones.getStringFromZoneProperty(theZone, "delayMethod", "inc")
+	if theZone:hasProperty("delayMethod") then
+		theZone.delayMethod = theZone:getStringFromZoneProperty( "delayMethod", "inc")
 	end
 	
 	-- out flag 
-	theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "out!", "*<none>")
+	theZone.delayDoneFlag = theZone:getStringFromZoneProperty("out!", "*<none>")
 
 	
-	if cfxZones.hasProperty(theZone, "delayDone!") then 
-		theZone.delayDoneFlag = cfxZones.getStringFromZoneProperty(theZone, "delayDone!", "*<none>")
+	if theZone:hasProperty("delayDone!") then 
+		theZone.delayDoneFlag = theZone:getStringFromZoneProperty( "delayDone!", "*<none>")
 	end
 
 	-- stop the press!
-	if cfxZones.hasProperty(theZone, "stopDelay?") then 
-		theZone.triggerStopDelay = cfxZones.getStringFromZoneProperty(theZone, "stopDelay?", "none")
-		theZone.lastTriggerStopValue = cfxZones.getFlagValue(theZone.triggerStopDelay, theZone)
+	if theZone:hasProperty("stopDelay?") then 
+		theZone.triggerStopDelay = theZone:getStringFromZoneProperty("stopDelay?", "none")
+		theZone.lastTriggerStopValue = theZone:getFlagValue(theZone.triggerStopDelay)
 	end
 	
 	-- pause and continue
-	if cfxZones.hasProperty(theZone, "pauseDelay?") then 
-		theZone.triggerPauseDelay = cfxZones.getStringFromZoneProperty(theZone, "pauseDelay?", "none")
-		theZone.lastTriggerPauseValue = cfxZones.getFlagValue(theZone.triggerPauseDelay, theZone)
+	if theZone:hasProperty("pauseDelay?") then 
+		theZone.triggerPauseDelay = theZone:getStringFromZoneProperty("pauseDelay?", "none")
+		theZone.lastTriggerPauseValue = theZone:getFlagValue(theZone.triggerPauseDelay)
 	end
 	
-	if cfxZones.hasProperty(theZone, "continueDelay?") then 
-		theZone.triggerContinueDelay = cfxZones.getStringFromZoneProperty(theZone, "continueDelay?", "none")
-		theZone.lastTriggerContinueValue = cfxZones.getFlagValue(theZone.triggerContinueDelay, theZone)
+	if theZone:hasProperty("continueDelay?") then 
+		theZone.triggerContinueDelay = theZone:getStringFromZoneProperty("continueDelay?", "none")
+		theZone.lastTriggerContinueValue = theZone:getFlagValue(theZone.triggerContinueDelay)
 	end
 	
 	-- timeInfo 
-	theZone.delayTimeLeft = cfxZones.getStringFromZoneProperty(theZone, "delayLeft", "*cfxIgnored")
+	if theZone:hasProperty("delayLeft") then 
+		theZone.delayTimeLeft = theZone:getStringFromZoneProperty("delayLeft", "*cfxIgnored")
+	else 
+		theZone.delayTimeLeft = theZone:getStringFromZoneProperty("delayLeft#", "*cfxIgnored")
+	end
 
 	-- init 
 	theZone.delayRunning = false 
@@ -136,7 +138,7 @@ function delayFlag.createTimerWithZone(theZone)
 	theZone.timeLeft = -1 -- in seconds, always kept up to date 
 	                      -- but not really used 
 
-	cfxZones.setFlagValue(theZone.delayTimeLeft, -1, theZone)
+	theZone:setFlagValue(theZone.delayTimeLeft, -1)
 end
 
 
@@ -167,7 +169,7 @@ function delayFlag.startDelay(theZone)
 	end
 	
 	theZone.timeLimit = timer.getTime() + delay 
-	cfxZones.setFlagValue(theZone.delayTimeLeft, delay, theZone)
+	theZone:setFlagValue(theZone.delayTimeLeft, delay)
 end
 
 function delayFlag.pauseDelay(theZone)
@@ -194,7 +196,7 @@ function delayFlag.update()
 		if remaining < 0 then remaining = -1 end 
 		
 		-- see if we need to stop 
-		if cfxZones.testZoneFlag(aZone, aZone.triggerStopDelay, aZone.delayTriggerMethod, "lastTriggerStopValue") then
+		if aZone:testZoneFlag(aZone.triggerStopDelay, aZone.delayTriggerMethod, "lastTriggerStopValue") then
 			aZone.delayRunning = false -- simply stop.
 			if delayFlag.verbose or aZone.verbose then 
 				trigger.action.outText("+++dlyF: stopped delay " .. aZone.name, 30)
@@ -202,7 +204,7 @@ function delayFlag.update()
 		end
 
 		
-		if cfxZones.testZoneFlag(aZone, aZone.triggerDelayFlag, aZone.delayTriggerMethod, "lastDelayTriggerValue") then
+		if aZone:testZoneFlag(aZone.triggerDelayFlag, aZone.delayTriggerMethod, "lastDelayTriggerValue") then
 			if delayFlag.verbose or aZone.verbose then 
 				if aZone.delayRunning then 
 					trigger.action.outText("+++dlyF: re-starting timer " .. aZone.name, 30)	
@@ -216,7 +218,7 @@ function delayFlag.update()
 
 		if not aZone.delayPaused then 
 
-			if aZone.delayRunning and cfxZones.testZoneFlag(aZone, aZone.triggerPauseDelay, aZone.delayTriggerMethod, "lastTriggerPauseValue") then
+			if aZone.delayRunning and aZone:testZoneFlag( aZone.triggerPauseDelay, aZone.delayTriggerMethod, "lastTriggerPauseValue") then
 				if delayFlag.verbose or aZone.verbose then 
 					trigger.action.outText("+++dlyF: pausing timer <" .. aZone.name .. "> with <" .. remaining .. "> remaining", 30)	
 				end 
@@ -232,14 +234,14 @@ function delayFlag.update()
 					if delayFlag.verbose or aZone.verbose then 
 						trigger.action.outText("+++dlyF: banging on " .. aZone.delayDoneFlag, 30)
 					end
-					cfxZones.pollFlag(aZone.delayDoneFlag, aZone.delayMethod, aZone)
+					aZone:pollFlag(aZone.delayDoneFlag, aZone.delayMethod)
 				end
 			end
 			
-			cfxZones.setFlagValue(aZone.delayTimeLeft, remaining, aZone)
+			aZone:setFlagValue(aZone.delayTimeLeft, remaining)
 		else 
 			-- we are paused. Check for 'continue'
-			if aZone.delayRunning and cfxZones.testZoneFlag(aZone, aZone.triggerContinueDelay, aZone.delayTriggerMethod, "lastTriggerContinueValue") then
+			if aZone.delayRunning and aZone:testZoneFlag( aZone.triggerContinueDelay, aZone.delayTriggerMethod, "lastTriggerContinueValue") then
 				if delayFlag.verbose or aZone.verbose then 
 					trigger.action.outText("+++dlyF: continuing timer <" .. aZone.name .. "> with <" .. aZone.remainingTime .. "> seconds remaining", 30)	
 				end 
@@ -312,13 +314,10 @@ end
 function delayFlag.readConfigZone()
 	local theZone = cfxZones.getZoneByName("delayFlagsConfig") 
 	if not theZone then 
-		if delayFlag.verbose then 
-			trigger.action.outText("+++dlyF: NO config zone!", 30)
-		end 
-		return 
+		theZone = cfxZones.createSimpleZone("delayFlagsConfig")
 	end 
 	
-	delayFlag.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	delayFlag.verbose = theZone.verbose -- cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	
 	if delayFlag.verbose then 
 		trigger.action.outText("+++dlyF: read config", 30)

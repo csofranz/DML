@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "1.3.1"
+cfxObjectSpawnZones.version = "2.0.0"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -8,31 +8,33 @@ cfxObjectSpawnZones.requiredLibs = {
 }
 cfxObjectSpawnZones.ups = 1
 cfxObjectSpawnZones.verbose = false
---
--- Zones that conform with this requirements spawn toops automatically
---   *** DOES NOT EXTEND ZONES *** 
--- 
--- version history
---   1.0.0 - based on 1.4.6 version from cfxSpawnZones
---   1.1.0 - uses linkedUnit, so spawnming can occur on ships 
---           make sure you also enable useOffset to place the 
---           statics away from the center of the ship 
---   1.1.1 - also processes paused flag 
---         - despawnRemaining(spawner) 
---   1.1.2 - autoRemove option re-installed 
---         - added possibility to autoUnlink
---   1.1.3 - ME-triggered flag via f? and triggerFlag 
---   1.1.4 - activate?, pause? attributes 
---   1.1.5 - spawn?, spawnObjects? synonyms
---   1.2.0 - DML flag upgrade 
---   1.2.1 - config zone 
---         - autoLink bug (zone instead of spawner accessed)
---   1.3.0 - better synonym handling 
---         - useDelicates link to delicate when spawned 
--- 		   - spawned single and multi-objects can be made delicates
---   1.3.1 - baseName can be set to zone's name by giving "*"
---   1.3.2 - delicateName supports '*' to refer to own zone 
+--[[--
+ Zones that conform with this requirements spawn objects automatically
+   *** DOES NOT EXTEND ZONES *** 
 
+ version history
+   1.0.0 - based on 1.4.6 version from cfxSpawnZones
+   1.1.0 - uses linkedUnit, so spawnming can occur on ships 
+           make sure you also enable useOffset to place the 
+           statics away from the center of the ship 
+   1.1.1 - also processes paused flag 
+         - despawnRemaining(spawner) 
+   1.1.2 - autoRemove option re-installed 
+         - added possibility to autoUnlink
+   1.1.3 - ME-triggered flag via f? and triggerFlag 
+   1.1.4 - activate?, pause? attributes 
+   1.1.5 - spawn?, spawnObjects? synonyms
+   1.2.0 - DML flag upgrade 
+   1.2.1 - config zone 
+         - autoLink bug (zone instead of spawner accessed)
+   1.3.0 - better synonym handling 
+         - useDelicates link to delicate when spawned 
+         - spawned single and multi-objects can be made delicates
+   1.3.1 - baseName can be set to zone's name by giving "*"
+   1.3.2 - delicateName supports '*' to refer to own zone 
+   2.0.0 - dmlZones 
+   
+--]]--
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
 cfxObjectSpawnZones.allSpawners = {}
@@ -59,72 +61,70 @@ end
 function cfxObjectSpawnZones.createSpawner(inZone)
 	local theSpawner = {}
 	theSpawner.zone = inZone
-	theSpawner.name = inZone.name 
+	theSpawner.name = inZone.name -- provide compat with cfxZones (not dmlZones, though)
 	
 	-- connect with ME if a trigger flag is given 
-	if cfxZones.hasProperty(inZone, "f?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "f?", "none")
-	elseif cfxZones.hasProperty(inZone, "spawn?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawn?", "none")
-	elseif cfxZones.hasProperty(inZone, "spawnObjects?") then 
-		theSpawner.triggerFlag = cfxZones.getStringFromZoneProperty(inZone, "spawnObjects?", "none")
+	if inZone:hasProperty("f?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty("f?", "none")
+	elseif inZone:hasProperty("spawn?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty("spawn?", "none")
+	elseif inZone:hasProperty("spawnObjects?") then 
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty( "spawnObjects?", "none")
 	end
 	
 	if theSpawner.triggerFlag then 
-		theSpawner.lastTriggerValue = cfxZones.getFlagValue(theSpawner.triggerFlag, theSpawner) -- trigger.misc.getUserFlag(theSpawner.triggerFlag)
+		theSpawner.lastTriggerValue = cfxZones.getFlagValue(theSpawner.triggerFlag, theSpawner) 
 	end
 	
 	
-	if cfxZones.hasProperty(inZone, "activate?") then 
-		theSpawner.activateFlag = cfxZones.getStringFromZoneProperty(inZone, "activate?", "none")
+	if inZone:hasProperty("activate?") then 
+		theSpawner.activateFlag = inZone:getStringFromZoneProperty( "activate?", "none")
 		theSpawner.lastActivateValue = cfxZones.getFlagValue(theSpawner.activateFlag, theSpawner)   --trigger.misc.getUserFlag(theSpawner.activateFlag)
 	end
 	
-	if cfxZones.hasProperty(inZone, "pause?") then 
-		theSpawner.pauseFlag = cfxZones.getStringFromZoneProperty(inZone, "pause?", "none")
-		theSpawner.lastPauseValue = cfxZones.getFlagValue(theSpawner.lastPauseValue, theSpawner) -- trigger.misc.getUserFlag(theSpawner.pauseFlag)
+	if inZone:hasProperty("pause?") then 
+		theSpawner.pauseFlag = inZone:getStringFromZoneProperty("pause?", "none")
+		theSpawner.lastPauseValue = cfxZones.getFlagValue(theSpawner.lastPauseValue, theSpawner) 
 	end
 	
-	theSpawner.types = cfxZones.getStringFromZoneProperty(inZone, "types", "White_Tyre")
-	local n = cfxZones.getNumberFromZoneProperty(inZone, "count", 1) -- DO NOT CONFUSE WITH OWN PROPERTY COUNT for unique names!!!
+	theSpawner.types = inZone:getStringFromZoneProperty("types", "White_Tyre")
+	local n = inZone:getNumberFromZoneProperty("count", 1) -- DO NOT CONFUSE WITH OWN PROPERTY COUNT for unique names!!!
 	if n < 1 then n = 1 end -- sanity check. 
-	
 	theSpawner.numObj = n 
 	
-	theSpawner.country = cfxZones.getNumberFromZoneProperty(inZone, "country", 2) -- coalition2county(theSpawner.owner)
-	
+	theSpawner.country = inZone:getNumberFromZoneProperty("country", 2) 
 	theSpawner.rawOwner = coalition.getCountryCoalition(theSpawner.country)
-	theSpawner.baseName = cfxZones.getStringFromZoneProperty(inZone, "baseName", dcsCommon.uuid("objSpwn"))
+	theSpawner.baseName = inZone:getStringFromZoneProperty("baseName", "*")
 	theSpawner.baseName = dcsCommon.trim(theSpawner.baseName)
 	if theSpawner.baseName == "*" then 
 		theSpawner.baseName = inZone.name -- convenience shortcut
 	end
 	--cfxZones.getZoneProperty(inZone, "baseName")
-	theSpawner.cooldown = cfxZones.getNumberFromZoneProperty(inZone, "cooldown", 60)
+	theSpawner.cooldown = inZone:getNumberFromZoneProperty("cooldown", 60)
 	theSpawner.lastSpawnTimeStamp = -10000 -- just init so it will always work
-	theSpawner.autoRemove = cfxZones.getBoolFromZoneProperty(inZone, "autoRemove", false)
-	theSpawner.autoLink = cfxZones.getBoolFromZoneProperty(inZone, "autoLink", true)
+	theSpawner.autoRemove = inZone:getBoolFromZoneProperty("autoRemove", false)
+	theSpawner.autoLink = inZone:getBoolFromZoneProperty("autoLink", true)
 
-	theSpawner.heading = cfxZones.getNumberFromZoneProperty(inZone, "heading", 0)
-	theSpawner.weight = cfxZones.getNumberFromZoneProperty(inZone, "weight", 0)
+	theSpawner.heading = inZone:getNumberFromZoneProperty("heading", 0)
+	theSpawner.weight = inZone:getNumberFromZoneProperty("weight", 0)
 	if theSpawner.weight < 0 then theSpawner.weight = 0 end 
 	
-	theSpawner.isCargo = cfxZones.getBoolFromZoneProperty(inZone, "isCargo", false)
+	theSpawner.isCargo = inZone:getBoolFromZoneProperty("isCargo", false)
 	if theSpawner.isCargo == true and theSpawner.weight < 100 then theSpawner.weight = 100 end 
-	theSpawner.managed = cfxZones.getBoolFromZoneProperty(inZone, "managed", true) -- defaults to managed cargo
+	theSpawner.managed = inZone:getBoolFromZoneProperty("managed", true) -- defaults to managed cargo
 	
 	theSpawner.cdTimer = 0 -- used for cooldown. if timer.getTime < this value, don't spawn
-	-- theSpawner.cdStarted = false -- used to initiate cooldown when all items in theSpawns disappear
+
 	theSpawner.count = 1 -- used to create names, and count how many groups created
 	theSpawner.theSpawns = {} -- all items that are spawned. re-spawn happens if they are all out
-	theSpawner.maxSpawns = cfxZones.getNumberFromZoneProperty(inZone, "maxSpawns", 1)
-	theSpawner.paused = cfxZones.getBoolFromZoneProperty(inZone, "paused", false)
-	theSpawner.requestable = cfxZones.getBoolFromZoneProperty(inZone, "requestable", false)
+	theSpawner.maxSpawns = inZone:getNumberFromZoneProperty("maxSpawns", 1)
+	theSpawner.paused = inZone:getBoolFromZoneProperty("paused", false)
+	theSpawner.requestable = inZone:getBoolFromZoneProperty("requestable", false)
 	if theSpawner.requestable then theSpawner.paused = true end
 	
 	-- see if the spawn can be made brittle/delicte
-	if cfxZones.hasProperty(inZone, "useDelicates") then 
-		theSpawner.delicateName = dcsCommon.trim(cfxZones.getStringFromZoneProperty(inZone, "useDelicates", "<none>"))
+	if inZone:hasProperty("useDelicates") then 
+		theSpawner.delicateName = dcsCommon.trim(inZone:getStringFromZoneProperty("useDelicates", "<none>"))
 		if theSpawner.delicateName == "*" then theSpawner.delicateName = inZone.name end 
 	end
 	

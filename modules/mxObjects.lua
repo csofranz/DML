@@ -111,7 +111,7 @@ function mxObjects.showNClosestTextObjectsToUnit(n, theUnit, numbered)
 			-- dist 
 			msg = msg .. " " .. dist .. units 
 			msg = msg .. "\n" -- add line feed 
-			if mxObjects.doubleLine then msg = msg .. "\n" end 
+			if mxObjects.doubleLine and (i < n) then msg = msg .. "\n" end 
 		end
 	end
 	return msg 

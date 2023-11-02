@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.3"
+dcsCommon.version = "2.9.5"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -173,6 +173,9 @@ dcsCommon.version = "2.9.3"
 	   - new getCountriesForCoalition()
 2.9.2  - updated event2text
 2.9.3  - getAirbasesWhoseNameContains now supports category tables for filtering 
+2.9.4  - new bearing2degrees()
+2.9.5  - distanceOfPointPToLineXZ(p, p1, p2)
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -845,6 +848,13 @@ dcsCommon.version = "2.9.3"
 		return "North"
 	end
 	
+	function dcsCommon.bearing2degrees(inRad)
+		local degrees = inRad / math.pi * 180
+		if degrees < 0 then degrees = degrees + 360 end 
+		if degrees > 360 then degrees = degrees - 360 end 
+		return degrees 
+	end
+	
 	function dcsCommon.bearing2compass(inrad)
 		local bearing = math.floor(inrad / math.pi * 180)
 		if bearing < 0 then bearing = bearing + 360 end
@@ -975,6 +985,19 @@ dcsCommon.version = "2.9.3"
 		if dBearing < 0 or dBearing > math.pi then return -1, "left" end
 		return 1, "right"
 		-- note: no separate case for straight in front or behind
+	end
+	
+	-- Distance of point p to line defined by p1,p2 
+	-- only on XZ map 
+	function dcsCommon.distanceOfPointPToLineXZ(p, p1, p2)
+		local x21 = p2.x - p1.x 
+		local y10 = p1.z - p.z 
+		local x10 = p1.x - p.x 
+		local y21 = p2.z - p1.z 
+		local numer = math.abs((x21*y10) - (x10 * y21))
+		local denom = math.sqrt(x21 * x21 + y21 * y21)
+		local dist = numer/denom 
+		return dist 
 	end
 	
 	function dcsCommon.randomDegrees()

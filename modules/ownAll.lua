@@ -51,7 +51,7 @@ function ownAll.ownAllForZone(theZone)
 		theZone:setFlagValue(theZone.totalNum, #filtered)
 	end 
 	
-	theZone.ownershipUplink = theZone:getBoolFromZoneProperty("uplink", true)
+	theZone.ownershipUplink = theZone:getBoolFromZoneProperty("uplink", true) -- not documented
 	
 	local redNum, blueNum
 	theZone.state, redNum, blueNum = ownAll.calcState(theZone)
