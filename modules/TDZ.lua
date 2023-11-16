@@ -1,9 +1,15 @@
 tdz = {}
-tdz.version = "0.9.0dev"
+tdz.version = "1.0.0"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
+--[[--
+VERSION HISTORY 
+ 1.0.0 - Initial version 
+
+--]]--
+
 tdz.allTdz = {}
 tdz.watchlist = {}
 tdz.watching = false 
@@ -52,31 +58,7 @@ function tdz.translatePoly(thePoly, v) -- straight rot, translate to 0 first
 		if aPoint.z then aPoint.z = aPoint.z + v.z end  
 	end
 end
---[[--
-function tdz.frameRwy(center, length, width, rads, a, b) -- bearing in rads 
-	if not a then a = 0 end 
-	if not b then b = 1 end 
-	
-	-- create a 0-rotated centered poly 
-	local poly = {}
-	local half = length / 2
-	local leftEdge = -half
-	poly[4] = { x = leftEdge + a * length, z = width / 2, y = 0}
-	poly[3] = { x = leftEdge + b * length, z = width / 2, y = 0}
-	poly[2] = { x = leftEdge + b * length, z = -width / 2, y = 0}
-	poly[1] = { x = leftEdge + a * length, z = -width / 2, y = 0}
-	-- move it to center in map 
-	tdz.translatePoly(poly, center)
-	
-	-- rotate it 
-	tdz.rotateXZPolyAroundCenterInRads(poly, center, rads)
-	
-	-- frame it 
-	local mId = dcsCommon.numberUUID()
-	 trigger.action.quadToAll(-1, mId, poly[1], poly[2], poly[3], poly[4], {1, 0, 0, 1}, {1, 0, 0, .5}, 3) -- dotted line, red
-	 
-end
---]]--
+
 function tdz.calcTDZone(name, center, length, width, rads, a, b)
 	if not a then a = 0 end 
 	if not b then b = 1 end 
@@ -94,7 +76,7 @@ function tdz.calcTDZone(name, center, length, width, rads, a, b)
 	tdz.rotateXZPolyAroundCenterInRads(poly, center, rads)
 	-- make it a dml zone 
 	local theNewZone = cfxZones.createSimplePolyZone(name, center, poly)
-	return theNewZone--, left, right 
+	return theNewZone
 end
 
 --
@@ -181,7 +163,6 @@ function tdz.playerLanded(theUnit, playerName)
 		-- make sure unit names match?
 		local entry = tdz.watchlist[playerName]
 		entry.hops = entry.hops + 1 -- uh oh. 
---		trigger.action.outText("Bump!")
 	end 
 	
 	-- we may want to filter helicopters
@@ -226,7 +207,6 @@ function tdz.playerLanded(theUnit, playerName)
 	if dOpHdg < dHdg then 
 		opposite = true 
 		dHdg = dOpHdg
-		trigger.action.outText("opposite rwy detected", 30)
 	end 
 	if dHdg > math.pi * 1.5 then -- > 270+ 
 		dHdg = dHdg - math.pi * 1.5

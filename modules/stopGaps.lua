@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.0.9"
+stopGap.version = "1.0.10"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -48,6 +48,7 @@ stopGap.requiredLibs = {
 	1.0.8 - added refreshInterval option as requested 
 		  - refresh attribute config zone 
 	1.0.9 - in line with standalone (optimization not required for DML)
+	1.0.10 - some more verbosity for spIgnore and sgIgnore zones (DML only)
 	
 --]]--
 
@@ -356,12 +357,22 @@ end
 --
 function stopGap.createStopGapZone(theZone)
 	local sg = theZone:getBoolFromZoneProperty("stopGap", true)
-	if sg then theZone.sgIgnore = false else theZone.sgIgnore = true end 
+	if sg then theZone.sgIgnore = false else 
+		if theZone.verbose or stopGap.verbose then 
+			trigger.action.outText("++sg: Ignoring player craft in zone <" ..theZone.name  .."> for all modes", 30)
+		end
+		theZone.sgIgnore = true 
+	end 
 end
 
 function stopGap.createStopGapSPZone(theZone)
 	local sp = theZone:getBoolFromZoneProperty("stopGapSP", true)
-	if sp then theZone.spIgnore = false else theZone.spIgnore = true end 
+	if sp then theZone.spIgnore = false else 
+		if theZone.verbose or stopGap.verbose then 
+			trigger.action.outText("++sg: Ignoring player craft in zone <" ..theZone.name  .."> for single-player mode", 30)
+		end
+		theZone.spIgnore = true 
+	end 
 end
 
 --

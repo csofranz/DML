@@ -1,18 +1,34 @@
 bombRange = {}
-bombRange.version = "1.0.0"
+bombRange.version = "1.1.0"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
-
+--[[--
+VERSION HISTORY
+1.0.0 - Initial version 
+1.1.0 - collector logic for collating hits 
+        *after* impact on high-resolution scans (30fps)
+		set resolution to 30 ups by default 
+		order of events: check kills against dropping projectiles 
+		collecd dead, and compare against missing erdnance while they are fresh
+		GC 
+		interpolate hits on dead when looking at kills and projectile does 
+		not exist
+		also sampling kill events 
+		
+--]]--
 bombRange.bombs = {} -- live tracking
+bombRange.collector = {} -- post-impact collections for 0.5 secs
 bombRange.ranges = {} -- all bomb ranges
 bombRange.playerData = {} -- player accumulated data 
 bombRange.unitComms = {} -- command interface per unit 
 bombRange.tracking = false -- if true, we are tracking projectiles 
 bombRange.myStatics = {} -- indexed by id 
+bombRange.killDist = 20 -- meters, if caught within that of kill event, this weapon was the culprit 
+bombRange.freshKills = {} -- at max 1 second old? 
 
 function bombRange.addBomb(theBomb)
 	table.insert(bombRange.bombs, theBomb)
@@ -44,7 +60,7 @@ function bombRange.createRange(theZone) -- has bombRange attribte to mark it
 	end 
 	theZone.details = theZone:getBoolFromZoneProperty("details", false)
 	theZone.reporter = theZone:getBoolFromZoneProperty("reporter", true)
-	theZone.reportName = theZone:getBoolFromZoneProperty("reportName", true)
+	theZone.reportName = theZone:getBoolFromZoneProperty("reportName", false)
 	theZone.smokeHits = theZone:getBoolFromZoneProperty("smokeHits", false)
 	theZone.smokeColor = theZone:getSmokeColorStringFromZoneProperty("smokeColor", "blue")
 	theZone.flagHits = theZone:getBoolFromZoneProperty("flagHits", false)
@@ -237,26 +253,51 @@ end
 -- Event Proccing
 --
 function bombRange.suspectedHit(weapon, target)
-	if not bombRange.tracking then
-		return 
-	end
+	local wType = weapon:getTypeName()
 	if not target then return end 
-	local theType = target:getTypeName()
-	
+	if target:getCategory() == 5 then -- scenery
+		return  
+	end 
+
+	local theDesc = target:getDesc()
+	local theType = theDesc.typeName -- getTypeName gets display name
+-- filter statics that we want to ignore 
 	for idx, aType in pairs(bombRange.filterTypes) do 
-		if theType == aType then return	end
+		if theType == aType then 
+			return	
+		end
 	end 
 	
 	-- try and match target to my known statics, exit if match
-	if not target.getID then return end -- units have no getID!
-	local theID = tonumber(target:getID())
-	if bombRange.myStatics[theID] then 
-		return
+	if target.getID then  -- units have no getID, so skip for those
+		local theID = tonumber(target:getID())
+		if bombRange.myStatics[theID] then 
+			return
+		end 
 	end 
 	
-	-- look through the tracked weapons for a match
-	local filtered = {}
+	-- look through the collector (recent impacted) first 
 	local hasfound = false 
+	local theID
+	for idx, b in pairs(bombRange.collector) do 
+		if  b.weapon == weapon then
+			b.pos = target:getPoint()
+			bombRange.impacted(b, target) -- use this for impact
+			theID = b.ID 
+			hasfound = true 
+--			trigger.action.outText("susHit: filtering COLLECTED b <" .. b.name .. ">", 30)
+		end
+	end
+	if hasfound then 
+		bombRange.collector[theID] = nil -- remove from collector
+		return
+	end
+	
+	-- look through the tracked weapons for a match next
+	if not bombRange.tracking then
+		return 
+	end
+	local filtered = {}
 	for idx, b in pairs (bombRange.bombs) do
 		if b.weapon == weapon then 
 			hasfound = true 
@@ -264,6 +305,8 @@ function bombRange.suspectedHit(weapon, target)
 			b.pos = weapon:getPoint()
 			b.v = weapon:getVelocity()
 			bombRange.impacted(b, target)
+			
+--			trigger.action.outText("susHit: filtering live b <" .. b.name .. ">", 30)
 		else 
 			table.insert(filtered, b)
 		end
@@ -273,14 +316,104 @@ function bombRange.suspectedHit(weapon, target)
 	end
 end
 
+function bombRange.suspectedKill(target)
+	-- some unit got killed, let's see if our munitions in the collector 
+	-- phase are close by, i.e. they have disappeared 
+	if not target then return end  
+
+	local theDesc = target:getDesc()
+	local theType = theDesc.typeName -- getTypeName gets display name
+	-- filter statics that we want to ignore 
+	for idx, aType in pairs(bombRange.filterTypes) do 
+		if theType == aType then return	end
+	end 
+	
+	local hasfound = nil 
+	local theID
+	local pk = target:getPoint()
+	local now = timer.getTime()
+	
+	-- first, search all currently running projectiles, and check for proximity 
+	local filtered = {}
+	for idx, b in pairs(bombRange.bombs) do 
+		local wp 
+		if Weapon.isExist(b.weapon) then 
+			wp = b.weapon:getPoint()
+		else 
+			local td = now - b.t -- time delta 
+			-- calculate current loc from last velocity and 
+			-- time 
+			local moveV = dcsCommon.vMultScalar(b.v, td)
+			wp = dcsCommon.vAdd(b.pos, moveV)
+		end
+		local delta = dcsCommon.dist(wp, pk)
+		-- now use the line wp-wp+v and calculate distance 
+		-- of pk to that line. 
+		local wp2 = dcsCommon.vAdd(b.pos, b.v)
+		local delta2 = dcsCommon.distanceOfPointPToLineXZ(pk, b.pos, wp2)
+		
+		if delta < bombRange.killDist or delta2 < bombRange.killDist then 
+			b.pos = pk
+			bombRange.impacted(b, target)
+			hasfound = true 
+--			trigger.action.outText("filtering b: <" .. b.name .. ">", 30)
+		else 
+			table.insert(filtered, b)
+		end
+	end
+	bombRange.bombs = filtered 
+	if hasfound then 
+--		trigger.action.outText("protocol: removed LIVING weapon from roster  after impacted() invocation for non-nil target in suspectedKill", 30)
+		return 
+	end 
+
+	-- now check the projectiles that have already impacted 
+	for idx, b in pairs(bombRange.collector) do 
+		local dist = dcsCommon.dist(b.pos, pk)
+		local wp2 = dcsCommon.vAdd(b.pos, b.v)
+		local delta2 = dcsCommon.distanceOfPointPToLineXZ(pk, b.pos, wp2)
+
+		if dist < bombRange.killDist or delta2 < bombRange.killDist then
+			-- yeah, *you* killed them!
+			b.pos = pk
+			bombRange.impacted(b, target) -- use this for impact
+			theID = b.ID 
+			hasfound = true 
+		end
+	end
+	if hasfound then -- remove from collector, hit attributed 
+		bombRange.collector[theID] = nil -- remove from collector
+--		trigger.action.outText("protocol: removed COLL weapon from roster  after impacted() invocation for non-nil target in suspectedKill", 30)
+		return
+	end
+end
+
 function bombRange:onEvent(event)
 	if not event.initiator then return end 
 	local theUnit = event.initiator
 	
-	if event.id == 2 then -- hit
+	if event.id == 2 then -- hit: weapon still exists
 		if not event.weapon then return end 
 		bombRange.suspectedHit(event.weapon, event.target)
 		return 
+	end
+	
+	if event.id == 28 then -- kill: similar to hit, but due to new mechanics not reliable
+		if not event.weapon then return end 
+		bombRange.suspectedHit(event.weapon, event.target)
+		return 
+	end
+	
+	
+	if event.id == 8 then -- dead 
+		-- these events can come *before* weapon disappears
+		local killDat = {}
+		killDat.victim = event.initiator
+		killDat.p = event.initiator:getPoint()
+		killDat.when = timer.getTime() 
+		killDat.name = dcsCommon.uuid("vic")
+		bombRange.freshKills[killDat.name] = killDat
+		bombRange.suspectedKill(event.initiator)
 	end
 	
 	local uName = nil 	
@@ -314,6 +447,7 @@ function bombRange:onEvent(event)
 		b.weapon = w 
 		b.released = timer.getTime()
 		b.relPos = b.pos 
+		b.ID = dcsCommon.uuid("bomb")		
 		table.insert(bombRange.bombs, b)
 		if not bombRange.tracking then 
 			timer.scheduleFunction(bombRange.updateBombs, {}, timer.getTime() + 1/bombRange.ups)
@@ -336,14 +470,25 @@ end
 --
 -- Update 
 --
-function bombRange.impacted(weapon, target)
+function bombRange.impacted(weapon, target, finalPass)	
 	local targetName = nil 	
-	local ipos = weapon.pos -- default to weapon location 
-	if target then
-		ipos = target:getPoint()
+	if target then 
 		targetName = target:getDesc()
 		if targetName then targetName = targetName.displayName end 
 		if not targetName then targetName = target:getTypeName() end
+	end 
+	
+--	local s = "Entering impacted() with weapon = <" .. weapon.name .. ">"
+--	if target then 
+--		s = s .. " AND target = <" .. targetName .. ">"
+--	end 
+	
+-- when we enter, weapon has ipacted target - if target is non-nil 
+-- what we need to determine is if that target is inside a zone 
+	
+	local ipos = weapon.pos -- default to weapon location 
+	if target then
+		ipos = target:getPoint() -- we make the target loc the impact point
 	else 
 		-- not an object hit, interpolate the impact point on ground: 
 		-- calculate impact point. we use the linear equation
@@ -375,6 +520,7 @@ function bombRange.impacted(weapon, target)
 		trigger.action.outText("+++bRng: nil <theRange> on eval. skipping.", 30)
 		return 
 	end
+		
 	if minDist > theRange.clipDist then 
 		-- no taget zone inside clip dist. disregard this one, too far off 
 		if bombRange.reportLongMisses then 
@@ -383,11 +529,11 @@ function bombRange.impacted(weapon, target)
 		return 
 	end 
 	
-	if theRange.smokeHits then 
+	if (not target) and theRange.smokeHits then 
 		trigger.action.smoke(ipos, theRange.smokeColor) 
 	end
 
-	if (not target) and theRange.flagHits then -- only ground imparts are flagged
+	if (not target) and theRange.flagHits then -- only ground impacts are flagged
 		local cty = dcsCommon.getACountryForCoalition(0) -- some neutral county
 		local p = {x=ipos.x, y=ipos.z}
 		local theStaticData = dcsCommon.createStaticObjectData(dcsCommon.uuid(weapon.type .. " impact"), theRange.flagType)
@@ -395,8 +541,37 @@ function bombRange.impacted(weapon, target)
 		local theObject = coalition.addStaticObject(cty, theStaticData)
 	end
 	
+	local impactInside = theRange:pointInZone(ipos)
+--[[--
+	if target and (not impactInside) then 
+		trigger.action.outText("Hit on target <" .. targetName .. "> outside of zone <" .. theRange.name .. ">. should exit unless final impact", 30)
+		-- find closest range to object that was hit 
+		local closest = nil 
+		local shortest = math.huge 
+		local tp = target:getPoint()
+		for idx, aRange in pairs(bombRange.ranges) do 
+			local zp = aRange:getPoint()
+			local zDist = dcsCommon.distFlat(zp, tp)
+			if zDist < shortest then 
+				shortest = zDist 
+				closest = aRange 
+			end	
+		end 
+		
+		trigger.action.outText("re-check: closest range to target now is <" .. closest.name ..">", 30)
+		if closest:pointInZone(tp) then 
+			trigger.action.outText("target <" .. targetName .. "> is INSIDE this range, d = <" .. math.floor(shortest) .. ">", 30)
+		else 
+			trigger.action.outText("targed indeed outside, d = <" .. math.floor(shortest) .. ">", 30)
+		end
+		
+		if finalPass then trigger.action.outText("IS final pass.", 30) end 
+	end
+--]]--	
 	if theRange.reporter and theRange.details then 
-		local t = math.floor((timer.getTime() - weapon.released) * 10) / 10
+		local ipc = weapon.impacted
+		if not ipc then ipc = timer.getTime() end
+		local t = math.floor((ipc - weapon.released) * 10) / 10
 		local v = math.floor(dcsCommon.vMag(weapon.v)) 
 		local tDist = dcsCommon.dist(ipos, weapon.relPos)/1000
 		tDist = math.floor(tDist*100) /100
@@ -404,7 +579,7 @@ function bombRange.impacted(weapon, target)
 	end
 	
 	local msg = ""
-	if theRange:pointInZone(ipos) then
+	if impactInside then
 		local percentage = 0 
 		if theRange.isPoly then 
 			percentage = 100
@@ -430,29 +605,45 @@ function bombRange.impacted(weapon, target)
 		bombRange.addImpactForWeapon(weapon, true, percentage)		
 	else 
 		msg = "Outside target area"
+--		if target then msg = msg .. " (EVEN THOUGH TGT = " .. target:getName() .. ")" end 
 		if theRange.reportName then msg = msg .. " " .. theRange.name end
-		if theRange.details then msg = msg .. "(off-center by " .. math.floor(minDist *10)/10 .. " m)" end 
+		if theRange.details then msg = msg .. " (off-center by " .. math.floor(minDist *10)/10 .. " m)" end 
 		msg = msg .. ", no hit."
 		bombRange.addImpactForWeapon(weapon, false, 0)
 	end 
 	if theRange.reporter then 
 		trigger.action.outTextForGroup(weapon.gID,msg , 30)
 	end
-	
+end
+
+function bombRange.uncollect(theID)
+	-- if this is still here, no hit was registered against the weapon
+	-- and we simply use the impact 
+	local b = bombRange.collector[theID]
+	if b then 
+		bombRange.collector[theID] = nil 
+		bombRange.impacted(b, nil, true) -- final pass
+--		trigger.action.outText("(final impact)", 30)
+	end
 end
 
 function bombRange.updateBombs()
-	
+	local now = timer.getTime() 
 	local filtered = {} 
 	for idx, theWeapon in pairs(bombRange.bombs) do 
 		if Weapon.isExist(theWeapon.weapon) then 
 			-- update pos and vel
 			theWeapon.pos = theWeapon.weapon:getPoint()
 			theWeapon.v = theWeapon.weapon:getVelocity()
+			theWeapon.t = now 
 			table.insert(filtered, theWeapon)
 		else 
-			-- interpolate the impact position from last position 
-			bombRange.impacted(theWeapon)
+			-- put on collector to time out in 1 seconds to allow
+			-- asynch hits to still register for this weapon in MP 
+--			bombRange.impacted(theWeapon)
+			theWeapon.impacted = timer.getTime()
+			bombRange.collector[theWeapon.ID] = theWeapon --
+			timer.scheduleFunction(bombRange.uncollect, theWeapon.ID, timer.getTime() + 1)
 		end
 	end
 	
@@ -466,6 +657,19 @@ function bombRange.updateBombs()
 			trigger.action.outText("+++bRng: stopped tracking.", 30)
 		end
 	end
+end
+
+function bombRange.GC()
+	local cutOff = timer.getTime()
+	local filtered = {}
+	for name, killDat in pairs(bombRange.freshKills) do 
+		if killDat.when + 2 < cutOff then
+			-- keep in set for two seconds after kill.when 
+			filtered[name] = killDat
+		end
+	end
+	bombRange.freshKills = filtered 
+	timer.scheduleFunction(bombRange.GC, {}, timer.getTime() + 10)
 end
 
 --
@@ -508,7 +712,7 @@ function bombRange.readConfigZone()
 	bombRange.filterTypes = dcsCommon.trimArray(theSet)	
 	bombRange.reportLongMisses = theZone:getBoolFromZoneProperty("reportLongMisses", false)
 	bombRange.mustCheckIn = theZone:getBoolFromZoneProperty("mustCheckIn", false)
-	bombRange.ups = theZone:getNumberFromZoneProperty("ups", 20)
+	bombRange.ups = theZone:getNumberFromZoneProperty("ups", 30)
 	bombRange.menuTitle = theZone:getStringFromZoneProperty("menuTitle","Contact BOMB RANGE")
 	if theZone:hasProperty("signIn!") then 
 		bombRange.signIn = theZone:getStringFromZoneProperty("signIn!", 30)
@@ -551,6 +755,9 @@ function bombRange.start()
 	-- add event handler
 	world.addEventHandler(bombRange)
 
+	-- start GC
+	bombRange.GC() 
+	
 	return true 
 end 
 

@@ -13,7 +13,9 @@ fireFX.fx = {}
 	1.0.0 - Initial version 
 	1.1.0 - persistence
 	1.1.1 - agl attribute 
-
+    2.0.0 - dmlZones OOP 
+		  - rndLoc 
+		  
 --]]--
 
 function fireFX.addFX(theZone)
@@ -35,7 +37,7 @@ end
 -- 
 function fireFX.createFXWithZone(theZone)
 	-- decode size and fire
-	local theSize = cfxZones.getStringFromZoneProperty(theZone, "fireFX", "none")
+	local theSize = theZone:getStringFromZoneProperty("fireFX", "none")
 	theSize = dcsCommon.trim(theSize)
 	theSize = string.upper(theSize)
 	local fxCode = 1
@@ -59,22 +61,22 @@ function fireFX.createFXWithZone(theZone)
 		trigger.action.outText("+++ffx: new FX with code = <" .. fxCode .. ">", 30)
 	end
 
-	theZone.density = cfxZones.getNumberFromZoneProperty(theZone, "density", 0.5)
+	theZone.density = theZone:getNumberFromZoneProperty("density", 0.5)
 
-	theZone.agl = cfxZones.getNumberFromZoneProperty(theZone, "AGL", 0)
+	theZone.agl = theZone:getNumberFromZoneProperty("AGL", 0)
+	theZone.min, theZone.max = theZone:getPositiveRangeFromZoneProperty("num", 1, 1)
 	
-
-	if cfxZones.hasProperty(theZone, "start?") then 
-		theZone.fxStart = cfxZones.getStringFromZoneProperty(theZone, "start?", "*<none>")
-		theZone.fxLastStart = cfxZones.getFlagValue(theZone.fxStart, theZone)
+	if theZone:hasProperty("start?") then 
+		theZone.fxStart = theZone:getStringFromZoneProperty("start?", "*<none>")
+		theZone.fxLastStart = theZone:getFlagValue(theZone.fxStart)
 	end
 
-	if cfxZones.hasProperty(theZone, "stop?") then 
-		theZone.fxStop = cfxZones.getStringFromZoneProperty(theZone, "stop?", "*<none>")
-		theZone.fxLastStop = cfxZones.getFlagValue(theZone.fxStop, theZone)
+	if theZone:hasProperty("stop?") then 
+		theZone.fxStop = theZone:getStringFromZoneProperty("stop?", "*<none>")
+		theZone.fxLastStop = theZone:getFlagValue(theZone.fxStop)
 	end
 
-	theZone.fxOnStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
+	theZone.fxOnStart = theZone:getBoolFromZoneProperty("onStart", false)
 	theZone.burning = false 
 
 	if not theZone.fxOnStart and not theZone.fxStart then 
@@ -84,14 +86,23 @@ function fireFX.createFXWithZone(theZone)
 	-- output method (not needed)
 	
 	-- trigger method
-	theZone.fxTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "fxTriggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "triggerMethod") then 
-		theZone.fxTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	theZone.fxTriggerMethod = theZone:getStringFromZoneProperty( "fxTriggerMethod", "change")
+	if theZone:hasProperty("triggerMethod") then 
+		theZone.fxTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
 	end 
+	
+	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
+	if theZone.max + 1 and (not theZone.rndLoc) then 
+		if theZone.verbose or fireFX.verbose then 
+			trigger.action.outText("+++ffx: more than 1 fires, will set to random loc")
+		end 
+		theZone.rndLoc = true 
+	end
 	
 	if fireFX.verbose or theZone.verbose then 
 		trigger.action.outText("+++ffx: new FX <".. theZone.name ..">", 30)
 	end
+	
 end
 
 --
@@ -99,18 +110,29 @@ end
 --
 function fireFX.startTheFire(theZone)
 	if not theZone.burning then 
-		local p = cfxZones.getPoint(theZone)
-		p.y = land.getHeight({x = p.x, y = p.z}) + theZone.agl 
-		local preset = theZone.fxCode
-		local density = theZone.density
-		trigger.action.effectSmokeBig(p, preset, density, theZone.name)
+		theZone.fireNames = {}
+		local num = cfxZones.randomInRange(theZone.min, theZone.max)
+		for i = 1, num do 
+			local p = cfxZones.getPoint(theZone)
+			if theZone.rndLoc then 
+				p = theZone:randomPointInZone()
+			end
+			p.y = land.getHeight({x = p.x, y = p.z}) + theZone.agl 
+			local preset = theZone.fxCode
+			local density = theZone.density
+			local fireName = dcsCommon.uuid(theZone.name)
+			trigger.action.effectSmokeBig(p, preset, density, fireName)
+			theZone.fireNames[i] = fireName 
+		end
 		theZone.burning = true 
 	end
 end
 
 function fireFX.extinguishFire(theZone)
 	if theZone.burning then 
-		trigger.action.effectSmokeStop(theZone.name)
+		for idx, aFireName in pairs(theZone.fireNames) do 
+			trigger.action.effectSmokeStop(aFireName)
+		end
 		theZone.burning = false 
 	end
 end

@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "1.4.1"
+rndFlags.version = "2.0.0"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -33,6 +33,7 @@ rndFlags.requiredLibs = {
 	      - minor clean-up
 	1.4.0 - persistence 
 	1.4.1 - a little less verbosity 
+	2.0.0 - dmlZones, OOP
 
 --]]
 
@@ -59,14 +60,14 @@ end
 --
 function rndFlags.createRNDWithZone(theZone)
 	local flags = ""
-	if cfxZones.hasProperty(theZone, "RND!") then 
-		flags = cfxZones.getStringFromZoneProperty(theZone, "RND!", "")
-	elseif cfxZones.hasProperty(theZone, "flags!") then
+	if theZone:hasProperty("RND!") then 
+		flags = theZone:getStringFromZoneProperty("RND!", "")
+	elseif theZone:hasProperty("flags!") then
 		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: deprecated 'flags!' usage, use 'RND!' instead.", 30)
-		flags = cfxZones.getStringFromZoneProperty(theZone, "flags!", "")
-	elseif cfxZones.hasProperty(theZone, "flags") then
+		flags = theZone:getStringFromZoneProperty("flags!", "")
+	elseif theZone:hasProperty("flags") then
 		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: deprecated 'flags' (no bang) usage, use 'RND!' instead.", 30)
-		flags = cfxZones.getStringFromZoneProperty(theZone, "flags", "")
+		flags = theZone:getStringFromZoneProperty("flags", "")
 	else 
 		trigger.action.outText("+++RND: warning - zone <" .. theZone.name .. ">: no flags defined!", 30)
 	end 
@@ -78,73 +79,65 @@ function rndFlags.createRNDWithZone(theZone)
 		trigger.action.outText("+++RND: output set for <" .. theZone.name .. "> is <" .. flags .. ">",30)
 	end
 
-	theZone.pollSizeMin, theZone.pollSize = cfxZones.getPositiveRangeFromZoneProperty(theZone, "pollSize", 1)
+	theZone.pollSizeMin, theZone.pollSize = theZone:getPositiveRangeFromZoneProperty("pollSize", 1)
 	if rndFlags.verbose or theZone.verbose then 
 		trigger.action.outText("+++RND: pollSize is <" .. theZone.pollSizeMin .. ", " .. theZone.pollSize .. ">", 30)
 	end
 			 
-	
-	theZone.remove = cfxZones.getBoolFromZoneProperty(theZone, "remove", false)
+	theZone.remove = theZone:getBoolFromZoneProperty("remove", false)
+	theZone.rndTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
 
-	-- watchflag:
-	-- triggerMethod
-	theZone.rndTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-
-	if cfxZones.hasProperty(theZone, "rndTriggerMethod") then 
-		theZone.rndTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "rndTriggerMethod", "change")
+	if theZone:hasProperty("rndTriggerMethod") then 
+		theZone.rndTriggerMethod = theZone:getStringFromZoneProperty("rndTriggerMethod", "change")
 	end
 
 	-- trigger flag 
-	if cfxZones.hasProperty(theZone, "f?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "f?", "none")
+	if theZone:hasProperty("f?") then 
+		theZone.triggerFlag = theZone:getStringFromZoneProperty("f?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "in?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "in?", "none")
+	if theZone:hasProperty("in?") then 
+		theZone.triggerFlag = theZone:getStringFromZoneProperty("in?", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "rndPoll?") then 
-		theZone.triggerFlag = cfxZones.getStringFromZoneProperty(theZone, "rndPoll?", "none")
+	if theZone:hasProperty("rndPoll?") then 
+		theZone.triggerFlag = theZone:getStringFromZoneProperty("rndPoll?", "none")
 	end
-	
 	
 	if theZone.triggerFlag then 
-		theZone.lastTriggerValue = cfxZones.getFlagValue(theZone.triggerFlag, theZone) 
+		theZone.lastTriggerValue = theZone:getFlagValue(theZone.triggerFlag) 
 		if rndFlags.verbose or theZone.verbose then 
 			trigger.action.outText("+++RND: randomizer in <" .. theZone:getName() .. "> triggers on flag <" .. theZone.triggerFlag .. ">", 30)
 		end
-		--trigger.misc.getUserFlag(theZone.triggerFlag) -- save last value
 	end
 	
-	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
+	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
 	
 	if not theZone.onStart and not theZone.triggerFlag then 
-		-- theZone.onStart = true 
-		if true or theZone.verbose or rndFlags.verbose then 
-			trigger.action.outText("+++RND - WARNING: no triggers and no onStart, RND in <" .. theZone.name .. "> can't be triggered.", 30)
-		end
+		trigger.action.outText("+++RND - WARNING: no triggers and no onStart, RND in <" .. theZone.name .. "> can't be triggered.", 30)
 	end
 	
-	theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "rndMethod") then 
-		theZone.rndMethod = cfxZones.getStringFromZoneProperty(theZone, "rndMethod", "inc")
+	theZone.rndMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("rndMethod") then 
+		theZone.rndMethod = theZone:getStringFromZoneProperty("rndMethod", "inc")
 	end
 	
-	theZone.reshuffle = cfxZones.getBoolFromZoneProperty(theZone, "reshuffle", false)
+	theZone.reshuffle = theZone:getBoolFromZoneProperty("reshuffle", false)
 	if theZone.reshuffle then 
 		-- create a backup copy we can reshuffle from 
 		theZone.flagStore = dcsCommon.copyArray(theFlags)
 	end
 	
 	-- done flag OLD, to be deprecated
-	if cfxZones.hasProperty(theZone, "done+1") then 
-		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done+1", "<none>")
+	if theZone:hasProperty("done+1") then 
+		theZone.doneFlag = theZone:getStringFromZoneProperty("done+1", "<none>")
+		trigger.action.outText("Warning: RND zone <" .. theZone.name .. "> uses depreceated 'done+1'.", 30)
 
 	-- now NEW replacements
-	elseif cfxZones.hasProperty(theZone, "done!") then 
-		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "done!", "<none>")
-	elseif cfxZones.hasProperty(theZone, "rndDone!") then 
-		theZone.doneFlag = cfxZones.getStringFromZoneProperty(theZone, "rndDone!", "<none>")
+	elseif theZone:hasProperty("done!") then 
+		theZone.doneFlag = theZone:getStringFromZoneProperty("done!", "<none>")
+	elseif theZone:hasProperty("rndDone!") then 
+		theZone.doneFlag = theZone.getStringFromZoneProperty("rndDone!", "<none>")
 	end
 	
 end
@@ -210,7 +203,7 @@ function rndFlags.fire(theZone)
 			trigger.action.outText("+++RND: polling " .. theFlag .. " with " .. theZone.rndMethod, 30)
 		end
 		
-		cfxZones.pollFlag(theFlag, theZone.rndMethod, theZone) 
+		theZone:pollFlag(theFlag, theZone.rndMethod) 
 	end
 	
 	-- remove if requested
@@ -317,9 +310,7 @@ function rndFlags.readConfigZone()
 		end 
 		return 
 	end 
-	
-	rndFlags.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	
+	rndFlags.verbose = theZone.verbose 
 	if rndFlags.verbose then 
 		trigger.action.outText("***RND: read config", 30)
 	end 
@@ -349,17 +340,15 @@ function rndFlags.start()
 	-- now create an rnd gen for each one and add them
 	-- to our watchlist 
 	for k, aZone in pairs(attrZones) do 
-		rndFlags.createRNDWithZone(aZone) -- process attribute and add to zone
-		rndFlags.addRNDZone(aZone) -- remember it so we can smoke it
+		rndFlags.createRNDWithZone(aZone)
+		rndFlags.addRNDZone(aZone)
 	end
 
 	-- obsolete here
 	attrZones = cfxZones.getZonesWithAttributeNamed("RND")
-	-- now create an rnd gen for each one and add them
-	-- to our watchlist 
 	for k, aZone in pairs(attrZones) do 
-		rndFlags.createRNDWithZone(aZone) -- process attribute and add to zone
-		rndFlags.addRNDZone(aZone) -- remember it so we can smoke it
+		rndFlags.createRNDWithZone(aZone) 
+		rndFlags.addRNDZone(aZone)
 	end
 	
 	-- persistence

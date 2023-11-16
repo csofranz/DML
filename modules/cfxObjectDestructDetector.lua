@@ -1,5 +1,5 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "1.3.0" 
+cfxObjectDestructDetector.version = "2.0.0" 
 cfxObjectDestructDetector.verbose = false 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,11 +12,11 @@ cfxObjectDestructDetector.requiredLibs = {
    1.1.0 added support for method, f! and destroyed! 
    1.2.0 DML / Watchflag support 
    1.3.0 Persistence support 
-   
-   
-   Detect when an object with OBJECT ID as assigned in ME dies 
-   *** EXTENDS ZONES 
-   
+   2.0.0 dmlZone OOP support 
+		 clean-up 
+         re-wrote object determination to not be affected by 
+		 ID changes (happens with map updates)
+		 fail addZone when name property is missing 
 --]]--
 
 cfxObjectDestructDetector.objectZones = {}
@@ -31,7 +31,7 @@ end
 
 function cfxObjectDestructDetector.invokeCallbacksFor(zone)
 	for idx, theCB in pairs (cfxObjectDestructDetector.callbacks) do 
-		theCB(zone, zone.ID, zone.name)
+		theCB(zone, zone.ID, zone.name, zone.objName)
 	end
 end
 
@@ -55,104 +55,55 @@ end
 -- processing of zones 
 --
 function cfxObjectDestructDetector.processObjectDestructZone(aZone)
-	aZone.name = cfxZones.getStringFromZoneProperty(aZone, "NAME", aZone.name)
---	aZone.coalition = cfxZones.getCoalitionFromZoneProperty(aZone, "coalition", 0)
-	aZone.ID = cfxZones.getNumberFromZoneProperty(aZone, "OBJECT ID", 1)  -- THIS!
+	if aZone:hasProperty("name") then 
+		aZone.objName = string.upper(aZone:getStringFromZoneProperty("NAME", "default"))
+	else 
+		trigger.action.outText("+++OOD: Zone <" .. aZone.name .. "> lacks name attribute, ignored for destruct detection.")
+		return false
+	end 
+	
 	-- persistence interface
 	aZone.isDestroyed = false 
 	
-	--[[-- old code, to be decom'd --]]--
-	if cfxZones.hasProperty(aZone, "setFlag") then 
-		aZone.setFlag = cfxZones.getStringFromZoneProperty(aZone, "setFlag", "999")
-	end
-	if cfxZones.hasProperty(aZone, "f=1") then 
-		aZone.setFlag = cfxZones.getStringFromZoneProperty(aZone, "f=1", "999")
-	end
-	if cfxZones.hasProperty(aZone, "clearFlag") then 
-		aZone.clearFlag = cfxZones.getStringFromZoneProperty(aZone, "clearFlag", "999")
-	end
-	if cfxZones.hasProperty(aZone, "f=0") then 
-		aZone.clearFlag = cfxZones.getStringFromZoneProperty(aZone, "f=0", "999")
-	end
-	if cfxZones.hasProperty(aZone, "increaseFlag") then 
-		aZone.increaseFlag = cfxZones.getStringFromZoneProperty(aZone, "increaseFlag", "999")
-	end
-	if cfxZones.hasProperty(aZone, "f+1") then 
-		aZone.increaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f+1", "999")
-	end
-	if cfxZones.hasProperty(aZone, "decreaseFlag") then 
-		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "decreaseFlag", "999")
-	end
-	if cfxZones.hasProperty(aZone, "f-1") then 
-		aZone.decreaseFlag = cfxZones.getStringFromZoneProperty(aZone, "f-1", "999")
+	aZone.oddMethod = aZone:getStringFromZoneProperty("method", "inc")
+	if aZone:hasProperty("oddMethod") then 
+		aZone.oddMethod = aZone:getStringFromZoneProperty("oddMethod", "inc")
 	end
 	
-	-- DML method support
-	aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "inc")
-	if cfxZones.hasProperty(aZone, "oddMethod") then 
-		aZone.oddMethod = cfxZones.getStringFromZoneProperty(aZone, "oddMethod", "inc")
+	if aZone:hasProperty("f!") then 
+		aZone.outDestroyFlag = aZone:getStringFromZoneProperty("f!", "*none")
+	elseif aZone:hasProperty("destroyed!") then 
+		aZone.outDestroyFlag = aZone:getStringFromZoneProperty("destroyed!", "*none")
+	elseif aZone:hasProperty("objectDestroyed!") then 
+		aZone.outDestroyFlag = aZone:getStringFromZoneProperty( "objectDestroyed!", "*none")
 	end
-	
-	
-	-- we now always have that property
-	aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "f!", "*none")
-
-	if cfxZones.hasProperty(aZone, "destroyed!") then 
-		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "destroyed!", "*none")
-	end
-
-	if cfxZones.hasProperty(aZone, "objectDestroyed!") then 
-		aZone.outDestroyFlag = cfxZones.getStringFromZoneProperty(aZone, "objectDestroyed!", "*none")
-	end
+	return true 
 end
 --
--- MAIN DETECTOR
+-- ON EVENT
 --
--- invoke callbacks when an object was destroyed
 function cfxObjectDestructDetector:onEvent(event)
 	if event.id == world.event.S_EVENT_DEAD then
 		if not event.initiator then return end 
-		local id = event.initiator:getName()
-		if not id then return end 
+		local theObject = event.initiator
+		local desc = theObject:getDesc() 
+		if not desc then return end 
+		local matchMe = desc.typeName -- we home in on object's typeName 
+		if not matchMe then return end 
+		matchMe = string.upper(matchMe)
 		
 		for idx, aZone in pairs(cfxObjectDestructDetector.objectZones) do 
-			if (not aZone.isDestroyed) and aZone.ID == id then 
-				-- flag manipulation 
-				-- OLD FLAG SUPPORT, SOON TO BE REMOVED
-				if aZone.setFlag then 
-					trigger.action.setUserFlag(aZone.setFlag, 1)
-				end
-				if aZone.clearFlag then 
-					trigger.action.setUserFlag(aZone.clearFlag, 0)
-				end
-				if aZone.increaseFlag then 
-					local val = trigger.misc.getUserFlag(aZone.increaseFlag) + 1
-					trigger.action.setUserFlag(aZone.increaseFlag, val)
-				end
-				if aZone.decreaseFlag then 
-					local val = trigger.misc.getUserFlag(aZone.decreaseFlag) - 1
-					trigger.action.setUserFlag(aZone.decreaseFlag, val)
-				end
-				-- END OF OLD CODE, TO BE REMOVED 
-				
-				-- support for banging 
+			if (not aZone.isDestroyed) and aZone.objName == matchMe then 
 				if aZone.outDestroyFlag then 
-					cfxZones.pollFlag(aZone.outDestroyFlag, aZone.oddMethod, aZone)
+					aZone:pollFlag(aZone.outDestroyFlag, aZone.oddMethod)
 				end
-				
 				-- invoke callbacks 
 				cfxObjectDestructDetector.invokeCallbacksFor(aZone)
 				if aZone.verbose or cfxObjectDestructDetector.verbose then 
 					trigger.action.outText("OBJECT KILL: " .. id, 30)
 				end
-
-				-- we could now remove the object from the list 
-				-- for better performance since it cant
-				-- die twice 
-				
 				-- save state for persistence
-				aZone.isDestroyed = true 
-				
+				aZone.isDestroyed = true 				
 				return 
 			end
 		end
@@ -172,7 +123,7 @@ function cfxObjectDestructDetector.saveData() -- invoked by persistence
 		-- the isDestroyed and flag info info
 		info = {}
 		info.isDestroyed = aZone.isDestroyed
-		info.outDestroyVal = cfxZones.getFlagValue(aZone.outDestroyFlag, aZone)
+		info.outDestroyVal = aZone:getFlagValue(aZone.outDestroyFlag)
 		zoneInfo[aZone.name] = info
 	end
 	-- expasion proof: assign as own field
@@ -202,7 +153,7 @@ function cfxObjectDestructDetector.loadMission()
 		local theZone = cfxObjectDestructDetector.getObjectDetectZoneByName(zName)
 		if theZone then 
 			theZone.isDestroyed = info.isDestroyed
-			cfxZones.setFlagValue(theZone.outDestroyFlag, info.outDestroyVal, theZone)
+			theZone:setFlagValue(theZone.outDestroyFlag, info.outDestroyVal)
 			if cfxObjectDestructDetector.verbose or theZone.verbose then 
 				trigger.action.outText("+++oDDet: persistence setting flag <" .. theZone.outDestroyFlag .. "> to <" .. info.outDestroyVal .. ">",30)
 			end
@@ -246,14 +197,14 @@ function cfxObjectDestructDetector.start()
 		return false 
 	end
 	
-	-- collect all zones with 'OBJECT id' attribute 
-	-- collect all spawn zones 
+	-- collect all zones with 'OBJECT ID' attribute 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("OBJECT ID")
 	
 
 	for k, aZone in pairs(attrZones) do 
-		cfxObjectDestructDetector.processObjectDestructZone(aZone) -- process attribute and add to zone properties (extend zone)
-		cfxObjectDestructDetector.addObjectDetectZone(aZone)
+		if cfxObjectDestructDetector.processObjectDestructZone(aZone) then 
+			cfxObjectDestructDetector.addObjectDetectZone(aZone)
+		end
 	end
 
 	-- add myself as event handler
@@ -275,8 +226,6 @@ function cfxObjectDestructDetector.start()
 			trigger.action.outText("no persistence for cfxObjectDestructDetector", 30)
 		end
 	end
-	
-	
 	
 	-- say hi
 	trigger.action.outText("cfx Object Destruct Zones v" .. cfxObjectDestructDetector.version .. " started.", 30)

@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.9.0"
+cloneZones.version = "1.9.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -106,6 +106,7 @@ cloneZones.respawnOnGroupID = true
 		  - cooldown attribute 
 		  - cloner collects all types used 
 		  - groupScheme attribute
+	1.9.1 - useAI attribute 
 --]]--
 
 --
@@ -404,6 +405,8 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.nameScheme = nil
 		theZone.groupScheme = nil 
 	end
+	
+	theZone.useAI = theZone:getBoolFromZoneProperty("useAI", true)
 	-- we end with clear plate 
 end
 
@@ -1256,6 +1259,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- see what country we spawn for
 		ctry = cloneZones.resolveOwnership(spawnZone, ctry)
 		rawData.CZctry = ctry -- save ctry 
+		-- set AI on or off 
+		rawData.useAI = spawnZone.useAI 
 		table.insert(dataToSpawn, rawData)
 	end 
 	
@@ -1295,6 +1300,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
 				
+		-- turn off AI if disabled 
+		if not rawData.useAI then 
+			cloneZones.turnOffAI({theGroup})
+		end 
+		
 		-- update groupXlate table from spawned group
 		-- so we can later reference them with other clones
 		local newGroupID = theGroup:getID() -- new ID assigned by DCS
@@ -1514,6 +1524,13 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	cloneZones.invokeCallbacks(theZone, "spawned", args)
 	return spawnedGroups, spawnedStatics 
 end
+
+function cloneZones.turnOffAI(args)
+	local theGroup = args[1]
+	local theController = theGroup:getController()
+	theController:setOnOff(false)
+--	trigger.action.outText("turned off AI for group <" .. theGroup:getName() .. "> ", 30)
+end 
 
 -- retro-fit for helo troops and others to provide 'requestable' support 
 function cloneZones.spawnWithSpawner(theZone)
@@ -1950,6 +1967,10 @@ function cloneZones.loadData()
 		local gdClone = dcsCommon.clone(gData)
 		cloneZones.allClones[gName] = gdClone 
 		local theGroup = coalition.addGroup(cty, cat, gData)
+		-- turn off AI if disabled 
+		if not gData.useAI then 
+			cloneZones.turnOffAI({theGroup})
+		end 
 	end
 	
 	-- spawn all static objects 

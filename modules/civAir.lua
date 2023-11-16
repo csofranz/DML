@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "2.0.0"
+civAir.version = "3.0.0"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -32,43 +32,61 @@ civAir.version = "2.0.0"
 		  strenghtened guard on testing against free slots for other units
 		  flights are now of random neutral countries 
 		  maxFlights synonym for maxTraffic
-	
+	3.0.0 liveries support
+		  default liveries for Yak-50 (main test case)
+		  default liveries for C-130, c-17A, IL-76MD, An-30M, An-26B
+		  default aircraft types dcs 
+		  support for CAM
+		  default liveries for all CAM types 
+		  new DCS attribute
+		  new CAM attribute 
+		  deafault to one Yak-40 if neither 
+		  support for 'civil_liveries' zone 
+
 --]]--
 
 civAir.ups = 0.05 -- updates per second. 0.05  = once every 20 seconds 
 civAir.initialAirSpawns = true -- when true has population spawn in-air at start
 civAir.verbose = false 
 
--- aircraftTypes contains the type names for the neutral air traffic
--- each entry has the same chance to be chose, so to make an 
--- aircraft more probably to appear, add its type multiple times
--- like here with the Yak-40 
-civAir.aircraftTypes = {"Yak-40", "Yak-40",  "C-130", "C-17A", "IL-76MD", "An-30M", "An-26B"} -- civilian planes type strings as described here https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
+civAir.aircraftTypes = {}
+civAir.dcsBuiltinTypes = {"Yak-40",  "C-130", "C-17A", "IL-76MD", "An-30M", "An-26B"}
+civAir.CAMTypes = { "A_320", "A_330", "A_380", "B_727", "B_737", "B_747", "B_757", "Cessna_210N", "DC_10",}
 
--- maxTraffic is the number of neutral flights that are 
--- concurrently under way 
+civAir.liveries = {
+
+-- definitions for plain vanilla DCS
+["Yak-40"] = {"Aeroflot", "Algeria GLAM",  "Olympic Airways", "Ukranian", "Georgian Airlines", }, --"Georgian Airlines",
+["C-130"] = {"Air Algerie L-382 White", "Algerian AF Green", "Algerian AF H30 White", "Belgian Air Force", "Canada's Air Force", "French Air Force", "HAF gray", "IRIAF 5-8503", "IRIAF 5-8518", "Israel Defence Force", "Royal Air Force", "Royal Danish Air Force", "Royal Netherlands Air Force", "Royal Norwegian Air Force", "Spanish Air Force", "Turkish Air Force", "US Air Force", },
+["C-17A"] = {"usaf standard", },
+["IL-76MD"] = {"Algerian AF IL-76MD", "China Air Force New", "China Air Force Old", "FSB aeroflot", "MVD aeroflot", "RF Air Force", "Ukrainian AF", "Ukrainian AF aeroflot", },
+["An-30M"] = {"15th Transport AB", "China CAAC", "RF Air Force"},
+["An-26B"] = {"Abkhazian AF", "Aeroflot", "China PLAAF", "Georgian AF", "RF Air Force", "RF Navy", "Ukraine AF", },
+
+-- definitions for CAM mod
+["A_320"] = {"Aeroflot", "Aeroflot 1", "Air Asia", "Air Berlin", "Air Berlin FFO", "Air Berlin OLT", "Air Berlin retro", "Air France", "Air Moldova", "Airbus Neo", "Al Maha", "Alitalia", "American Airlines", "British Airways", "Cebu Pacific", "Clean", "Condor", "Delta Airlines", "Easy Jet", "Easy Jet Berlin", "Easy Jet w", "Edelweiss", "Emirates", "Etihad", "Eurowings", "Eurowings BVB09", "Eurowings Europa Park", "Fly Georgia", "Fly Niki", "Frontier", "German Wings", "Gulf Air", "Iberia", "Iran Air", "Jet Blue NY", "JetBlue", "jetBlue FDNY", "Kish Air", "Kuwait Airways", "Lufthansa", "Lufthansa New", "MEA", "MRTT Canada", "MRTT Luftwaffe", "Qatar", "RAF MPA", "RAF VIP", "S7", "SAS", "Saudi Gulf", "Saudia", "Small Planet", "Star Alliance", "SWISS", "Thomas Cook", "Tunis Air", "Turkish Airlines", "United", "Ural Airlines", "US Airways", "Vietnam Airlines", "Virgin", "WiZZ", "WiZZ Budapest", "WOW", },
+
+["A_330"] = {"Aer Lingus", "Aeroflot", "Air Canada", "Air China", "Air Tahiti Nui", "AirAsia", "Airbus", "BOURKHAN", "Brussels Airline", "Cathay Pacific", "CEBU Pacific", "China Eastern", "Clean", "DELTA", "DragonAir", "Edelweiss", "Egypt Air", "Emirates", "ETIHAD", "EVA", "FIJI", "FinnAir", "FrenchBlue", "Garude Indunesia", "GulfAir", "Hainan Airlines", "Iberia", "IRoI", "KLM", "LAN Airways", "Lion Air PK-LEG", "LTU", "Lufthansa", "NWA", "nwaold", "Olympic", "OmanAir", "Orbit", "Philipines", "Qantas", "Qatar", "RAF Voyager", "Singapore", "Skyteam", "Srilankan", "Star Aliance", "Swiss", "Thomas Cook", "Turkish Airlines", "US Airways", "Virgin Atlantic", "WorldTrave", },
+
+["A_380"] = {"Air France", "BA", "China Southern", "Clean", "Emirates", "KA", "LH", "LHF", "Qantas Airways", "QTR", "SA", "TA", },
+
+["B_727"] = {"AEROFLOT", "Air France", "Alaska", "Alitalia", "American Airlines", "Clean", "Delta Airlines", "Delta Airlines OLD", "FedEx", "Hapag Lloyd", "Lufthansa", "Lufthansa Oberhausen Old", "Northwest", "Pan Am", "Singapore Airlines", "Southwest", "UNITED", "UNITED Old", "ZERO G", },
+
+["B_737"] = {"Air Algerie", "Air Berlin", "Air France", "airBaltic", "Airzena", "AM", "American_Airlines", "British Airways", "C40s", "Clean", "Disney", "EA", "easyJet", "FINNAIR", "HARIBO", "JA", "Jet2", "kulula", "LH", "Lufthansa BA", "Lufthansa KR", "OLD_BA", "OMAN AIR", "P8 RAF", "P8 USN", "PAN AM", "Polskie Linie Lotnicze LOT", "QANTAS", "RYANAIR", "SouthWest Lone Star", "ThomsonFly", "TNT", "Ukraine Airlines", "UPS", },
+
+["B_747"] = {"AF", "AF-One", "AI", "CP", "IM", "KLM", "LH", "NW", "PA", "QA", "TA", }, 
+
+["B_757"] = {"AA", "BA", "C-32", "Delta", "DHL", "easyJet", "Swiss", "Thomson", },
+
+["Cessna_210N"] = {"Blank", "D-EKVW", "HellenicAF", "Muster", "N9572H", "SEagle blue", "SEagle red", "USAF-Academy", "V5-BUG", "VH-JGA", },
+
+["DC_10"] = {"SWISSAIR HB-IHL", "SWISSAIR HB-IMC", "SWISSAIR HB-IPF", }
+}
 civAir.maxTraffic = 10 -- number of flights at the same time
 civAir.maxIdle = 8 * 60 -- seconds of ide time before it is removed after landing 
 
-
 civAir.trafficCenters = {} 
--- place zones on the map and add a "civAir" attribute. 
--- If the attribute's value is anything
--- but "exclude", the closest airfield to the zone 
--- is added to trafficCenters
--- if you leave this list empty, and do not add airfields
--- by zones, the list is automatically populated with all
--- airfields in the map 
--- if name starts with "***" then it is not an airfield, but zone
-		  
 civAir.excludeAirfields = {}
--- list all airfields that must NOT be included in 
--- civilian activities. Will be used for neither landing 
--- nor departure. overrides any airfield that was included 
--- in trafficCenters. 
--- can be populated by zone on the map that have the 
--- 'civAir' attribute with value "exclude"
-
 civAir.departOnly = {} -- use only to start from 
 civAir.landingOnly = {} -- use only to land at 
 civAir.inoutZones = {} -- off-map connector zones 
@@ -86,39 +104,105 @@ function civAir.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("civAirConfig") 
 	if not theZone then 
-		trigger.action.outText("***civA: NO config zone!", 30) 
 		theZone = cfxZones.createSimpleZone("civAirConfig") 
 	end 
-		
-	-- ok, for each property, load it if it exists
-	if theZone:hasProperty("aircraftTypes")  then 
-		local theTypes = theZone:getStringFromZoneProperty( "aircraftTypes", civAir.aircraftTypes) -- "Yak-40")
-		local typeArray = dcsCommon.splitString(theTypes, ",")
-		typeArray = dcsCommon.trimArray(typeArray)
-		civAir.aircraftTypes = typeArray 
-	end
+	civAir.verbose = theZone.verbose 	
+	civAir.ups = theZone:getNumberFromZoneProperty("ups", 0.05)
+	if civAir.ups < .0001 then civAir.ups = 0.05 end
 	
---	if theZone:hasProperty("ups")  then 
-		civAir.ups = theZone:getNumberFromZoneProperty("ups", 0.05)
-		if civAir.ups < .0001 then civAir.ups = 0.05 end
---	end
 	
 	if theZone:hasProperty("maxTraffic")  then 
 		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxTraffic", 10)
-	elseif theZone:hasProperty("maxFlights") then 
+	else --if theZone:hasProperty("maxFlights") then 
 		civAir.maxTraffic = theZone:getNumberFromZoneProperty( "maxFlights", 10)
 	end
 	
---	if theZone:hasProperty("maxIdle")  then 
-		civAir.maxIdle = theZone:getNumberFromZoneProperty("maxIdle", 8 * 60)
---	end
+	civAir.maxIdle = theZone:getNumberFromZoneProperty("maxIdle", 8 * 60)
 	
---	if theZone:hasProperty("initialAirSpawns")  then 
-		civAir.initialAirSpawns = theZone:getBoolFromZoneProperty( "initialAirSpawns", true) 
---	end
+	civAir.initialAirSpawns = theZone:getBoolFromZoneProperty( "initialAirSpawns", true) 
+
+	civAir.owner = theZone:getNumberFromZoneProperty("owner", 82) -- default to UN peacekeepers 
+	-- build my aircraft types list 
+	local hasDCS = theZone:getBoolFromZoneProperty("dcs", true)
+	if hasDCS then
+		if civAir.verbose then trigger.action.outText("+++civA: adding DCS standard types", 30) end 
+		for idx, aType in pairs(civAir.dcsBuiltinTypes) do 
+			table.insert(civAir.aircraftTypes, aType)
+		end
+	end
+	local hasCAM = theZone:getBoolFromZoneProperty("cam", false) 
+	if hasCAM then 
+		if civAir.verbose then trigger.action.outText("+++civA: adding CAM add-on types", 30) end
+		for idx, aType in pairs(civAir.CAMTypes) do 
+			table.insert(civAir.aircraftTypes, aType)
+		end		
+	end
 	
-	civAir.verbose = theZone.verbose 
+	-- now get types and liveries from 'civil_liveries' if present
+	local livZone = cfxZones.getZoneByName("civil_liveries") 
+	if livZone then 
+		if civAir.verbose then 
+			trigger.action.outText("civA: found and processing 'civil_liveries' zone data.", 30)
+		end 
+		
+		-- read all into my types registry, replacing whatever is there
+		local rawLiver = cfxZones.getAllZoneProperties(livZone)
+		local newTypes, newLiveries = civAir.addTypesAndLiveries(rawLiver)
+		-- now types to existing types if not already there 
+		for idx, aType in pairs(newTypes) do 
+			dcsCommon.addToTableIfNew(civAir.aircraftTypes, aType)
+			if civAir.verbose then 
+				trigger.action.outText("+++civA: processed and added aircraft <" .. aType .. "> to civAir", 30)
+			end
+		end
+		-- now replace liveries or add if not already there 
+		for aType, liveries in pairs(newLiveries) do 
+			civAir.liveries[aType] = liveries
+			if civAir.verbose then 
+				trigger.action.outText("+++civA: replaced/added liveries for aircraft <" .. aType .. ">", 30)
+			end
+		end 
+	end  
+	
+	if #civAir.aircraftTypes < 1 then 
+		table.insert(civAir.aircraftTypes, "Yak-40")
+		if civAir.verbose then 
+			trigger.action.outText("+++civA: adding singular Yak-40", 30)
+		end
+	end 
+	
+	-- selective types, overwrites existing types when present
+	-- also provides legacy support 
+	if theZone:hasProperty("aircraftTypes")  then 
+		local theTypes = theZone:getStringFromZoneProperty( "aircraftTypes", civAir.aircraftTypes)
+		local typeArray = dcsCommon.splitString(theTypes, ",")
+		typeArray = dcsCommon.trimArray(typeArray)
+		civAir.aircraftTypes = typeArray 
+		if civAir.verbose then 
+			trigger.action.outText("+++civA: setting aircraft types to <" .. theTypes .. ">", 30)
+		end
+	end
+	
 end
+
+function civAir.addTypesAndLiveries(rawIn)
+	local newTypes = {}
+	local newLiveries = {}
+	-- now iterate the input table, and generate new types and 
+	-- liveries from it 
+	for theType, liveries in pairs (rawIn) do 
+		if civAir.verbose then 
+			trigger.action.outText("+++civA: processing type <" .. theType .. ">:<" .. liveries .. ">", 30)
+		end
+		local livA = dcsCommon.splitString(liveries, ',')
+		livA = dcsCommon.trimArray(livA)
+		table.insert(newTypes, theType)
+		newLiveries[theType] = livA
+	end
+	
+	return newTypes, newLiveries
+end
+
 
 function civAir.processZone(theZone)
 	local value = theZone:getStringFromZoneProperty("civAir", "")
@@ -137,16 +221,12 @@ function civAir.processZone(theZone)
 		elseif dcsCommon.stringStartsWith(value, "inb") then 
 			table.insert(civAir.departOnly, inoutName) -- start in inbound zone
 			civAir.inoutZones[inoutName] = theZone
---			theZone.inbound = true 
 		elseif dcsCommon.stringStartsWith(value, "outb") then 
 			table.insert(civAir.landingOnly, inoutName)
 			civAir.inoutZones[inoutName] = theZone
---			theZone.outbound = true
 		elseif dcsCommon.stringStartsWith(value, "in/out") then 
 			table.insert(civAir.trafficCenters, inoutName)
 			civAir.inoutZones[inoutName] = theZone
---			theZone.inbound = true
---			theZone.outbound = true 
 		else 
 			table.insert(civAir.trafficCenters, afName) -- note that adding the same twice makes it more likely to be picked 
 		end
@@ -231,8 +311,7 @@ function civAir.getTwoAirbases()
 		sAB = dcsCommon.pickRandom(filteredAB)
 		tries = tries + 1 -- only try 10 times
 	until fAB ~= sAB or tries > 10
-	
-	
+		
 	local civA = {}
 	if not (dcsCommon.stringStartsWith(fAB, '***')) then 
 		civA.AB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0) 
@@ -295,9 +374,15 @@ function civAir.createFlight(name, theTypeString, fromAirfield, toAirfield, inAi
 	
 	local theGroup = dcsCommon.createEmptyAircraftGroupData (name)
 	local theAUnit = dcsCommon.createAircraftUnitData(name .. "-GA", theTypeString, false)
+	-- add livery capability for this aircraft 
+	civAir.processLiveriesFor(theAUnit, theTypeString)
+	
+	-- enforce civ attribute 
+	theAUnit.civil_plane = true 
+	
 	theAUnit.payload.fuel = 100000
 	dcsCommon.addUnitToGroupData(theAUnit, theGroup)
-	
+
 	local fromWP 
 	if fromAirfield.AB then 
 		fromWP = dcsCommon.createTakeOffFromParkingRoutePointData(fromAirfield.AB) 
@@ -384,13 +469,7 @@ function civAir.createFlight(name, theTypeString, fromAirfield, toAirfield, inAi
 	dcsCommon.addRoutePointForGroupData(theGroup, toWP)
 	
 	-- spawn
-	local groupCat = Group.Category.AIRPLANE
-	local allNeutral = dcsCommon.getCountriesForCoalition(0)
-	local aRandomNeutral = dcsCommon.pickRandom(allNeutral)
-	if not aRandomNeutral then 
-		trigger.action.outText("+++civA: WARNING: no neutral countries exist, flight is not neutral.", 30)
-	end
-	local theSpawnedGroup = coalition.addGroup(aRandomNeutral, groupCat, theGroup) -- 82 is UN peacekeepers
+	local theSpawnedGroup = coalition.addGroup(civAir.owner, groupCat, theGroup) -- 82 is UN peacekeepers
 	if zoneApproach then 
 		-- track this flight to target zone 
 		civAir.outboundFlights[name] = zoneApproach
@@ -435,6 +514,20 @@ function civAir.airStartPopulation()
 		numAirStarts = numAirStarts - 1 
 		civAir.airStartSeparation = civAir.airStartSeparation + 200
 		civAir.createNewFlight(true)
+	end
+	-- start update in 15 seconds
+	timer.scheduleFunction(civAir.update, {}, timer.getTime() + 15)
+end
+
+--
+-- Livery handling
+--
+
+function civAir.processLiveriesFor(theData, theType)
+	if civAir.liveries[theType] then 
+		local available = civAir.liveries[theType]
+		local chosen = dcsCommon.pickRandom(available)		
+		theData.livery_id = chosen
 	end
 end
 
@@ -609,7 +702,7 @@ function civAir.start()
 	
 	-- see if there is a config zone and load it
 	civAir.readConfigZone()
-
+	
 	-- look for zones to add to air fields list
 	civAir.collectHubs()
 	
@@ -632,12 +725,15 @@ function civAir.start()
 	end 
 	
 	-- air-start half population if allowed
+	-- allow mission 15 seconds to settle before we start populating to 
+	-- allow better access to liveries 
 	if civAir.initialAirSpawns then 
-		civAir.airStartPopulation()
+		timer.scheduleFunction(civAir.airStartPopulation, {}, timer.getTime() + 5)
+	else 
+		-- start update in 15 seconds
+		timer.scheduleFunction(civAir.update, {}, timer.getTime() + 15)
 	end
 	
-	-- start the update loop
-	civAir.update()
 	-- start outbound tracking 
 	civAir.trackOutbound()
 	

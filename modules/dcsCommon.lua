@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.5"
+dcsCommon.version = "2.9.6"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -175,6 +175,7 @@ dcsCommon.version = "2.9.5"
 2.9.3  - getAirbasesWhoseNameContains now supports category tables for filtering 
 2.9.4  - new bearing2degrees()
 2.9.5  - distanceOfPointPToLineXZ(p, p1, p2)
+2.9.6  - new addToTableIfNew()
 
 --]]--
 
@@ -401,6 +402,13 @@ dcsCommon.version = "2.9.5"
 			table.insert(outTable, element)
 		end
 		return outTable
+	end
+	
+	function dcsCommon.addToTableIfNew(theTable, theElement)
+		for idx, anElement in pairs(theTable) do 
+			if anElement == theElement then return end 
+		end
+		table.insert(theTable, theElement)
 	end
 -- 
 -- A I R F I E L D S  A N D  F A R P S  
@@ -2404,38 +2412,9 @@ end
 			theString = string.upper(theString)
 			thePrefix = string.upper(theString)
 		end
-		-- new code because old 'string.find' had some really 
-		-- strange results with aircraft types. Prefix "A-10" did not 
-		-- match string "A-10A" etc. 
-		
-		-- superseded: string.find (s, pattern [, init [, plain]]) solves the problem 
-		
-		--[[
-		local pl = string.len(thePrefix)
-		if pl > string.len(theString) then return false end
-		if pl < 1 then return false end
- 		for i=1, pl do 
-		local left =  string.sub(theString, i, i)
-		local right = string.sub(thePrefix, i, i)
-			if left ~= right then 
-				return false
-			end
-		end
-	
-		return true 
---]]--		trigger.action.outText("---- OK???", 30)
-		-- strange stuff happening with some strings, let's investigate 
-		
+		-- superseded: string.find (s, pattern [, init [, plain]]) solves the problem  
 		local i, j = string.find(theString, thePrefix, 1, true)
 		return (i == 1)
---[[--
-		if res then
-			trigger.action.outText("startswith: <" .. theString .. "> pre <" .. thePrefix .. "> --> YES", 30)
-		else 
-			trigger.action.outText("startswith: <" .. theString .. "> nojoy pre <" .. thePrefix .. ">", 30)
-		end
-		return res 
---]]--
 	end
 	
 	function dcsCommon.removePrefix(theString, thePrefix)
