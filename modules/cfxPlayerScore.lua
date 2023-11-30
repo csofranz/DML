@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "2.2.0"
+cfxPlayerScore.version = "3.0.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -80,7 +80,12 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	      - new scoreSummaryForPlayersOfCoalition()
 		  - new noGrief option in config 
 		  - improved guards when checking ownership (nil zone owner)
-	2.0.0 - score flags for red and blue 
+	2.2.0 - score flags for red and blue 
+	3.0.0 - dmlFlags OOP
+		  - redScore#
+		  - blueScore#
+		  - sceneryObject detection improvements 
+		  - DCS 2.9 safe 
 	
 --]]--
 
@@ -120,19 +125,19 @@ cfxPlayerScore.landing = 0 -- if > 0 it scores as feat
 cfxPlayerScore.unit2player = {} -- lookup and reverse look-up 
 
 function cfxPlayerScore.addSafeZone(theZone)
-	theZone.scoreSafe = cfxZones.getCoalitionFromZoneProperty(theZone, "scoreSafe", 0)
+	theZone.scoreSafe = theZone:getCoalitionFromZoneProperty("scoreSafe", 0)
 	table.insert(cfxPlayerScore.safeZones, theZone)
 end
 
 function cfxPlayerScore.addKillZone(theZone)
-	theZone.killZone = cfxZones.getCoalitionFromZoneProperty(theZone, "killZone", 0) -- value currently ignored 
-	theZone.duet = cfxZones.getBoolFromZoneProperty(theZone, "duet", false) -- does killer have to be in zone? 
+	theZone.killZone = theZone:getCoalitionFromZoneProperty("killZone", 0) -- value currently ignored 
+	theZone.duet = theZone:getBoolFromZoneProperty("duet", false) -- does killer have to be in zone? 
 	table.insert(cfxPlayerScore.killZones, theZone)
 end
 
 function cfxPlayerScore.addFeatZone(theZone)
-	theZone.coalition = cfxZones.getCoalitionFromZoneProperty(theZone, "feat", 0) -- who can earn, 0 for all sides 
-	theZone.featType = cfxZones.getStringFromZoneProperty(theZone, "featType", "kill")
+	theZone.coalition = theZone:getCoalitionFromZoneProperty("feat", 0) -- who can earn, 0 for all sides 
+	theZone.featType = theZone:getStringFromZoneProperty("featType", "kill")
 	theZone.featType = string.upper(theZone.featType)
 	if theZone.featType == "LAND" then theZone.featType = "LANDING" end 
 	if theZone.featType ~= "KILL" and 
@@ -141,12 +146,12 @@ function cfxPlayerScore.addFeatZone(theZone)
 	then
 		theZone.featType = "KILL"
 	end	
-	theZone.featDesc = cfxZones.getStringFromZoneProperty(theZone, "description", "(some feat)")
-	theZone.featNum = cfxZones.getNumberFromZoneProperty(theZone, "awardLimit", -1) -- how many times this can be awarded, -1 is infinite 
-	theZone.ppOnce = cfxZones.getBoolFromZoneProperty(theZone, "awardOnce", false)
+	theZone.featDesc = theZone:getStringFromZoneProperty("description", "(some feat)")
+	theZone.featNum = ctheZone:getNumberFromZoneProperty("awardLimit", -1) -- how many times this can be awarded, -1 is infinite 
+	theZone.ppOnce = theZone:getBoolFromZoneProperty("awardOnce", false)
 	theZone.awardedTo = {} -- by player name: true/false 
 	table.insert(cfxPlayerScore.featZones, theZone)
-	if cfxPlayerScore.verbose then 
+	if cfxPlayerScore.verbose or theZone.verbose then 
 		trigger.action.outText("+++ feat zone <" .. theZone.name .. "> read: [" .. theZone.featDesc .. "] for <" .. theZone.featType .. ">", 30)
 	end 
 end
@@ -284,8 +289,15 @@ function cfxPlayerScore.cat2BaseScore(inCat)
 end
 
 function cfxPlayerScore.object2score(inVictim) -- does not have group
-	if not inVictim then return end 
+	if not inVictim then return 0 end 
 	local inName = inVictim:getName()
+	if dcsCommon.isSceneryObject(inVictim) then 
+		local desc = inVictim:getDesc() 
+		if not desc then return 0 end 
+		-- same as object destruct detector to 
+		-- avoid ID changes 
+		inName = desc.typeName 
+	end
 	if not inName then return 0 end 
 	if type(inName) == "number" then 
 		inName = tostring(inName)
@@ -323,7 +335,7 @@ end
 
 function cfxPlayerScore.unit2score(inUnit)
 	local vicGroup = inUnit:getGroup()
-	local vicCat = vicGroup:getCategory()
+	local vicCat = vicGroup:getCategory()-- group cat, not 2.9 affected
 	local vicType = inUnit:getTypeName()
 	local vicName = inUnit:getName() 
 	if type(vicName) == "number" then vicName = tostring(vicName) end 
@@ -879,18 +891,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- see which weapon was used. gun kills score 2x 
 	local killMeth = ""
 	local killWeap = theEvent.weapon
-	--[[--
-	if killWeap then 
-		local killWeapType = killWeap:getCategory()
-		if killWeapType == 0 then 
-			killMeth = " with GUNS" 
-			scoreMod = scoreMod * 2
-		else 
-			local kWeapon = killWeap:getTypeName()
-			killMeth = " with " .. kWeapon
-		end		
-	end
-	--]]--
+	
 	if pk then 
 		vicDesc = victim:getPlayerName() .. " in " .. vicDesc 
 		scoreMod = scoreMod * cfxPlayerScore.pkMod
@@ -1266,6 +1267,17 @@ function cfxPlayerScore.readConfigZone(theZone)
 	theZone, "reportCoalition", false) -- also show coalition score 
 	
 	cfxPlayerScore.noGrief = cfxZones.getBoolFromZoneProperty(theZone, "noGrief", true) -- noGrief = only add positive score 
+	
+	if theZone:hasProperty("redScore#") then 
+		cfxPlayerScore.redScoreOut = theZone:getStringFromZoneProperty("redScore#")
+		theZone:setFlagValue(cfxPlayerScore.redScoreOut, cfxPlayerScore.coalitionScore[1])
+	end
+	
+	if theZone:hasProperty("blueScore#") then 
+		cfxPlayerScore.blueScoreOut = theZone:getStringFromZoneProperty("blueScore#")
+		theZone:setFlagValue(cfxPlayerScore.blueScoreOut, cfxPlayerScore.coalitionScore[2])
+	end
+	
 end
 
 --
@@ -1304,6 +1316,13 @@ function cfxPlayerScore.loadData()
 	if theData.coalitionScore then 
 		cfxPlayerScore.coalitionScore = theData.coalitionScore
 	end
+	if cfxPlayerScore.redScoreOut then 
+		cfxZones.setFlagValue(cfxPlayerScore.redScoreOut, cfxPlayerScore.coalitionScore[1], cfxPlayerScore)
+	end
+	if cfxPlayerScore.blueScoreOut then 
+		cfxZones.setFlagValue(cfxPlayerScore.blueScoreOut, cfxPlayerScore.coalitionScore[2], cfxPlayerScore)
+	end
+	
 	local featData = theData.featData 
 	if featData then 
 		for name, data in pairs(featData) do 
@@ -1429,6 +1448,14 @@ function cfxPlayerScore.update()
 			end
 		end
 	end
+	-- set output flags if they are set 
+	if cfxPlayerScore.redScoreOut then 
+		cfxZones.setFlagValue(cfxPlayerScore.redScoreOut, cfxPlayerScore.coalitionScore[1], cfxPlayerScore)
+	end
+	
+	if cfxPlayerScore.blueScoreOut then 
+		cfxZones.setFlagValue(cfxPlayerScore.blueScoreOut, cfxPlayerScore.coalitionScore[2], cfxPlayerScore)
+	end
 end
 --
 -- start
@@ -1443,12 +1470,9 @@ function cfxPlayerScore.start()
 	-- read my score table 
 	-- identify and process a score table zones
 	local theZone = cfxZones.getZoneByName("playerScoreTable") 
-	if not theZone then 
---		trigger.action.outText("+++scr: no score table!", 30) 
-	else 
+	if theZone then 
 		-- read all into my types registry, replacing whatever is there
 		cfxPlayerScore.typeScore = cfxZones.getAllZoneProperties(theZone)
---		trigger.action.outText("+++scr: read score table", 30) 
 	end 
 	
 	-- read score tiggers and values
@@ -1486,13 +1510,10 @@ function cfxPlayerScore.start()
 	-- now read my config zone 
 	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
 	if not theZone then 
---		trigger.action.outText("+++pScr: no config!", 30) 
 		theZone = cfxZones.createSimpleZone("playerScoreConfig")
 	end 
 	cfxPlayerScore.readConfigZone(theZone)
-	--	trigger.action.outText("+++scr: read config", 30) 
-	 
-	
+	 	
 	-- read all scoreSafe zones 
 	local safeZones = cfxZones.zonesWithProperty("scoreSafe")
 	for k, aZone in pairs(safeZones) do

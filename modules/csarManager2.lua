@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "2.3.1"
+csarManager.version = "2.3.2"
 csarManager.verbose = false 
 csarManager.ups = 1 
 
@@ -73,6 +73,7 @@ csarManager.ups = 1
          - delay asynch OK (message only)
 		 - offset zone on randomized soldier 
 		 - smokeDist 
+ - 2.3.2 - DCS 2.9 getCategory() fix 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
 		 
@@ -320,8 +321,9 @@ function csarManager.preProcessor(event)
 	-- make sure it has an initiator
 	if not event.initiator then return false end -- no initiator 
 	local theUnit = event.initiator 
-	local cat = theUnit:getCategory()
-	if cat ~= Unit.Category.HELICOPTER then 
+	if not theUnit.getDesc then return fase end -- not a unit 
+	local cat = theUnit:getDesc().category --theUnit:getCategory()
+	if cat ~= 1 then -- Unit.Category.HELICOPTER 
 		return false 
 	end
 	

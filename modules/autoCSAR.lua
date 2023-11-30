@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "1.1.0" 
+autoCSAR.version = "2.0.0" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -13,6 +13,7 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 	1.0.0 - Initial Version
 	1.1.0 - allow open water CSAR, fake pilot with GRG Soldier 
 		  - can be disabled by seaCSAR = false 
+	2.0.0 - OOP, code clean-up
 --]]--
 
 function autoCSAR.removeGuy(args)
@@ -32,7 +33,6 @@ end
 function autoCSAR.createNewCSAR(theUnit)
 	if not csarManager then 
 		trigger.action.outText("+++aCSAR: CSAR Manager not loaded, aborting", 30)
-		-- return
 	end	
 	-- enter with unit from landing_after_eject event
 	-- unit has no group 
@@ -50,12 +50,8 @@ function autoCSAR.createNewCSAR(theUnit)
 	
 	-- for later expansion
 	local theGroup = theUnit:getGroup()
-	if theGroup then 
-		-- now happens for faked sea CSAR units
-		--trigger.action.outText("We have a group for <" .. theUnit:getName() .. ">", 30)
-	end
 	
-	-- now, if theUnit is over open water, this will be killed instantly
+	-- if theUnit is over open water, it is killed instantly by DCS
 	-- and must therefore be replaced with a stand-in 
 	local pPoint = theUnit:getPoint()
 	pPoint.y = pPoint.z -- make it getSurfaceType compatible 
@@ -93,7 +89,6 @@ function autoCSAR.createNewCSAR(theUnit)
 end
 
 function autoCSAR:onEvent(event)
---	trigger.action.outText("autoCSAR: event = " .. event.id, 30)
 	if event.id == 31 then -- landing_after_eject, does not happen at sea
 		-- to prevent double invocations for same process
 		-- check that we are still tracking this ejection 
@@ -105,11 +100,6 @@ function autoCSAR:onEvent(event)
 				return 
 			end
 				autoCSAR.createNewCSAR(event.initiator)
---				autoCSAR.trackedEjects[event.initiator] = nil
---				trigger.action.outText("autocsar: LAE for " .. autoCSAR.trackedEjects[event.initiator], 30)				
---			else 
---				trigger.action.outText("autoCSAR: ignored LAE event", 30)
---			end
 		end
 	end
 
@@ -118,11 +108,7 @@ function autoCSAR:onEvent(event)
 			-- see if this happened over open water and immediately 
 		    -- create a seaCSAR 
 			
-			--local uid = tonumber(event.initiator:getID())
---			trigger.action.outText("autoCSAR: started tracking - chair + pilot", 30)
---			autoCSAR.trackedEjects[event.initiator] = "chair+pilot" -- start with this 
 			if autoCSAR.isOverWater(event.initiator) then 
-				--trigger.action.outText("attempting to walk on water", 30)
 				autoCSAR.createNewCSAR(event.initiator)
 			end
 			
@@ -132,38 +118,6 @@ function autoCSAR:onEvent(event)
 		end
 	end
 
---[[--	
-	if event.id == 33 then -- separate chair from pilot 
-		if event.initiator then 
-			--local uid = tonumber(event.initiator:getID())
-			--local pid = tonumber(event.target:getID()) 
-			--if uid == 0 then 
-				--trigger.action.outText("uid = 0, abort tracking", 30)
-				--return
-			--end
-			trigger.action.outText("autoCSAR: track change from seat to pilot <" .. event.target:getName() .. ">", 30)
-			autoCSAR.trackedEjects[event.initiator] = "chair only"
-			autoCSAR.trackedEjects[event.target] = "pilot"
-		end
-	end
-	
-	if event.id == 9 then -- pilot dead 
-		if event.initiator then 
-			--local uid = tonumber(event.initiator:getID())
-			trigger.action.outText("autoCSAR: pilot id=xxx dead", 30)
-			if autoCSAR.trackedEjects[event.initiator] then 
-				trigger.action.outText("confirm tracked pilot dead after ejection", 30)
-				if autoCSAR.isOverWater(event.initiator) then 
-					trigger.action.outText("attempt to walk on water", 30)
-					autoCSAR.createNewCSAR(event.initiator)
-				end
-				autoCSAR.trackedEjects[event.initiator] = nil
-			end
-		else 
-			trigger.action.outText("autoCSAR - no initiator for zed", 30)
-		end
-	end
---]]--
 
 end
 
@@ -175,18 +129,18 @@ function autoCSAR.readConfigZone()
 			trigger.action.outText("+++aCSAR: NO config zone!", 30)
 		end 
 	end 
-
-	autoCSAR.redCSAR = cfxZones.getBoolFromZoneProperty(theZone, "red", true)
-	if cfxZones.hasProperty(theZone, "redCSAR") then 
-		autoCSAR.redCSAR = cfxZones.getBoolFromZoneProperty(theZone, "redCSAR", true)
+	autoCSAR.verbose = theZone.verbose 
+	autoCSAR.redCSAR = theZone:getBoolFromZoneProperty("red", true)
+	if theZone:hasProperty("redCSAR") then 
+		autoCSAR.redCSAR = theZone:getBoolFromZoneProperty("redCSAR", true)
 	end
 	
-	autoCSAR.blueCSAR = cfxZones.getBoolFromZoneProperty(theZone, "blue", true)
-	if cfxZones.hasProperty(theZone, "blueCSAR") then 
-		autoCSAR.blueCSAR = cfxZones.getBoolFromZoneProperty(theZone, "blueCSAR", true)
+	autoCSAR.blueCSAR = theZone:getBoolFromZoneProperty("blue", true)
+	if theZone:hasProperty("blueCSAR") then 
+		autoCSAR.blueCSAR = theZone:getBoolFromZoneProperty("blueCSAR", true)
 	end
 
-	autoCSAR.seaCSAR = cfxZones.getBoolFromZoneProperty(theZone, "seaCSAR", true)
+	autoCSAR.seaCSAR = theZone:getBoolFromZoneProperty("seaCSAR", true)
 
 	if autoCSAR.verbose then 
 		trigger.action.outText("+++aCSAR: read config", 30)

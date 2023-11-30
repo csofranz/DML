@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "2.0.0"
+pulseFlags.version = "2.0.1"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -41,7 +41,7 @@ pulseFlags.requiredLibs = {
 	- 1.3.3 removed 'pulsing' when pausing, so we can restart
 	- 2.0.0 dmlZones / OOP
 	        using method on all outputs
-	
+	- 2.0.1 activateZoneFlag now works correctly
 	
 --]]--
 
@@ -238,7 +238,7 @@ function pulseFlags.update()
 		
 		-- see if we got a pause or activate command
 		-- activatePulseFlag
-		if aZone:testZoneFlag(activatePulseFlag, aZone.pulseTriggerMethod, "lastActivateValue") then
+		if aZone:testZoneFlag(aZone.activatePulseFlag, aZone.pulseTriggerMethod, "lastActivateValue") then
 			if pulseFlags.verbose or aZone.verbose then 
 					trigger.action.outText("+++pulF: activating <" .. aZone.name .. ">", 30)
 				end 

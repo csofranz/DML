@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.6"
+dcsCommon.version = "2.9.8"
 --[[-- VERSION HISTORY
  2.2.6 - compassPositionOfARelativeToB
 	   - clockPositionOfARelativeToB
@@ -176,7 +176,8 @@ dcsCommon.version = "2.9.6"
 2.9.4  - new bearing2degrees()
 2.9.5  - distanceOfPointPToLineXZ(p, p1, p2)
 2.9.6  - new addToTableIfNew()
-
+2.9.7  - createSimpleRoutePointData also accepts speed
+2.9.8  - isSceneryObject(theUnit) optimization, DCS 2.9 safe 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1525,7 +1526,8 @@ dcsCommon.version = "2.9.6"
 		return rp
 	end
 
-	function dcsCommon.createSimpleRoutePointData(p, alt)
+	function dcsCommon.createSimpleRoutePointData(p, alt, speed)
+		if not speed then speed = 133 end 
 		if not alt then alt = 8000 end -- 24'000 feet 
 		local rp = {}
 		rp.x = p.x
@@ -1534,7 +1536,7 @@ dcsCommon.version = "2.9.6"
 		rp.action = "Turning Point"
 		rp.type = "Turning Point"
 			
-		rp.speed = 133; -- in m/s? If so, that's 360 km/h 
+		rp.speed = speed; -- in m/s? If so, that's 360 km/h 
 		rp.alt_type = "BARO"
 		return rp
 	end 
@@ -2877,7 +2879,8 @@ end
 -- 
 function dcsCommon.isSceneryObject(theUnit)
 	if not theUnit then return false end
-	return theUnit.getCoalition == nil -- scenery objects do not return a coalition 
+	return Object.getCategory(theUnit) == 5 
+--	return theUnit.getCoalition == nil -- scenery objects do not return a coalition 
 end
 
 function dcsCommon.isTroopCarrierType(theType, carriers)

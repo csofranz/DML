@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.0.9"
+cfxZones.version = "4.0.10"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -65,6 +65,7 @@ cfxZones.version = "4.0.9"
 		  - createPolyZone now correctly sets zone.point
 		  - createPolyZone now correctly inits dcsOrigin
 		  - createCircleZone noew correctly inits dcsOrigin
+- 4.0.10  - getBoolFromZoneProperty also supports "on" (=true) and "off" (=false)
 --]]--
 
 --
@@ -2380,13 +2381,13 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 
-		theBool = (p == 'true') or (p == 'yes') or p == "1"
+		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p == "on")
 		return theBool
 	end
 	
 	local theBool = true 
 	-- only go false if exactly no or false or "0"
-	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") 
+	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") and (p~="off")
 	return theBool
 end
 

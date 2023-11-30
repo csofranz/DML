@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "3.0.0"
+civAir.version = "3.0.1"
 --[[--
 	1.0.0 initial version
 	1.1.0 exclude list for airfields 
@@ -42,6 +42,9 @@ civAir.version = "3.0.0"
 		  new CAM attribute 
 		  deafault to one Yak-40 if neither 
 		  support for 'civil_liveries' zone 
+	3.0.1 protest option, on by default
+		  protest action 
+		  spawning now works correctly for groupType
 
 --]]--
 
@@ -183,6 +186,7 @@ function civAir.readConfigZone()
 		end
 	end
 	
+	civAir.protest = theZone:getBoolFromZoneProperty("protest", true)
 end
 
 function civAir.addTypesAndLiveries(rawIn)
@@ -333,7 +337,7 @@ function civAir.getTwoAirbases()
 end
 
 function civAir.parkingIsFree(fromWP) 
-	-- iterate over all currently registres flights and make 
+	-- iterate over all currently registred flights and make 
 	-- sure that their location isn't closer than 10m to my new parking 
 	local loc = {}
 	loc.x = fromWP.x 
@@ -469,6 +473,7 @@ function civAir.createFlight(name, theTypeString, fromAirfield, toAirfield, inAi
 	dcsCommon.addRoutePointForGroupData(theGroup, toWP)
 	
 	-- spawn
+	local groupCat = Group.Category.AIRPLANE
 	local theSpawnedGroup = coalition.addGroup(civAir.owner, groupCat, theGroup) -- 82 is UN peacekeepers
 	if zoneApproach then 
 		-- track this flight to target zone 
@@ -576,7 +581,6 @@ function civAir.update()
 	for name, group in pairs (civAir.activePlanes) do 
 		if not group:isExist() then 
 			table.insert(removeMe, name) -- mark for deletion
-			--Group.destroy(group) -- may break 
 		end
 	end
 	
@@ -648,8 +652,45 @@ function civAir.update()
 	end
 end
 
+--
+-- onEvent: detect hits / kills
+--
+function civAir:onEvent(event)
+	if not civAir.protest then return end 
+	
+	if not event.initiator then return end 
+	local theUnit = event.initiator
+	if not Unit.isExist(theUnit) then return end 
+	if event.id == 28 then -- kill event 
+		-- check if the unit that was willed is one of mine 
+		local target = event.target 
+		if not target then return end 
+		if not target.getGroup then return end 
+		local theGroup = target:getGroup()
+		if not theGroup then return end 
+		local theName = theGroup:getName()
+		
+		-- see if theName matches one of my flights 
+		local theFlight = civAir.activePlanes[theName]
+		if not theFlight then return end 
+		
+		-- if we get here, a civ plane got killed 
+		if not theUnit.getPlayerName then return end 
+		local thePlayer = theUnit:getPlayerName()
+		if not thePlayer then return end 
+		
+		-- now protest!
+		local details = ""
+		if event.weapon and event.weapon:getTypeName() then 
+			details = " was attacked with a < .. event.weapon.getTypeName() .. > and"
+		end
+		trigger.action.outText("\n======== N E W S F L A S H ========\nUnarmed civilian flight <" .. theName .. ">" .. details .. " has become a victim of war crime. Sadly, all lives on board of the civil flight were lost.\n\nArmed Forced pilot <" .. thePlayer .. "> and their <" .. theUnit:getTypeName() .. "> were reported lethally armed and weapons hot in the same area; <" .. thePlayer .. "> is ordered to remand to base immediately, pending court-martial.\n\n====== E N D   M E S S A G E ======\n", 30)
+	end
+end
 
-
+--
+-- misc stuff
+--
 function civAir.doDebug(any)
 	trigger.action.outText("cf/x civTraffic debugger.", 30)
 	local desc = "Active Planes:"
@@ -736,6 +777,9 @@ function civAir.start()
 	
 	-- start outbound tracking 
 	civAir.trackOutbound()
+	
+	-- sign up for events
+	world.addEventHandler(civAir)
 	
 	-- say hi!
 	trigger.action.outText("cf/x civAir v" .. civAir.version .. " started.", 30)

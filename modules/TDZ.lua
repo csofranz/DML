@@ -1,5 +1,5 @@
 tdz = {}
-tdz.version = "1.0.0"
+tdz.version = "1.0.1"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -7,6 +7,14 @@ tdz.requiredLibs = {
 --[[--
 VERSION HISTORY 
  1.0.0 - Initial version 
+ 1.0.1 - visible 
+		 rwFill, rwFrame 
+		 tdzFill, tdzFrame 
+		 extend, expand 
+		 left, right 
+		 multiple zone support
+		 hops detection improvement
+		 helo attribute 
 
 --]]--
 
@@ -18,10 +26,6 @@ tdz.timeoutAfter = 120 -- seconds.
 -- rwy draw procs
 --
 function tdz.rotateXZPolyInRads(thePoly, rads)
-	if not rads then 
-		trigger.action.outText("rotateXZPolyInRads (inner): no rads", 30)
-		return 
-	end 
 	local c = math.cos(rads)
 	local s = math.sin(rads)
 	for idx, p in pairs(thePoly) do 	
@@ -33,23 +37,15 @@ function tdz.rotateXZPolyInRads(thePoly, rads)
 end
 
 function tdz.rotateXZPolyAroundCenterInRads(thePoly, center, rads)
-	if not rads then 
-		trigger.action.outText("rotateXZPolyAroundCenterInRads: no rads", 30)
-		return 
-	end 
 	local negCtr = {x = -center.x, y = -center.y, z = -center.z}
 	tdz.translatePoly(thePoly, negCtr)
-	if not rads then 
-		trigger.action.outText("WHOA! rotateXZPolyAroundCenterInRads: no rads", 30)
-		return 
-	end 
 	tdz.rotateXZPolyInRads(thePoly, rads)
 	tdz.translatePoly(thePoly, center)
 end
 
-function tdz.rotateXZPolyAroundCenterInDegrees(thePoly, center, degrees)
-	tdz.rotateXZPolyAroundCenterInRads(thePoly, center, degrees * 0.0174533)
-end
+--function tdz.rotateXZPolyAroundCenterInDegrees(thePoly, center, degrees)
+--	tdz.rotateXZPolyAroundCenterInRads(thePoly, center, degrees * 0.0174533)
+--end
 
 function tdz.translatePoly(thePoly, v) -- straight rot, translate to 0 first
 	for idx, aPoint in pairs(thePoly) do 
@@ -87,6 +83,7 @@ function tdz.createTDZ(theZone)
 	local theBase = dcsCommon.getClosestAirbaseTo(p) -- never get FARPS
 	theZone.base = theBase 
 	theZone.baseName = theBase:getName()
+	theZone.helos = false 
 	
 	-- get closest runway to TDZ
 	-- may get a bit hairy, so let's find a good way 
@@ -102,6 +99,7 @@ function tdz.createTDZ(theZone)
 		end
 	end
 	local bearing = nearestRwy.course * (-1)
+	if bearing < 0 then bearing = bearing + math.pi * 2 end 
 	theZone.bearing = bearing 
 	rwname = math.floor(dcsCommon.bearing2degrees(bearing)/10 + 0.5) -- nice number
 	degrees = math.floor(dcsCommon.bearing2degrees(bearing) * 10) / 10
@@ -109,6 +107,11 @@ function tdz.createTDZ(theZone)
 	if degrees > 360 then degrees = degrees - 360 end 
 	if rwname < 0 then rwname = rwname + 36 end 
 	if rwname > 36 then rwname = rwname - 36 end 
+	
+	if tdz.verbose or theZone.verbose then 
+		trigger.action.outText("TDZ: <" .. theZone.name .. "> attached to airfield " .. theZone.baseName .. " RW main (LEFT) is " .. rwname .. "0", 30)
+	end 
+	
 	local opName = rwname + 18 
 	if opName > 36 then opName = opName - 36 end 
 	if rwname < 10 then rwname = "0"..rwname end 
@@ -116,30 +119,45 @@ function tdz.createTDZ(theZone)
 	theZone.rwName = rwname .. "/" .. opName	
 	theZone.opName = opName .. "/" .. rwname
 	local rwLen = nearestRwy.length
+	rwLen = rwLen + 2 * theZone:getNumberFromZoneProperty("extend", 0)
 	local rwWid = nearestRwy.width 
+	rwWid = rwWid + 2 * theZone:getNumberFromZoneProperty("expand", 0)
 	local pos = nearestRwy.position
 	-- p1 is for distance to centerline calculation, defining a point 
 	-- length away in direction bearing, setting up the line
 	-- theZone.rwCenter, theZone.p1
 	theZone.rwCenter = pos 
 	local p1 = {x = pos.x + math.cos(bearing) * rwLen, y = 0, z = pos.z + math.sin(bearing) * rwLen}
+	theZone.visible = theZone:getBoolFromZoneProperty("visible", true)
 	theZone.rwP1 = p1 
 	theZone.starts = theZone:getNumberFromZoneProperty("starts", 0)
 	theZone.ends = theZone:getNumberFromZoneProperty("ends", 610) -- m = 2000 ft
-	theZone.opposing = theZone:getBoolFromZoneProperty("opposing", true)
+	theZone.left = theZone:getBoolFromZoneProperty("left", true)
+	theZone.right = theZone:getBoolFromZoneProperty("right", true)
 
 	theZone.runwayZone = tdz.calcTDZone(theZone.name .. "-" .. rwname .. "main", pos, rwLen, rwWid, bearing)
-	theZone.runwayZone:drawZone({0, 0, 0, 1}, {0, 0, 0, 0}) -- black outline 
+	theZone.rwFrame = theZone:getRGBAVectorFromZoneProperty("rwFrame", {0, 0, 0, 1}) -- black
+	theZone.rwFill = theZone:getRGBAVectorFromZoneProperty("rwFill", {0, 0, 0, 0}) -- nothing
+	if theZone.visible then 
+		theZone.runwayZone:drawZone(theZone.rwFrame, theZone.rwFill)
+	end 
 	local theTDZone = tdz.calcTDZone(theZone.name .. "-" .. rwname, pos, rwLen, rwWid, bearing, theZone.starts / rwLen, theZone.ends/rwLen)
-	-- to do: mark the various zones of excellence in different colors, or at least the excellent one with more color
-	theTDZone:drawZone({0, 1, 0, 1}, {0, 1, 0, .25})
+
+	theZone.tdzFrame = theZone:getRGBAVectorFromZoneProperty("tdzFrame", {0, 1, 0, 1}) -- green 100%
+	theZone.tdzFill = theZone:getRGBAVectorFromZoneProperty("tdzFill", {0, 1, 0, 0.25}) -- 25% green
+	if theZone.visible and theZone.left then 
+		theTDZone:drawZone(theZone.tdzFrame, theZone.tdzFill)
+	end 
+	
 	theZone.normTDZone = theTDZone
-	if theZone.opposing then 
-		theTDZone = tdz.calcTDZone(theZone.name .. "-" .. opName, pos, rwLen, rwWid, bearing + math.pi, theZone.starts / rwLen, theZone.ends/rwLen)
-		theTDZone:drawZone({0, 1, 0, 1}, {0, 1, 0, .25})
-		theZone.opTDZone = theTDZone
-		theZone.opBearing = bearing + math.pi
-	end
+	theTDZone = tdz.calcTDZone(theZone.name .. "-" .. opName, pos, rwLen, rwWid, bearing + math.pi, theZone.starts / rwLen, theZone.ends/rwLen)
+	if theZone.visible and theZone.right then 
+		theTDZone:drawZone(theZone.tdzFrame, theZone.tdzFill)
+	end 
+	theZone.opTDZone = theTDZone
+	theZone.opBearing = bearing + math.pi
+	if theZone.opBearing > 2 * math.pi then theZone.opBearing = theZone.opBearing - math.pi * 2 end 
+
 	if theZone:hasProperty("landed!") then 
 		theZone.landedFlag = theZone:getStringFromZoneProperty("landed!", "none")
 	end
@@ -163,28 +181,68 @@ function tdz.playerLanded(theUnit, playerName)
 		-- make sure unit names match?
 		local entry = tdz.watchlist[playerName]
 		entry.hops = entry.hops + 1 -- uh oh. 
+		return 
 	end 
 	
 	-- we may want to filter helicopters
 	
 	-- see if we touched down inside of one of our watched zones 
+	-- and the directionality (left = landing dir, right = opDir)
+	-- matches
 	local p = theUnit:getPoint()
 	local theGroup = theUnit:getGroup()
+	local cat = theGroup:getCategory() -- DCS 2.9: no issues with groups...
 	local gID = theGroup:getID()
+	local hdg = dcsCommon.getUnitHeading(theUnit)	
 	local msg = ""
 	local theZone = nil 
+	local opposite = false 
+	local dHdg, dOpHdg
 	for idx, aRunway in pairs(tdz.allTdz) do 
 		local theRunway = aRunway.runwayZone 
-		if theRunway:pointInZone(p) then 
-			-- touchdown!
-			theZone = aRunway 
-			if theZone.touchDownFlag then 
-				theZone.pollFlag(theZone.touchDownFlag, theZone.method)
+		local allowUnit = (cat ~= 1) or aRunway.helos -- 1 = helos
+		if allowUnit and theRunway:pointInZone(p) then -- touched down
+			dHdg = math.abs(aRunway.bearing - hdg) -- 0..Pi
+			dOpHdg = math.abs(aRunway.opBearing - hdg)
+			opposite = false 
+			if tdz.verbose or aRunway.verbose then 
+				trigger.action.outText("TDZ: landing inside <" .. aRunway.name .. ">, myHdg = <" .. math.floor(hdg  * 57.2958) .. ">, dHdg = <" .. dHdg * 57.29 .. ">, dOpHdg = <" .. dOpHdg * 57.29 .. ">, rw = <" .. math.floor(aRunway.bearing  * 57.2958) .. ">, rwOp = <" .. math.floor(aRunway.opBearing  * 57.2958) .. ">", 30)
 			end
-			trigger.action.outTextForGroup(gID, "Touchdown! Come to a FULL STOP for evaluation", 30)
+
+			if dOpHdg < dHdg then 
+				opposite = true 
+				dHdg = dOpHdg
+				if tdz.verbose or aRunway.verbose then 
+					trigger.action.outText("TDZ: landing inside <" .. aRunway.name .. ">, *OPPOSING*", 30)
+				end
+			else 
+				if tdz.verbose or aRunway.verbose then 
+					trigger.action.outText("TDZ: landing inside <" .. aRunway.name .. ">, ---INLINE---", 30)
+				end
+			end 
+			-- see if directionality matches 
+			if ((opposite == false) and aRunway.left) or 
+			   ((opposite == true) and aRunway.right) 
+			then 
+				theZone = aRunway -- FOUND!
+				if theZone.touchDownFlag then 
+					theZone.pollFlag(theZone.touchDownFlag, theZone.method)
+				end
+				trigger.action.outTextForGroup(gID, "Touchdown! Come to a FULL STOP for evaluation", 30)
+			else 
+				if aRunway.verbose or tdz.verbose then 
+					trigger.action.outText("TDZ: ignored touchdown in runway for zone <" .. aRunway.name .. ">, directionality filtered.", 30)
+				end
+			end
 		end 
 	end
-	if not theZone then return end -- no landing eval zone hit 
+	if not theZone then 
+		if tdz.verbose then 
+			trigger.action.outText("TDZ: no touchdown inside zones registered", 30)
+		end
+		return 
+	end -- no landing eval zone hit 
+	-- Warning: finds the LAST that matches inZone and left/right 
 	
 	-- start a new watchlist entry 
 	local entry = {}
@@ -200,14 +258,6 @@ function tdz.playerLanded(theUnit, playerName)
 	entry.theZone = theZone
 	
 	-- see if we are in main or opposite direction 
-	local hdg = dcsCommon.getUnitHeading(theUnit)
-	local dHdg = math.abs(theZone.bearing - hdg) -- 0..Pi
-	local dOpHdg = math.abs(theZone.opBearing - hdg)
-	local opposite = false 
-	if dOpHdg < dHdg then 
-		opposite = true 
-		dHdg = dOpHdg
-	end 
 	if dHdg > math.pi * 1.5 then -- > 270+ 
 		dHdg = dHdg - math.pi * 1.5
 	elseif dHdg > math.pi / 2 then -- > 90+ 
@@ -223,12 +273,12 @@ function tdz.playerLanded(theUnit, playerName)
 	local kkm = math.floor(vel * 19.4383) / 10
 	entry.msg = entry.msg .. "\nLanded heading " .. lHdg .. "°, diverging by " .. dHdg .. "° from runway heading, velocity at touchdown " .. vkm .. " kmh/" .. kkm .. " kts, touchdown " .. offcenter ..  " m off centerline\n"
 	
-	-- inside TDZ?
+	-- inside TDZ? Directionality was already checked
 	local tdZone = theZone.normTDZone
-	if opposite and theZone.opposing then 
-		
+	if opposite then 
 		tdZone = theZone.opTDZone
 	end 
+	
 	if tdZone:pointInZone(p) then 
 		-- yes, how far behind threshold
 		-- project point onto line to see how far inside 
@@ -333,6 +383,11 @@ end
 -- Start
 --
 function tdz.readConfigZone()
+	local theZone = cfxZones.getZoneByName("tdzConfig") 
+	if not theZone then 
+		theZone = cfxZones.createSimpleZone("tdzConfig") 
+	end 
+	tdz.verbose = theZone.verbose 
 end 
 
 function tdz.start()

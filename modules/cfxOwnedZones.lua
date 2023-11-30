@@ -166,6 +166,9 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	
 	cfxOwnedZones.zones[aZone] = aZone 
 	cfxOwnedZones.drawZoneInMap(aZone)
+	if aZone.verbose or cfxOwnedZones.verbose then  
+		trigger.action.outText("+++owdZ: detected zone <" .. aZone.name .. ">", 30)
+	end
 end
 
 --
@@ -326,6 +329,7 @@ function cfxOwnedZones.update()
 				end
 			end
 		end
+
 		-- count blue units 
 		for idx, aGroup in pairs(allBlue) do 
 			if Group.isExist(aGroup) then 
@@ -345,6 +349,11 @@ function cfxOwnedZones.update()
 				end
 			end
 		end
+		
+		if theZone.verbose then 
+			trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
+		end
+		
 		-- trigger.action.outText(theZone.name .. " blue: " .. theZone.numBlue .. " red " .. theZone.numRed, 30)
 		local lastOwner = theZone.owner
 		local newOwner = 0 -- neutral is default 

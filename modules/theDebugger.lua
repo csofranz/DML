@@ -1,8 +1,8 @@
 -- theDebugger 
 debugger = {}
-debugger.version = "1.1.2"
+debugger.version = "2.0.0"
 debugDemon = {}
-debugDemon.version = "1.1.2"
+debugDemon.version = "2.0.0"
 
 debugger.verbose = false 
 debugger.ups = 4 -- every 0.25 second  
@@ -23,7 +23,12 @@ debugger.log = ""
 		  - save <name>
 	1.1.1 - warning when trying to set a flag to a non-int
 	1.1.2 - remove command 
-		  
+	2.0.0 - dmlZones OOP 
+	      - eventmon command 
+		  - all, off, event #
+		  - standard events 
+		  - adding events 
+		  - events? attribute from any zone 
  
 --]]--
 
@@ -39,7 +44,68 @@ debugger.debugZones = {}
 debugger.debugUnits = {}
 debugger.debugGroups = {}
 debugger.debugObjects = {}
+debugger.showEvents = {}
 
+debugDemon.eventList = {
+  ["0"] = "S_EVENT_INVALID = 0",
+  ["1"] = "S_EVENT_SHOT = 1",
+  ["2"] = "S_EVENT_HIT = 2",
+  ["3"] = "S_EVENT_TAKEOFF = 3",
+  ["4"] = "S_EVENT_LAND = 4",
+  ["5"] = "S_EVENT_CRASH = 5",
+  ["6"] = "S_EVENT_EJECTION = 6",
+  ["7"] = "S_EVENT_REFUELING = 7",
+  ["8"] = "S_EVENT_DEAD = 8",
+  ["9"] = "S_EVENT_PILOT_DEAD = 9",
+  ["10"] = "S_EVENT_BASE_CAPTURED = 10",
+  ["11"] = "S_EVENT_MISSION_START = 11",
+  ["12"] = "S_EVENT_MISSION_END = 12",
+  ["13"] = "S_EVENT_TOOK_CONTROL = 13",
+  ["14"] = "S_EVENT_REFUELING_STOP = 14",
+  ["15"] = "S_EVENT_BIRTH = 15",
+  ["16"] = "S_EVENT_HUMAN_FAILURE = 16",
+  ["17"] = "S_EVENT_DETAILED_FAILURE = 17",
+  ["18"] = "S_EVENT_ENGINE_STARTUP = 18",
+  ["19"] = "S_EVENT_ENGINE_SHUTDOWN = 19",
+  ["20"] = "S_EVENT_PLAYER_ENTER_UNIT = 20",
+  ["21"] = "S_EVENT_PLAYER_LEAVE_UNIT = 21",
+  ["22"] = "S_EVENT_PLAYER_COMMENT = 22",
+  ["23"] = "S_EVENT_SHOOTING_START = 23",
+  ["24"] = "S_EVENT_SHOOTING_END = 24",
+  ["25"] = "S_EVENT_MARK_ADDED  = 25", 
+  ["26"] = "S_EVENT_MARK_CHANGE = 26",
+  ["27"] = "S_EVENT_MARK_REMOVED = 27",
+  ["28"] = "S_EVENT_KILL = 28",
+  ["29"] = "S_EVENT_SCORE = 29",
+  ["30"] = "S_EVENT_UNIT_LOST = 30",
+  ["31"] = "S_EVENT_LANDING_AFTER_EJECTION = 31",
+  ["32"] = "S_EVENT_PARATROOPER_LENDING = 32",
+  ["33"] = "S_EVENT_DISCARD_CHAIR_AFTER_EJECTION = 33", 
+  ["34"] = "S_EVENT_WEAPON_ADD = 34",
+  ["35"] = "S_EVENT_TRIGGER_ZONE = 35",
+  ["36"] = "S_EVENT_LANDING_QUALITY_MARK = 36",
+  ["37"] = "S_EVENT_BDA = 37", 
+  ["38"] = "S_EVENT_AI_ABORT_MISSION = 38", 
+  ["39"] = "S_EVENT_DAYNIGHT = 39", 
+  ["40"] = "S_EVENT_FLIGHT_TIME = 40", 
+  ["41"] = "S_EVENT_PLAYER_SELF_KILL_PILOT = 41", 
+  ["42"] = "S_EVENT_PLAYER_CAPTURE_AIRFIELD = 42", 
+  ["43"] = "S_EVENT_EMERGENCY_LANDING = 43",
+  ["44"] = "S_EVENT_UNIT_CREATE_TASK = 44",
+  ["45"] = "S_EVENT_UNIT_DELETE_TASK = 45",
+  ["46"] = "S_EVENT_SIMULATION_START = 46",
+  ["47"] = "S_EVENT_WEAPON_REARM = 47",
+  ["48"] = "S_EVENT_WEAPON_DROP = 48",
+  ["49"] = "S_EVENT_UNIT_TASK_TIMEOUT = 49",
+  ["50"] = "S_EVENT_UNIT_TASK_STAGE = 50",
+  ["51"] = "S_EVENT_MAC_SUBTASK_SCORE = 51", 
+  ["52"] = "S_EVENT_MAC_EXTRA_SCORE = 52",
+  ["53"] = "S_EVENT_MISSION_RESTART = 53",
+  ["54"] = "S_EVENT_MISSION_WINNER = 54", 
+  ["55"] = "S_EVENT_POSTPONED_TAKEOFF = 55", 
+  ["56"] = "S_EVENT_POSTPONED_LAND = 56", 
+  ["57"] = "S_EVENT_MAX = 57",
+}
 --
 -- Logging & saving 
 --
@@ -110,13 +176,13 @@ end
 -- 
 function debugger.createDebuggerWithZone(theZone)
 	-- watchflag input trigger
-	theZone.debugInputMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "debugTriggerMethod") then 
-		theZone.debugInputMethod = cfxZones.getStringFromZoneProperty(theZone, "debugTriggerMethod", "change")
-	elseif cfxZones.hasProperty(theZone, "inputMethod") then 
-		theZone.debugInputMethod = cfxZones.getStringFromZoneProperty(theZone, "inputMethod", "change")
-	elseif cfxZones.hasProperty(theZone, "sayWhen") then 
-		theZone.debugInputMethod = cfxZones.getStringFromZoneProperty(theZone, "sayWhen", "change")
+	theZone.debugInputMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if theZone.hasProperty("debugTriggerMethod") then 
+		theZone.debugInputMethod = theZone:getStringFromZoneProperty("debugTriggerMethod", "change")
+	elseif theZone:hasProperty("inputMethod") then 
+		theZone.debugInputMethod = theZone:getStringFromZoneProperty(theZone, "inputMethod", "change")
+	elseif theZone:hasProperty("sayWhen") then 
+		theZone.debugInputMethod = theZone:getStringFromZoneProperty("sayWhen", "change")
 	end
 	
 	-- say who we are and what we are monitoring
@@ -125,13 +191,13 @@ function debugger.createDebuggerWithZone(theZone)
 	end
 	
 	-- read main debug array
-	local theFlags = cfxZones.getStringFromZoneProperty(theZone, "debug?", "<none>")
+	local theFlags = theZone:getStringFromZoneProperty("debug?", "<none>")
 	-- now, create an array from that
 	local flagArray = cfxZones.flagArrayFromString(theFlags)
 	local valueArray = {}
 	-- now establish current values 
 	for idx, aFlag in pairs(flagArray) do 
-		local fVal = cfxZones.getFlagValue(aFlag, theZone)
+		local fVal = theZone:getFlagValue(aFlag)
 		if debugger.verbose or theZone.verbose then 
 			debugger.outText("    monitoring flag <" .. aFlag .. ">, inital value is <" .. fVal .. ">", 30)
 		end
@@ -140,28 +206,44 @@ function debugger.createDebuggerWithZone(theZone)
 	theZone.flagArray = flagArray
 	theZone.valueArray = valueArray 
 	
-
-	
 	-- DML output method
-	theZone.debugOutputMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "outputMethod") then 
-		theZone.debugOutputMethod = cfxZones.getStringFromZoneProperty(theZone, "outputMethod", "inc")
+	theZone.debugOutputMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("outputMethod") then 
+		theZone.debugOutputMethod = theZone:getStringFromZoneProperty("outputMethod", "inc")
 	end
-	if cfxZones.hasProperty(theZone, "debugMethod") then 
-		theZone.debugOutputMethod = cfxZones.getStringFromZoneProperty(theZone, "debugMethod", "inc")
+	if theZone:hasProperty("debugMethod") then 
+		theZone.debugOutputMethod = theZone:getStringFromZoneProperty("debugMethod", "inc")
 	end
 	
 	-- notify!
-	if cfxZones.hasProperty(theZone, "notify!") then 
-		theZone.debugNotify = cfxZones.getStringFromZoneProperty(theZone, "notify!", "<none>")
+	if theZone:hasProperty("notify!") then 
+		theZone.debugNotify = theZone:getStringFromZoneProperty("notify!", "<none>")
 	end
 	
 	-- debug message, can use all messenger vals plus <f> for flag name 
 	-- we use out own default
 	-- with <f> meaning flag name, <p> previous value, <c> current value 
-	theZone.debugMsg = cfxZones.getStringFromZoneProperty(theZone, "debugMsg", "---debug: <t> -- Flag <f> changed from <p> to <c> [<z>]")
-	
-	
+	theZone.debugMsg = theZone:getStringFromZoneProperty("debugMsg", "---debug: <t> -- Flag <f> changed from <p> to <c> [<z>]")
+end
+
+function debugger.createEventMonWithZone(theZone)
+	local theFlags = theZone:getStringFromZoneProperty("events?", "<none>")
+	local flagArray = cfxZones.flagArrayFromString(theFlags)
+	local valueArray = {}
+	-- now establish current values 
+	if debugger.verbose or theZone.verbose then 
+		debugger.outText("*** monitoring events defined in <" .. theZone.name .. ">:", 30)
+	end
+	for idx, aFlag in pairs(flagArray) do 
+		
+		local evt = tonumber(aFlag) 		
+		if evt and (debugger.verbose or theZone.verbose) then 
+			if evt < 0 then evt = 0 end 
+			if evt > 57 then evt = 57 end 
+			debugger.showEvents[evt] = debugDemon.eventList[tostring(evt)]
+			debugger.outText("    monitoring event <" .. debugger.showEvents[evt] .. ">", 30)
+		end
+	end
 end
 
 --
@@ -457,6 +539,17 @@ function debugger.start()
 		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
 	end
 	
+	local attrZones = cfxZones.getZonesWithAttributeNamed("events?")
+	for k, aZone in pairs(attrZones) do 
+		debugger.createEventMonWithZone(aZone) -- process attributes
+	end
+	
+	local attrZones = cfxZones.getZonesWithAttributeNamed("events")
+	for k, aZone in pairs(attrZones) do 
+		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
+	end
+	-- events 
+	
 	-- say if we are active
 	if debugger.verbose then 
 		if debugger.active then 
@@ -493,7 +586,8 @@ debugDemon.verbose = false
 	Version History
 	1.0.0 - initial version 
 	1.1.0 - save command, requires persistence
-	
+	2.0.0 - eventmon 
+	      - dml zones OOP 
 --]]--
 
 debugDemon.requiredLibs = {
@@ -518,6 +612,10 @@ end
 -- very simple: look if text begins with special sequence, and if so, 
 -- call the command processor. 
 function debugDemon:onEvent(theEvent)
+	-- first order of business: call the event monitor 
+	debugDemon.doEventMon(theEvent)
+	
+	-- now process our own 
 	-- while we can hook into any of the three events, 
 	-- we curently only utilize CHANGE Mark
 	if not (theEvent.id == world.event.S_EVENT_MARK_ADDED) and
@@ -655,6 +753,10 @@ debugger.outText("*** debugger: commands are:" ..
 	"\n  " .. debugDemon.markOfDemon .. "compare -- compare snapshot flag values with current" ..
 	"\n  " .. debugDemon.markOfDemon .. "note <your note> -- add <your note> to the text log" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "remove <group/unit/object name> -- remove named item from mission" ..
+	
+	"\n\n  " .. debugDemon.markOfDemon .. "eventmon [all | off | <number> | ?] -- show events for all | none | event <number> | list" ..
+	"\n\n  " .. debugDemon.markOfDemon .. "q <Lua Var> -- Query value of Lua variable <Lua Var>" ..
+	"\n  " .. debugDemon.markOfDemon .. "w <Lua Var> [=] <Lua Value> -- Write <Lua Value> to variable <Lua Var>" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "start -- starts debugger" ..
 	"\n  " .. debugDemon.markOfDemon .. "stop -- stop debugger" ..
 
@@ -893,17 +995,7 @@ function debugDemon.processSnapCommand(args, event)
 	end
 	
 	-- set up snapshot 
-	local snapshot = debugDemon.createSnapshot(allObservers) --{}
-	--[[--
-	for idx, theZone in pairs(allObservers) do 
-		-- iterate each observer 
-		for idy, flagName in pairs (theZone.flagArray) do 
-			local fullName = cfxZones.expandFlagName(flagName, theZone)
-			local fVal = trigger.misc.getUserFlag(fullName)
-			snapshot[fullName] = fVal
-		end
-	end
-	--]]--
+	local snapshot = debugDemon.createSnapshot(allObservers) 
 	
 	local sz = dcsCommon.getSizeOfTable(snapshot)
 	debugDemon.snapshot = snapshot
@@ -1176,6 +1268,141 @@ function debugDemon.processRemoveCommand(args, event)
 	debugger.outText("*** remove: did not find anything called <" .. aName .. "> to remove", 30)
 		return true
 end
+
+function debugDemon.doEventMon(theEvent)
+	if not theEvent then return end 
+	local ID = theEvent.id 
+	if debugger.showEvents[ID] then
+		-- we show this event 
+		m = "*** event <" .. debugger.showEvents[ID] .. ">"
+		-- see if we have initiator
+		if theEvent.initiator then 
+			local theUnit = theEvent.initiator
+			if Unit.isExist(theUnit) then 
+				m = m .. " for "
+				if theUnit.getPlayerName and theUnit:getPlayerName() then 
+					m = m .. "player = " .. theUnit:getPlayerName() .. " in "
+				end
+				m = m .. "unit <" .. theUnit:getName() .. ">"
+			end 
+		end 
+		debugger.outText(m, 30)
+	end
+end 
+
+function debugDemon.processEventMonCommand(args, event)
+	-- turn event monito on/off  
+	-- syntax: -eventmon  on|off 
+	local aParam = dcsCommon.trim(event.remainder)
+	if not aParam or aParam:len() < 1 then 
+		aParam = "all"
+	end
+	aParam = string.upper(aParam)
+	evtNum = tonumber(aParam)
+	if aParam == "ON" or aParam == "ALL" then 
+--		debugger.eventmon = true 
+		debugger.outText("*** eventmon: turned ON, showing ALL events", 30)
+		local events = {}
+		for idx,evt in pairs(debugDemon.eventList) do 
+			events[tonumber(idx)] = evt
+		end 
+		debugger.showEvents = events 
+	elseif evtNum then -- add the numbered to 
+		debugger.eventmon = false 
+		if evtNum <= 0 then evtNum = 0 end 
+		if evtNum >= 57 then evtNum = 35 end 
+		debugger.showEvents[evtNum] = debugDemon.eventList[tostring(evtNum)] 
+		debugger.outText("*** eventmon: added event <" .. debugger.showEvents[evtNum] .. ">", 30)
+	elseif aParam == "OFF" then 
+		debugger.showEvents = {}
+		debugger.outText("*** eventmon: removed all events from monitor list", 30)
+	elseif aParam == "?" then 
+		local m = "*** eventmon: currently tracking these events:"
+		for idx, evt in pairs(debugger.showEvents) do 
+			m = m .. "\n" ..  evt 
+		end			
+		debugger.outText(m .. "\n*** end of list", 30)
+	else 
+		debugger.outText("*** eventmon: unknown parameter <" .. event.remainder .. ">", 30)
+	end
+	return true 
+end 
+
+--
+-- read and write directly to Lua tables
+--
+
+function debugDemon.processQueryCommand(args, event)
+	-- syntax -q <name> with name a (qualified) Lua table reference 
+	local theName = args[1]
+--	local p = args [2]
+--	trigger.action.outText("args1 = " .. theName, 30)
+--	if args[2] then trigger.action.outText("param = " .. args[2], 30) end 
+	if not theName then 
+		debugger.outText("*** q: missing Lua table/element name.", 30)
+		return false -- allows correction 
+	end
+	theName = dcsCommon.stringRemainsStartingWith(event.remainder, theName)
+
+	-- put this into a string, and execute it 
+	local exec = "return " .. theName 
+	local f = loadstring(exec) 
+	local res
+	if pcall(f) then 
+		res = f()
+		if type(res) == "boolean" then 
+			res = "[BOOL FALSE]"
+			if res then res = "[BOOL TRUE]" end 
+		elseif type(res) == "table" then res = "[Lua Table]"
+		elseif type(res) == "nil" then res = "[NIL]"
+		elseif type(res) == "function" then res = "[Lua Function]"
+		elseif type(res) == "number" or type(res) == "string" then 
+			res = res .. " (a " .. type(res) .. ")"
+		else res = "[Lua " .. type(res) .. "]"
+		end
+	else 
+		res = "[Lua error]"
+	end 
+	
+	debugger.outText("[" .. dcsCommon.nowString() .. "] <" .. theName .. "> = ".. res, 30)
+	
+	return true 
+end
+
+function debugDemon.processWriteCommand(args, event)
+	-- syntax -w <name> <value> with name a (qualified) Lua table reference and value a Lua value (including strings, with quotes of course). {} means an empty set etc. you CAN call into DCS MSE with this, and create a lot of havoc.
+	-- also, allow "=" semantic, -w p = {x=1, y=2}
+	
+	local theName = args[1]
+	if not theName then 
+		debugger.outText("*** w: missing Lua table/element name.", 30)
+		return false -- allows correction 
+	end
+	local param = args [2]
+	if param == "=" then param = args[3] end 
+	if not param then 
+		debugger.outText("*** w: missing value to set to")
+		return false 
+	end 
+
+	param = dcsCommon.stringRemainsStartingWith(event.remainder, param)
+
+	-- put this into a string, and execute it 
+	local exec = theName .. " = " .. param 
+	local f = loadstring(exec) 
+	local res
+	if pcall(f) then 
+		res = "<" .. theName .. "> set to <" .. param .. ">"
+	else 
+		res = "[Unable to set - Lua error]"
+	end 
+	
+	debugger.outText("[" .. dcsCommon.nowString() .. "] " .. res, 30)
+	
+	return true 
+end
+
+
 --
 -- init and start
 --
@@ -1246,7 +1473,10 @@ function debugDemon.init()
 	debugDemon.addCommndProcessor("help", debugDemon.processHelpCommand)
 
 	debugDemon.addCommndProcessor("remove", debugDemon.processRemoveCommand)
-	
+
+	debugDemon.addCommndProcessor("eventmon", debugDemon.processEventMonCommand)
+	debugDemon.addCommndProcessor("q", debugDemon.processQueryCommand)
+	debugDemon.addCommndProcessor("w", debugDemon.processWriteCommand)
 	return true 
 end
 
@@ -1272,7 +1502,7 @@ end
 if debugDemon.init() then 
 	debugDemon.start()
 else 
-	trigger.action.outText("*** interactive flag debugger failed to initialize.", 30)
+	trigger.action.outText("*** interactive debugger failed to initialize.", 30)
 	debugDemon = {}
 end
 
@@ -1287,7 +1517,9 @@ end
 	  -q x.y returns table, 12 elements
 	  -q a.b.x returns number 12
 	  -q d.e.f returns string "asdasda..."
-	  -q sada reuturs <nil>
+	  -q sada returs <nil>
 	
 	- xref: which zones/attributes reference a flag, g.g. '-xref go'
+	
+	- dml version can config to start with events list, e.g.  1, 4, 7 
 --]]--
