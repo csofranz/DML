@@ -1,40 +1,39 @@
 playerZone = {}
-playerZone.version = "1.0.0"
+playerZone.version = "2.0.0"
 playerZone.requiredLibs = {
-	"dcsCommon", -- always
-	"cfxZones", -- Zones, of course 
+	"dcsCommon", 
+	"cfxZones", 
 }
 playerZone.playerZones = {}
 --[[--
 	Version History
 	1.0.0 - Initial version 
 	1.0.1 - pNum --> pNum# 
+	2.0.0 - dmlZones
+	        red#, blue#, total#
 	
 --]]--
 
 function playerZone.createPlayerZone(theZone)
 	-- start val - a range
-	theZone.pzCoalition = cfxZones.getCoalitionFromZoneProperty(theZone, "playerZone", 0)
-	
-
+	theZone.pzCoalition = theZone:getCoalitionFromZoneProperty( "playerZone", 0)
 	-- Method for outputs
-	theZone.pzMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "pzMethod") then 
-		theZone.pzMethod = cfxZones.getStringFromZoneProperty(theZone, "pwMethod", "inc")
+	
+	theZone.pzMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("pzMethod") then 
+		theZone.pzMethod = theZone:getStringFromZoneProperty("pwMethod", "inc")
 	end 
 	
-	if cfxZones.hasProperty(theZone, "pNum#") then 
-		theZone.pNum = cfxZones.getStringFromZoneProperty(theZone, "pNum#", "none")
-	elseif cfxZones.hasProperty(theZone, "pNum") then 
-		theZone.pNum = cfxZones.getStringFromZoneProperty(theZone, "pNum", "none") 
+	if theZone:hasProperty("pNum#") then 
+		theZone.pNum = theZone:getStringFromZoneProperty("pNum#", "none")
 	end 
 	
-	if cfxZones.hasProperty(theZone, "added!") then 
-		theZone.pAdd = cfxZones.getStringFromZoneProperty(theZone, "added!", "none")
+	if theZone:hasProperty("added!") then 
+		theZone.pAdd = theZone:getStringFromZoneProperty("added!", "none")
 	end
 	
-	if cfxZones.hasProperty(theZone, "gone!") then 
-		theZone.pRemove = cfxZones.getStringFromZoneProperty(theZone, "gone!", "none")
+	if theZone:hasProperty("gone!") then 
+		theZone.pRemove = theZone:getStringFromZoneProperty("gone!", "none")
 	end
 	
 	theZone.playersInZone = {} -- indexed by unit name 
@@ -49,7 +48,7 @@ function playerZone.collectPlayersForZone(theZone)
 			local allPlayers = coalition.getPlayers(f)
 			for idy, theUnit in pairs (allPlayers) do 
 				local loc = theUnit:getPoint()
-				if cfxZones.pointInZone(loc, theZone) then 
+				if theZone:pointInZone(loc) then 
 					zonePlayers[theUnit:getName()] = theUnit
 				end
 			end
@@ -86,21 +85,21 @@ function playerZone.processZone(theZone)
 	
 	-- flag handling and banging
 	if theZone.pNum then 
-		cfxZones.setFlagValueMult(theZone.pNum, newCount, theZone)
+		theZone:setFlagValue(theZone.pNum, newCount)
 	end
 	
 	if theZone.pAdd and hasNew then 
 		if theZone.verbose or playerZone.verbose then 
 			trigger.action.outText("+++pZone: banging <" .. theZone.name .. ">'s 'added!' flags <" .. theZone.pAdd .. ">", 30)
 		end
-		cfxZones.pollFlag(theZone.pAdd, theZone.pzMethod, theZone)
+		theZone:pollFlag(theZone.pAdd, theZone.pzMethod)
 	end
 	
 	if theZone.pRemove and hasGone then 
 		if theZone.verbose or playerZone.verbose then 
 			trigger.action.outText("+++pZone: banging <" .. theZone.name .. ">'s 'gone' flags <" .. theZone.pRemove .. ">", 30)
 		end
-		cfxZones.pollFlag(theZone.pAdd, theZone.pzMethod, theZone)
+		theZone:pollFlag(theZone.pAdd, theZone.pzMethod)
 	end
 end
 
@@ -113,6 +112,25 @@ function playerZone.update()
 	
 	-- iterate all zones and check them
 	for idx, theZone in pairs(playerZone.playerZones) do 
+		local neutrals = coalition.getPlayers(0)
+		local neutralNum = #neutrals 
+		local reds = coalition.getPlayers(1)
+		local redNum = #reds 
+		local blues = coalition.getPlayers(2)
+		local blueNum = #blues	
+		local totalNum = neutralNum + redNum + blueNum 
+		if playerZone.neutralNum then 
+			cfxZones.setFlagValue(playerZone.neutralNum, neutralNum, playerZone)
+		end 
+		if playerZone.redNum then 
+			cfxZones.setFlagValue(playerZone.redNum, redNum, playerZone)
+		end 
+		if playerZone.blueNum then 
+			cfxZones.setFlagValue(playerZone.blueNum, blueNum, playerZone)
+		end 
+		if playerZone.totalNum then 
+			cfxZones.setFlagValue(playerZone.totalNum, totalNum, playerZone)
+		end 
 		playerZone.processZone(theZone)
 	end
 end
@@ -121,7 +139,20 @@ end
 -- Read Config Zone
 --
 function playerZone.readConfigZone(theZone)
+	playerZone.name = "playerZoneConfig" -- cfxZones compat 
 	-- currently nothing to do 
+	if theZone:hasProperty("red#") then 
+		playerZone.redNum = theZone:getStringFromZoneProperty("red#", "none")
+	end
+	if theZone:hasProperty("blue#") then 
+		playerZone.blueNum = theZone:getStringFromZoneProperty("blue#", "none")
+	end
+	if theZone:hasProperty("neutral#") then 
+		playerZone.neutralNum = theZone:getStringFromZoneProperty("neutral#", "none")
+	end
+	if theZone:hasProperty("total#") then 
+		playerZone.totalNum = theZone:getStringFromZoneProperty("total#", "none")
+	end
 end
 
 --

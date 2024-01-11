@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "1.2.1"
+groupTracker.version = "2.0.0"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -10,28 +10,7 @@ groupTracker.trackers = {}
  
 --[[--
 	Version History 
-	1.0.0 - Initial version 
-	1.1.0 - filtering  added 
-	      - array support for trackers 
-	      - array support for trackers 
-	1.1.1 - corrected clone zone reference bug
-	1.1.2 - corrected naming (removed bang from flags), deprecated old
-		  - more zone-local verbosity
-	1.1.3 - spellings
-		  - addGroupToTrackerNamed bug removed accessing tracker 
-		  - new removeGroupNamedFromTrackerNamed()
-	1.1.4 - destroy? input 
-		  - allGone! output 
-		  - triggerMethod
-		  - method 
-		  - isDead optimiz ation 
-	1.2.0 - double detection
-		  - numUnits output 
-		  - persistence 
-	1.2.1 - allGone! bug removed 
-	1.2.2 - new groupTrackedBy() method
-		  - limbo for storing a unit in limbo so it is 
-		  - not counted as missing when being transported 
+	2.0.0 - dmlZones, OOP, clean-up, legacy support
 	
 --]]--
 
@@ -259,62 +238,7 @@ function groupTracker.removeGroupNamedFromTrackerNamed(gName, trackerName)
 	end 
 	
 	groupTracker.removeGroupNamedFromTracker(gName, theTracker)
---[[--	
-	local filteredGroups = {}
-	local foundOne = false 
-	local totalUnits = 0
-	if not theTracker.trackedGroups then theTracker.trackedGroups = {} end 
-	for idx, aGroup in pairs(theTracker.trackedGroups) do 
-		if aGroup:getName() == gName then 
-			-- skip and remember 
-			foundOne = true 
-		else 
-			table.insert(filteredGroups, aGroup)
-			if Group.isExist(aGroup) then 
-				totalUnits = totalUnits + aGroup:getSize()
-			end
-		end
-	end
-	-- also check limbo 
-	for limboName, limboNum in pairs (theTracker.limbo) do 
-		if gName == limboName then 
-			-- don't count, but remember that it existed
-			foundOne = true 
-		else 
-			totalUnits = totalUnits + limboNum
-		end		
-	end 
-	-- remove from limbo 
-	theTracker.limbo[gName] = nil 
-	
-	if (not foundOne) and (theTracker.verbose or groupTracker.verbose) then 
-		trigger.action.outText("+++gTrk: Removal Request Note: group <" .. gName .. "> wasn't tracked by <" .. trackerName .. ">", 30)
-	end 
-	
-	-- remember the new, cleanded set
-	theTracker.trackedGroups = filteredGroups
-	
-	-- update number of tracked units. do it in any case 
-	if theTracker.tNumUnits then 
-		cfxZones.setFlagValue(theTracker.tNumUnits, totalUnits, theTracker)
-	end
-	
-	if foundOne then 
-		if theTracker.verbose or groupTracker.verbose then 
-			trigger.action.outText("+++gTrk: removed group <" .. gName .. "> from tracker <" .. trackerName .. ">", 30)
-		end 
-		
-		-- now bang/invoke addGroup!
-		if theTracker.tRemoveGroup then 
-			cfxZones.pollFlag(theTracker.tRemoveGroup, "inc", theTracker)
-		end
-	
-		-- now set numGroups
-		if theTracker.tNumGroups then 
-			cfxZones.setFlagValue(theTracker.tNumGroups, dcsCommon.getSizeOfTable(theTracker.limbo) + #theTracker.trackedGroups, theTracker)
-		end
-	end 
-	--]]--
+
 end
 
 -- groupTrackedBy - return trackers that track group theGroup  
@@ -365,62 +289,56 @@ function groupTracker.createTrackerWithZone(theZone)
 	theZone.limbo = {} -- name based, for groups that are tracked 
 	                   -- although technically off the map (helo etc)
 
-	theZone.trackerMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "trackerMethod") then 
-		theZone.trackerMethod = cfxZones.getStringFromZoneProperty(theZone, "trackerMethod", "inc")
+	theZone.trackerMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("trackerMethod") then 
+		theZone.trackerMethod = theZone:getStringFromZoneProperty( "trackerMethod", "inc")
 	end
 
-	theZone.trackerTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
+	theZone.trackerTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
 
-	if cfxZones.hasProperty(theZone, "trackerTriggerMethod") then 
-		theZone.trackerTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "trackerTriggerMethod", "change")
+	if theZone:hasProperty("trackerTriggerMethod") then 
+		theZone.trackerTriggerMethod = theZone:getStringFromZoneProperty("trackerTriggerMethod", "change")
 	end
 
-	if cfxZones.hasProperty(theZone, "numGroups") then 
-		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups", "*<none>") 
-		-- we may need to zero this flag 
-	elseif  cfxZones.hasProperty(theZone, "numGroups!") then -- DEPRECATED!
-		theZone.tNumGroups = cfxZones.getStringFromZoneProperty(theZone, "numGroups!", "*<none>") 
-		-- we may need to zero this flag 
+	if theZone:hasProperty("numGroups") then 
+		theZone.tNumGroups = theZone:getStringFromZoneProperty("numGroups", "*<none>") -- legacy support 
+	elseif theZone:hasProperty("numGroups#") then 
+		theZone.tNumGroups = theZone:getStringFromZoneProperty( "numGroups#", "*<none>") 
 	end 
-
-	if cfxZones.hasProperty(theZone, "numUnits") then 
-		theZone.tNumUnits = cfxZones.getStringFromZoneProperty(theZone, "numUnits", "*<none>") 
+	
+	if theZone:hasProperty("numUnits") then
+		theZone.tNumUnits = theZOne:getStringFromZoneProperty("numUnits", "*<none>") -- legacy support
+	elseif theZone:hasProperty("numUnits#") then 
+		theZone.tNumUnits = theZone:getStringFromZoneProperty("numUnits#", "*<none>")
 	end
 	
-	if cfxZones.hasProperty(theZone, "addGroup") then 
-		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup", "*<none>") 
-		-- we may need to zero this flag 
-	elseif cfxZones.hasProperty(theZone, "addGroup!") then -- DEPRECATED
-		theZone.tAddGroup = cfxZones.getStringFromZoneProperty(theZone, "addGroup!", "*<none>") 
-		-- we may need to zero this flag 
+	if theZone:hasProperty("addGroup") then 
+		theZone.tAddGroup = theZone:getStringFromZoneProperty("addGroup", "*<none>") -- legacy support
+	elseif theZone:hasProperty("addGroup!") then 
+		theZone.tAddGroup = theZone:getStringFromZoneProperty("addGroup!", "*<none>") 
 	end
 		
-	if cfxZones.hasProperty(theZone, "removeGroup") then 
-		theZone.tRemoveGroup = cfxZones.getStringFromZoneProperty(theZone, "removeGroup", "*<none>") 
-		-- we may need to zero this flag 
-	elseif cfxZones.hasProperty(theZone, "removeGroup!") then -- DEPRECATED!
-		theZone.tRemoveGroup = cfxZones.getStringFromZoneProperty(theZone, "removeGroup!", "*<none>") 
-		-- we may need to zero this flag 
+	if theZone:hasProperty("removeGroup") then 
+		theZone.tRemoveGroup = theZone:getStringFromZoneProperty( "removeGroup", "*<none>") -- legacy support
+	elseif theZone:hasProperty("removeGroup!") then 
+		theZone.tRemoveGroup = theZone:getStringFromZoneProperty( "removeGroup!", "*<none>") 
 	end
-	
-	
-	
-	if cfxZones.hasProperty(theZone, "groupFilter") then 
-		local filterString = cfxZones.getStringFromZoneProperty(theZone, "groupFilter", "2") -- ground 
+		
+	if theZone:hasProperty("groupFilter") then 
+		local filterString = theZone:getStringFromZoneProperty( "groupFilter", "2") -- ground 
 		theZone.groupFilter = dcsCommon.string2GroupCat(filterString)
 		if groupTracker.verbose or theZone.verbose then 
 			trigger.action.outText("+++gTrck: filtering " .. theZone.groupFilter .. " in " .. theZone.name, 30)
 		end 
 	end	
 	
-	if cfxZones.hasProperty(theZone, "destroy?") then 
-		theZone.destroyFlag = cfxZones.getStringFromZoneProperty(theZone, "destroy?", "*<none>")
+	if theZone:hasProperty("destroy?") then 
+		theZone.destroyFlag = theZone:getStringFromZoneProperty(theZone, "destroy?", "*<none>")
 		theZone.lastDestroyValue = cfxZones.getFlagValue(theZone.destroyFlag, theZone)
 	end
 	
-	if cfxZones.hasProperty(theZone, "allGone!") then 
-		theZone.allGoneFlag = cfxZones.getStringFromZoneProperty(theZone, "allGone!", "<None>") -- note string on number default
+	if theZone:hasProperty("allGone!") then 
+		theZone.allGoneFlag = theZone:getStringFromZoneProperty("allGone!", "<None>") -- note string on number default
 	end
 	theZone.lastGroupCount = 0 
 	
@@ -652,15 +570,12 @@ end
 function groupTracker.readConfigZone()
 	local theZone = cfxZones.getZoneByName("groupTrackerConfig") 
 	if not theZone then 
-		if groupTracker.verbose then 
-			trigger.action.outText("+++gTrk: NO config zone!", 30)
-		end 
-		return 
+		theZone = cfxZones.createSimpleZone("groupTrackerConfig")
 	end 
 	
-	groupTracker.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	groupTracker.verbose = theZoneverbose
 	
-	groupTracker.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 1)
+	groupTracker.ups = theZone:getNumberFromZoneProperty("ups", 1)
 	
 	if groupTracker.verbose then 
 		trigger.action.outText("+++gTrk: read config", 30)

@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "2.3.1"
+messenger.version = "3.0.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -8,68 +8,9 @@ messenger.requiredLibs = {
 messenger.messengers = {} 
 --[[--
 	Version History
-	1.0.0 - initial version 
-	1.0.1 - messageOut? synonym
-	      - spelling types in about 
-	1.1.0 - DML flag support 
-		  - clearScreen option
-		  - inValue?
-		  - message preprocessor 
-	1.1.1 - firewalled coalition to msgCoalition
-		  - messageOn?
-		  - messageOff?
-	1.2.0 - msgTriggerMethod (original Watchflag integration) 
-	1.2.1 - qoL: <n> = newline, <z> = zone name, <v> = value
-	1.3.0 - messenger? saves messageOut? attribute 
-	1.3.1 - message now can interpret value as time with <h> <m> <s> <:h> <:m> <:s>
-	1.3.2 - message interprets <t> as time in HH:MM:SS of current time 
-		  - can interpret <lat>, <lon>, <mgrs>
-		  - zone-local verbosity
-	1.3.3 - mute/messageMute option to start messenger in mute 
-	2.0.0 - re-engineered message wildcards
-		  - corrected dynamic content for time and latlon (classic)
-	      - new timeFormat attribute 
-		  - <v: flagname>
-		  - <t: flagname>
-		  - added <ele> 
-		  - added imperial 
-		  - <lat: unit/zone>
-		  - <lon: unit/zone>
-		  - <ele: unit/zone>
-		  - <mgrs: unit/zone>
-		  - <latlon: unit/zone>
-		  - <lle: unit/zone>
-		  - messageError 
-		  - unit 
-		  - group 
-	2.0.1 - config optimization
-	2.1.0 - unit only: dynamicUnitProcessing with other units/zones 
-		  - <bae: u/z> bearing to unit/zone
-		  - <rbae u/z> response mapped by unit's heading
-		  - <clk: u/z> bearing in clock position to unit/zone 
-		  - <rng: u/z> range to unit/zone 
-		  - <hnd: u/z> bearing in left/right/ahead/behind
-		  - <sde: u/z> bearing in starboard/port/ahead/aft 
-		  - added dynamicGroupProcessing to select unit 1
-		  - responses attribute
-		  - <rsp: flag>
-		  - <rrnd> response randomized
-		  - <rhdg: u/z> respons mapped by unit's heading
-		  - <cls unit> closing speed 
-		  - <vel unit> velocity (speed) 
-		  - <asp unit> aspect 
-		  - fix to messageMute
-		  - <type: unit> 
-	2.1.1 - cosmetic: only output text if len>0 and not cls 
-	2.2.0 - <player: unit> 
-	      - made dynamic string gen more portable in prep for move to cfxZones
-		  - refactoring wildcard processing: moved to cfxZones 
-	2.2.1 - when messenger is linked to a unit, it can use the linked
-			unit as reference point for relative wildcards. Always broadcasts to coalition. Can be used to broadcase 'eye in the sky' type information
-		  - fixed verbosity bug 
 	2.3.0 - cfxZones OOP switch
 	2.3.1 - triggering message AFTER the on/off switches are tested
-	
+	3.0.0 - removed messenger, in?, f? attributes, harmonized on messenger?
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -255,11 +196,11 @@ function messenger.createMessengerWithZone(theZone)
 	if theZone:hasProperty("in?") then 
 		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("in?", "none")
 	end
-	
+--[[--	
 	if theZone:hasProperty("messageOut?") then 
 		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("messageOut?", "none")
 	end
-	
+--]]--	
 	-- try default only if no other is set 
 	if not theZone.triggerMessagerFlag then 
 		if not theZone:hasProperty("messenger?") then 
@@ -505,12 +446,13 @@ function messenger.start()
 	
 	-- process messenger Zones 
 	-- old style
+--[[--	
 	local attrZones = cfxZones.getZonesWithAttributeNamed("messenger")
 	for k, aZone in pairs(attrZones) do 
 		messenger.createMessengerWithZone(aZone) -- process attributes
 		messenger.addMessenger(aZone) -- add to list
 	end
-	
+--]]--	
 	-- new style that saves messageOut? flag by reading flags
 	attrZones = cfxZones.getZonesWithAttributeNamed("messenger?")
 	for k, aZone in pairs(attrZones) do 

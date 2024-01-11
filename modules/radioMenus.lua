@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.1.1"
+radioMenu.version = "2.2.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -10,21 +10,6 @@ radioMenu.menus = {}
 
 --[[--
 	Version History 
-	1.0.0 - Initial version 
-	1.0.1 - spelling corrections
-	1.1.0 - removeMenu 
-	        addMenu 
-		    menuVisible 
-	2.0.0 - redesign: handles multiple receivers
-		    optional MX module 
-		    group option
-	        type option
-		    multiple group names 
-		    multiple types 
-		    gereric helo type 
-		    generic plane type 
-		    type works with coalition 
-	2.0.1 - corrections to installMenu(), as suggested by GumidekCZ
 	2.1.0 - valA/valB/valC/valD attributes 
 			OOP cfxZones
 			corrected CD setting for "D"
@@ -32,6 +17,7 @@ radioMenu.menus = {}
 			valA-D now define full method, not just values 
 			full wildcard support for ack and cooldown 
 	2.1.1 - outMessage now works correctly 
+	2.2.0 - clean-up
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -63,8 +49,7 @@ function radioMenu.filterPlayerIDForType(theZone)
 	end
 	
 	-- now iterate all types, and include any player that matches
-	-- note that a player may match twice, so we use a dict instead of an 
-	-- array. Since we later iterate ID by idx, that's not an issue
+	-- note that players may match twice, so we use a dict  
 	
 	for idx, aType in pairs(allTypes) do 
 		local theType = dcsCommon.trim(aType)
@@ -145,7 +130,6 @@ function radioMenu.filterPlayerIDForGroup(theZone)
 end
 
 function radioMenu.installMenu(theZone)
---	local theGroup = 0 -- was: nil
 	local gID = nil 
 	if theZone.menuGroup then 
 		if not cfxMX then 
@@ -570,6 +554,5 @@ if not radioMenu.start() then
 end
 
 --[[--
-	callbacks for the menus  
 	check CD/standby code for multiple groups 
 --]]--

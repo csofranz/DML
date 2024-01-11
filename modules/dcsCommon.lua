@@ -1,183 +1,13 @@
 dcsCommon = {}
-dcsCommon.version = "2.9.8"
---[[-- VERSION HISTORY
- 2.2.6 - compassPositionOfARelativeToB
-	   - clockPositionOfARelativeToB
- 2.2.7 - isTroopCarrier 
-       - distFlat
- 2.2.8 - fixed event2text 
- 2.2.9 - getUnitAGL
-       - getUnitAlt
-	   - getUnitSpeed 
-	   - getUnitHeading
-	   - getUnitHeadingDegrees
-	   - mag
-	   - clockPositionOfARelativeToB with own heading 
- 2.3.0 - unitIsInfantry
- 2.3.1 - bool2YesNo
-       - bool2Text
- 2.3.2 - getGroupAvgSpeed
-       - getGroupMaxSpeed
- 2.3.3 - getSizeOfTable
- 2.3.4 - isSceneryObject
-         coalition2county
- 2.3.5 - smallRandom
-         pickRandom uses smallRandom
-		 airfield handling, parking 
-		 flight waypoint handling
-		 landing waypoint creation
-		 take-off waypoint creation
- 2.3.6 - createOverheadAirdromeRoutPintData(aerodrome)
- 2.3.7 - coalition2county - warning when creating UN 
- 2.3.8 - improved headingOfBInDegrees, new getClockDirection
- 2.3.9 - getClosingVelocity
-       - dot product 
-	   - magSquare
-	   - vMag
- 2.4.0 - libCheck
- 2.4.1 - grid/square/rect formation 
-       - arrangeGroupInNColumns formation 
-	   - 2Columns formation deep and wide formation
- 2.4.2 - getAirbasesInRangeOfPoint
- 2.4.3 - lerp 
- 2.4.4 - getClosestAirbaseTo
-       - fixed bug in containsString when strings equal
- 2.4.5 - added cargo and mass options to createStaticObjectData
- 2.4.6 - fixed randompercent 
- 2.4.7 - smokeColor2Num(smokeColor)
- 2.4.8 - linkStaticDataToUnit()
- 2.4.9 - trim functions 
-       - createGroundUnitData uses trim function to remove leading/trailing blanks
-	     so now we can use blanks after comma to separate types 
-       - dcsCommon.trimArray(
-	   - createStaticObjectData uses trim for type 
-	   - getEnemyCoalitionFor understands strings, still returns number
-       - coalition2county also understands 'red' and 'blue'
- 2.5.0 - "Line" formation with one unit places unit at center 	
- 2.5.1 - vNorm(a)  
- 2.5.1 - added SA-18 Igla manpad to unitIsInfantry()
- 2.5.2 - added copyArray method
-	   - corrected heading in createStaticObjectData
- 2.5.3 - corrected rotateGroupData bug for cz 
-	   - removed forced error in failed pickRandom
- 2.5.4 - rotateUnitData()
-       - randomBetween()
- 2.5.5 - stringStartsWithDigit()
-       - stringStartsWithLetter()
-	   - stringIsPositiveNumber()
- 2.5.6 - corrected stringEndsWith() bug with str
- 2.5.7 - point2text(p) 
- 2.5.8 - string2GroupCat()
- 2.5.9 - string2ObjectCat()
- 2.6.0 - unified uuid, removed uuIdent
- 2.6.1 - removed bug in rotateUnitData: cy --> cz param passing  
- 2.6.2 - new combineTables()
- 2.6.3 - new tacan2freq()
- 2.6.4 - new processHMS()
- 2.6.5 - new bearing2compass()
-       - new bearingdegrees2compass()
-	   - new latLon2Text() - based on mist 
- 2.6.6 - new nowString() 
-       - new str2num()
-	   - new stringRemainsStartingWith()
-       - new stripLF()
-	   - new removeBlanks()
- 2.6.7 - new menu2text()
- 2.6.8 - new getMissionName()
-       - new flagArrayFromString()
- 2.6.9 - new getSceneryObjectsInZone()
-       - new getSceneryObjectInZoneByName()
- 2.7.0 - new synchGroupData()
-         clone, topClone and copyArray now all nil-trap 
- 2.7.1 - new isPlayerUnit() -- moved from cfxPlayer
-         new getAllExistingPlayerUnitsRaw - from cfxPlayer
-		 new typeIsInfantry()
- 2.7.2 - new rangeArrayFromString()
-         fixed leading blank bug in flagArrayFromString
-		 new incFlag()
-		 new decFlag()
-		 nil trap in stringStartsWith()
-		 new getClosestFreeSlotForCatInAirbaseTo()
- 2.7.3 - new string2Array()
-       - additional guard for isPlayerUnit
- 2.7.4 - new array2string()
- 2.7.5 - new bitAND32()
-       - new LSR()
-	   - new num2bin()
- 2.7.6 - new getObjectsForCatAtPointWithRadius()
- 2.7.7 - clone() has new stripMeta option. pass true to remove all meta tables 
-	   - dumpVar2Str detects meta tables 
-	   - rotateGroupData kills unit's psi value if it existed since it messes with heading 
-	   - rotateGroupData - changes psi to -heading if it exists rather than nilling
- 2.7.8 - new getGeneralDirection()
-	   - new getNauticalDirection()
-	   - more robust guards for getUnitSpeed
- 2.7.9 - new bool2Num(theBool)
-	   - new aspectByDirection()
-	   - createGroundGroupWithUnits corrected spelling of minDist, crashed scattered formation
-	   - randomPointInCircle fixed erroneous local for x, z 
-	   - "scattered" formation repaired
- 2.7.10- semaphore groundwork 
- 2.8.0 - new collectMissionIDs at start-up  
-	   - new getUnitNameByID
-	   - new getGroupNameByID
-	   - bool2YesNo alsco can return NIL
-	   - new getUnitStartPosByID
- 2.8.1 - arrayContainsString: type checking for theArray and warning
-	   - processStringWildcards()
-	   - new wildArrayContainsString() 
-	   - fix for stringStartsWith oddity with aircraft types 
- 2.8.2 - better fixes for string.find() in stringStartsWith and containsString
-       - dcsCommon.isTroopCarrier(theUnit, carriers) new carriers optional param
-	   - better guards for getUnitAlt and getUnitAGL
-	   - new newPointAtDegreesRange()
-	   - new newPointAtAngleRange()
-	   - new isTroopCarrierType()
-	   - stringStartsWith now supports case insensitive match 
-	   - isTroopCarrier() supports 'any' and 'all'
-	   - made getEnemyCoalitionFor() more resilient 
-	   - fix to smallRandom for negative numbers
-	   - isTroopCarrierType uses wildArrayContainsString
- 2.8.3 - small optimizations in bearingFromAtoB()
-       - new whichSideOfMine()
- 2.8.4 - new rotatePointAroundOriginRad()
-	   - new rotatePointAroundPointDeg()
-	   - new rotatePointAroundPointRad()
-	   - getClosestAirbaseTo() now supports passing list of air bases
- 2.8.5 - better guard in getGroupUnit()
- 2.8.6 - phonetic helpers 
-		 new spellString()
- 2.8.7 - new flareColor2Num()
-       - new flareColor2Text()
-       - new iteratePlayers()
- 2.8.8 - new hexString2RGBA()
-       - new playerName2Coalition()
-	   - new coalition2Text()
- 2.8.9 - vAdd supports xy and xyz 
-       - vSub supports xy and xyz 
-	   - vMultScalar supports xy and xyz 
-2.8.10 - tacan2freq now integrated with module (blush) 
-       - array2string cosmetic default 
-	   - vMultScalar corrected bug in accessing b.z 
-	   - new randomLetter()
-	   - new getPlayerUnit()
-	   - new getMapName()
-	   - new getMagDeclForPoint()
-2.9.0  - createPoint() moved from cfxZones
-	   - copyPoint() moved from cfxZones
-	   - numberArrayFromString() moved from cfxZones
-2.9.1  - new createSimpleRoutePointData()
-	   - createOverheadAirdromeRoutPintData corrected and legacy support added 
-	   - new bearingFromAtoBusingXY()
-	   - corrected verbosity for bearingFromAtoB
-	   - new getCountriesForCoalition()
-2.9.2  - updated event2text
-2.9.3  - getAirbasesWhoseNameContains now supports category tables for filtering 
-2.9.4  - new bearing2degrees()
-2.9.5  - distanceOfPointPToLineXZ(p, p1, p2)
-2.9.6  - new addToTableIfNew()
-2.9.7  - createSimpleRoutePointData also accepts speed
-2.9.8  - isSceneryObject(theUnit) optimization, DCS 2.9 safe 
+dcsCommon.version = "3.0.0"
+--[[-- VERSION HISTORY 
+3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
+       - point2text new intsOnly option 
+	   - arrangeGroupDataIntoFormation minDist harden
+	   - cleanup 
+	   - new pointInDirectionOfPointXYY()
+	   - createGroundGroupWithUnits now supports liveries
+	   - new getAllExistingPlayersAndUnits()
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -511,7 +341,6 @@ dcsCommon.version = "2.9.8"
 	-- a table containing categories, e.g. {0, 2} = airfields and ships but not farps 
 	-- if no name given or aName = "*", then all bases are returned prior to filtering 
 	function dcsCommon.getAirbasesWhoseNameContains(aName, filterCat, filterCoalition)
-		--trigger.action.outText("getAB(name): enter with " .. aName, 30)
 		if not aName then aName = "*" end 
 		local allYourBase = world.getAirbases() -- get em all 
 		local areBelongToUs = {}
@@ -520,9 +349,6 @@ dcsCommon.version = "2.9.8"
 			local airBaseName = aBase:getName() -- get display name
 			if aName == "*" or dcsCommon.containsString(airBaseName, aName) then 
 				-- containsString is case insesitive unless told otherwise
-				--if aName ~= "*" then 
-				--	trigger.action.outText("getAB(name): matched " .. airBaseName, 30)
-				--end 
 				local doAdd = true  
 				if filterCat then 
 					local aCat = dcsCommon.getAirbaseCat(aBase)
@@ -628,13 +454,11 @@ dcsCommon.version = "2.9.8"
 		for idx, aSlot in pairs(reallyFree) do 
 			local sp = {x = aSlot.vTerminalPos.x, y = 0, z = aSlot.vTerminalPos.z}
 			local currDist = dcsCommon.distFlat(p, sp)
-			--trigger.action.outText("slot <" .. aSlot.Term_Index .. "> has dist " .. math.floor(currDist) .. " and _0 of <" .. aSlot.Term_Index_0 .. ">", 30)
 			if currDist < closestDist then 
 				closestSlot = aSlot 
 				closestDist = currDist 
 			end
 		end
-		--trigger.action.outText("slot <" .. closestSlot.Term_Index .. "> has closest dist <" .. math.floor(closestDist) .. ">", 30)
 		return closestSlot
 	end
 
@@ -888,12 +712,9 @@ dcsCommon.version = "2.9.8"
 		if not A then return "***error:A***" end
 		if not B then return "***error:B***" end
 		if not headingOfBInDegrees then headingOfBInDegrees = 0 end 
-		
-		local bearing = dcsCommon.bearingInDegreesFromAtoB(B, A) -- returns 0..360
---		trigger.action.outText("+++comm: oclock - bearing = " .. bearing .. " and inHeading = " .. headingOfBInDegrees, 30) 
+		local bearing = dcsCommon.bearingInDegreesFromAtoB(B, A) -- returns 0..360 
 		bearing = bearing - headingOfBInDegrees
 		return dcsCommon.getClockDirection(bearing)
-		
 	end 
 	
 	-- given a heading, return clock with 0 being 12, 180 being 6 etc.
@@ -1079,7 +900,6 @@ dcsCommon.version = "2.9.8"
 		end
 
 		-- if we get here, there was no live unit 
-		--trigger.action.outText("+++cmn: A group has no live units. returning nil", 10)
 		return nil 
 		
 	end
@@ -1107,7 +927,6 @@ dcsCommon.version = "2.9.8"
 		end
 
 		-- if we get here, there was no live unit 
-		--trigger.action.outText("+++cmn A group has no live units. returning nil", 10)
 		return nil 
 		
 	end
@@ -1233,7 +1052,6 @@ dcsCommon.version = "2.9.8"
 	-- when filtering occurs in pre, an alternative 'rejected' handler can be called 
 	function dcsCommon.addEventHandler(f, pre, post, rejected) -- returns ID 
 		local handler = {} -- build a wrapper and connect the onEvent
-		--dcsCommon.cbID = dcsCommon.cbID + 1 -- increment unique count
 		handler.id = dcsCommon.uuid("eventHandler")
 		handler.f = f -- the callback itself
 		if (rejected) then handler.rejected = rejected end
@@ -1245,7 +1063,6 @@ dcsCommon.version = "2.9.8"
 		function handler:onEvent(event)
 			if not self.pre(event) then 
 				if dcsCommon.verbose then
---					trigger.action.outText("event " .. event.id .. " discarded by pre-processor", 10)
 				end
 				if (self.rejected) then self.rejected(event) end 
 				return
@@ -1428,8 +1245,8 @@ dcsCommon.version = "2.9.8"
 		rp.action = "Turning Point"
 		rp.type = "Turning Point"
 		if action then rp.action = action; rp.type = action end -- warning: may not be correct, need to verify later
-		rp.alt = altitudeInFeet * 0.3048
-		rp.speed = knots * 0.514444 -- we use 
+		rp.alt = altitudeInFeet * 0.3048 -- in m 
+		rp.speed = knots * 0.514444 -- we use m/s
 		rp.alt_type = "BARO"
 		if (altType) then rp.alt_type = altType end 
 		return rp
@@ -1485,7 +1302,7 @@ dcsCommon.version = "2.9.8"
 		rp.action = "From Parking Area"
 		rp.type = "TakeOffParking"
 			
-		rp.speed = 100; -- in m/s? If so, that's 360 km/h 
+		rp.speed = 100 --  that's 360 km/h 
 		rp.alt_type = "BARO"
 		return rp
 	end
@@ -1673,7 +1490,6 @@ dcsCommon.version = "2.9.8"
 		
 		-- now do the formation stuff
 		-- make sure that they keep minimum  distance 
---		trigger.action.outText("dcsCommon - processing formation " .. formation .. " with radius = " .. radius, 30)
 		if formation == "LINE_V" then 
 			-- top to bottom in zone (heding 0). -- will run through x-coordinate 
 			-- use entire radius top to bottom 
@@ -1682,7 +1498,6 @@ dcsCommon.version = "2.9.8"
 			for i=1, num do
 			
 				local u = theNewGroup.units[i]
---				trigger.action.outText("formation unit " .. u.name .. " currX = " .. currX, 30)
 				u.x = currX
 				currX = currX + increment
 			end
@@ -1698,7 +1513,6 @@ dcsCommon.version = "2.9.8"
 				local increment = radius * 2/(num - 1) -- MUST NOT TRY WITH 1 UNIT!
 				for i=1, num do
 					local u = theNewGroup.units[i]
---					trigger.action.outText("formation unit " .. u.name .. " currX = " .. currY, 30)
 					u.y = currY
 					currY = currY + increment
 				end	
@@ -1713,7 +1527,6 @@ dcsCommon.version = "2.9.8"
 			local incrementX = radius * 2/(num - 1) -- MUST NOT TRY WITH 1 UNIT!
 			for i=1, num do
 				local u = theNewGroup.units[i]
---				trigger.action.outText("formation unit " .. u.name .. " currX = " .. currX .. " currY = " .. currY, 30)
 				u.x = currX
 				u.y = currY
 				-- calc coords for NEXT iteration
@@ -1731,6 +1544,7 @@ dcsCommon.version = "2.9.8"
 		elseif formation == "SCATTERED" or formation == "RANDOM" then 
 			-- use randomPointInCircle and tehn iterate over all vehicles for mindelta
 			processedUnits = {}
+			if not minDist then minDist = 10 end 
 			for i=1, num do
 				local emergencyBreak = 1 -- prevent endless loop
 				local lowDist = 10000
@@ -1760,7 +1574,6 @@ dcsCommon.version = "2.9.8"
 
 		elseif dcsCommon.stringStartsWith(formation, "CIRCLE") then
 			-- units are arranged on perimeter of circle defined by radius 
---			trigger.action.outText("formation circle detected", 30)
 			local currAngle = 0
 			local angleInc = 2 * 3.14157 / num -- increase per spoke 
 			for i=1, num do
@@ -1786,40 +1599,7 @@ dcsCommon.version = "2.9.8"
 			-- calculate w 
 			local w = math.floor(num^(0.5) + 0.5)
 			dcsCommon.arrangeGroupInNColumns(theNewGroup, w, radius)
-			--[[--
-			local h = math.floor(num / w)
-			--trigger.action.outText("AdcsC: num=" .. num .. " w=" .. w .. "h=" .. h .. " -- num%w=" .. num%w, 30)
-			if (num % w) > 0 then 
-				h = h + 1
-			end
 			
-			--trigger.action.outText("BdcsC: num=" .. num .. " w=" .. w .. "h=" .. h, 30)
-			
-			-- now w * h always >= num and num items fir in that grid
-			-- w is width, h is height, of course :) 
-			-- now calculat xInc and yInc
-			local i = 1
-			local xInc = 0 
-			if w > 1 then xInc = 2 * radius / (w-1) end
-			local yInc = 0
-			if h > 1 then yInc = 2 * radius / (h-1) end 
-			local currY = radius 
-			if h < 2 then currY = 0 end -- special:_ place in Y middle if only one row)
-			while h > 0 do 
-				local currX = radius 
-				local wCnt = w 
-				while wCnt > 0 and (i <= num) do 
-					local u = theNewGroup.units[i] -- get unit 
-					u.x = currX
-					u.y = currY
-					currX = currX - xInc
-					wCnt = wCnt - 1
-					i = i + 1
-				end
-				currY = currY - yInc 
-				h = h - 1
-			end
-			--]]--
 		elseif formation == "2DEEP" or formation == "2COLS" then
 			if num < 2 then return end 
 			-- arrange units in an 2 x h grid
@@ -1896,11 +1676,14 @@ dcsCommon.version = "2.9.8"
 	end
 	
 	
-	function dcsCommon.createGroundGroupWithUnits(name, theUnitTypes, radius, minDist, formation, innerRadius)
+	function dcsCommon.createGroundGroupWithUnits(name, theUnitTypes, radius, minDist, formation, innerRadius, liveries)
+		-- liveries is indexed by typeName and provides alternate livery names 
+		-- from default.
 		if not minDist then minDist = 4 end -- meters
 		if not formation then formation = "line" end 
 		if not radius then radius = 30 end -- meters 
 		if not innerRadius then innerRadius = 0 end
+		if not liveries then liveries = {} end 
 		formation = formation:upper()
 		-- theUnitTypes can be either a single string or a table of strings
 		-- see here for TypeName https://github.com/mrSkortch/DCS-miscScripts/tree/master/ObjectDB
@@ -1919,14 +1702,9 @@ dcsCommon.version = "2.9.8"
 		local theNewGroup = dcsCommon.createEmptyGroundGroupData(name)
 		
 		-- now add a single unit or multiple units
-		if type(theUnitTypes) ~= "table" then 
---			trigger.action.outText("dcsCommon - i am here", 30)
---			trigger.action.outText("dcsCommon - name " .. name, 30)
---			trigger.action.outText("dcsCommon - unit type " .. theUnitTypes, 30)
-			
+		if type(theUnitTypes) ~= "table" then 			
 			local aUnit = {}
 			aUnit = dcsCommon.createGroundUnitData(name .. "-1", theUnitTypes, false)
---			trigger.action.outText("dcsCommon - unit name retval " .. aUnit.name, 30)
 			dcsCommon.addUnitToGroupData(aUnit, theNewGroup, 0, 0) -- create with data at location (0,0)
 			return theNewGroup
 		end 
@@ -1937,6 +1715,10 @@ dcsCommon.version = "2.9.8"
 		for key, theType in pairs(theUnitTypes) do 
 			-- trigger.action.outText("+++dcsC: creating unit " .. name .. "-" .. num .. ": " .. theType, 30)
 			local aUnit = dcsCommon.createGroundUnitData(name .. "-"..num, theType, false)
+			local theLivery = liveries[theType]
+			if theLivery then 
+				aUnit.livery_id = theLivery
+			end 
 			dcsCommon.addUnitToGroupData(aUnit, theNewGroup, 0, 0)
 			num = num + 1
 		end
@@ -1991,15 +1773,23 @@ dcsCommon.version = "2.9.8"
 			elseif cat == Group.Category.GROUND then
 				-- we got all we need
 			else 
-				-- trigger.action.outText("dcsCommon - unknown category: " .. cat, 30)
-				-- return nil
-				-- we also got all we need
+
 			end			
 			
 		end
 	
 	end;
 	
+	function dcsCommon.pointInDirectionOfPointXYY(dir, dist, p) -- dir in rad, p in XYZ returns XYY 
+		local fx = math.cos(dir)
+		local fy = math.sin(dir) 
+		local p2 = {}
+		p2.x = p.x + dist * fx
+		p2.y = p.z + dist * fy
+		p2.z = p2.y -- make p2 XYY vec2/3 upcast
+		return p2
+	end
+
 	function dcsCommon.rotatePointAroundOriginRad(inX, inY, angle) -- angle in degrees
 		local c = math.cos(angle)
 		local s = math.sin(angle)
@@ -2046,7 +1836,6 @@ dcsCommon.version = "2.9.8"
 		if not cx then cx = 0 end
 		if not cz then cz = 0 end
 		local cy = cz 
-		--trigger.action.outText("+++dcsC:rotGrp cy,cy = "..cx .. "," .. cy, 30)
 		
 		local rads = degrees *  3.14152 / 180
 		do
@@ -2066,7 +1855,6 @@ dcsCommon.version = "2.9.8"
 		if not cx then cx = 0 end
 		if not cz then cz = 0 end
 		local cy = cz 
-		--trigger.action.outText("+++dcsC:rotGrp cy,cy = "..cx .. "," .. cy, 30)
 		
 		local rads = degrees *  3.14152 / 180
 		-- turns all units in group around the group's center by degrees.
@@ -2080,9 +1868,6 @@ dcsCommon.version = "2.9.8"
 
 			-- may also want to increase heading by degrees
 			theUnit.heading = theUnit.heading + rads 
-			-- now kill psi if it existed before 
-			-- theUnit.psi = nil
-			-- better code: psi is always -heading. Nobody knows what psi is, though
 			if theUnit.psi then 
 				theUnit.psi = -theUnit.heading 
 			end
@@ -2247,33 +2032,27 @@ end
 		end
 		if not caseSensitive then theString = string.upper(theString) end 
 		
-		--trigger.action.outText("wildACS: theString = <" .. theString .. ">, theArray contains <" .. #theArray .. "> elements", 30)
 		local wildIn = dcsCommon.stringEndsWith(theString, "*")
 		if wildIn then dcsCommon.removeEnding(theString, "*") end 
 		for idx, theElement in pairs(theArray) do -- i = 1, #theArray do 
-			--local theElement = theArray[i]
-			--trigger.action.outText("test e <" .. theElement .. "> against s <" .. theString .. ">", 30)
 			if not caseSensitive then theElement = string.upper(theElement) end 
 			local wildEle = dcsCommon.stringEndsWith(theElement, "*")
 			if wildEle then theElement = dcsCommon.removeEnding(theElement, "*") end 
-			--trigger.action.outText("matching s=<" .. theString .. "> with e=<" .. theElement .. ">", 30)
+
 			if wildEle and wildIn then 
 				-- both end on wildcards, partial match for both
 				if dcsCommon.stringStartsWith(theElement, theString) then return true end 
 				if dcsCommon.stringStartsWith(theString, theElement) then return true end 
-				--trigger.action.outText("match e* with s* failed.", 30)
 			elseif wildEle then 
 				-- Element is a wildcard, partial match 
 				if dcsCommon.stringStartsWith(theString, theElement) then return true end
-				--trigger.action.outText("startswith - match e* <" .. theElement .. "> with s <" .. theString .. "> failed.", 30)
+
 			elseif wildIn then
 				-- theString is a wildcard. partial match 
 				if dcsCommon.stringStartsWith(theElement, theString) then return true end
-				--trigger.action.outText("match e with s* failed.", 30)
 			else
 				-- standard: no wildcards, full match
 				if theElement == theString then return true end 
-				--trigger.action.outText("match e with s (straight) failed.", 30)
 			end
 			
 		end
@@ -2412,7 +2191,7 @@ end
 		
 		if caseInsensitive then 
 			theString = string.upper(theString)
-			thePrefix = string.upper(theString)
+			thePrefix = string.upper(thePrefix)
 		end
 		-- superseded: string.find (s, pattern [, init [, plain]]) solves the problem  
 		local i, j = string.find(theString, thePrefix, 1, true)
@@ -2467,12 +2246,19 @@ end
 		return 0
 	end
 
-	function dcsCommon.point2text(p) 
+	function dcsCommon.point2text(p, intsOnly) 
+		if not intsOnly then intsOnly = false end 
 		if not p then return "<!NIL!>" end 
 		local t = "[x="
-		if p.x then t = t .. p.x .. ", " else t = t .. "<nil>, " end 
-		if p.y then t = t .. "y=" .. p.y .. ", " else t = t .. "y=<nil>, " end 
-		if p.z then t = t .. "z=" .. p.z .. "]" else t = t .. "z=<nil>]" end 
+		if intsOnly then 
+			if p.x then t = t .. math.floor(p.x) .. ", " else t = t .. "<nil>, " end 
+			if p.y then t = t .. "y=" .. math.floor(p.y) .. ", " else t = t .. "y=<nil>, " end 
+			if p.z then t = t .. "z=" .. math.floor(p.z) .. "]" else t = t .. "z=<nil>]" end 
+		else 
+			if p.x then t = t .. p.x .. ", " else t = t .. "<nil>, " end 
+			if p.y then t = t .. "y=" .. p.y .. ", " else t = t .. "y=<nil>, " end 
+			if p.z then t = t .. "z=" .. p.z .. "]" else t = t .. "z=<nil>]" end 
+		end
 		return t 
 	end
 
@@ -2605,7 +2391,6 @@ end
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
 			trigger.action.outText("=== dcsCommon vardump end", 30)
-			--env.info("=== dcsCommon vardump end")
 		end
 	end
 		
@@ -2636,7 +2421,9 @@ end
 						"BDA", "AI Abort Mission", "DayNight", "Flight Time", -- 40
 						"Pilot Suicide", "player cap airfield", "emergency landing", "unit create task", -- 44
 						"unit delete task", "Simulation start", "weapon rearm", "weapon drop", -- 48
-						"unit task timeout", "unit task stage", 
+						"unit task timeout", "unit task stage", -- 50
+						"subtask score", "extra score", "mission restart", "winner", 
+						"postponed takeoff", "postponed land", -- 56
 						"max"}
 		if id > #events then return "Unknown (ID=" .. id .. ")" end
 		return events[id]
@@ -2926,6 +2713,21 @@ function dcsCommon.getAllExistingPlayerUnitsRaw()
 	return apu 
 end
 
+function dcsCommon.getAllExistingPlayersAndUnits() -- units indexed by player name
+-- designed to replace cases for cfxPlayer.getAllPlayer invocations
+	local apu = {}
+	for idx, theSide in pairs(dcsCommon.coalitionSides) do
+		local thePlayers = coalition.getPlayers(theSide) 
+		for idy, theUnit in pairs (thePlayers) do 
+			if theUnit and theUnit:isExist() then 
+				local pName = theUnit:getPlayerName()
+				apu[pName] = theUnit
+			end
+		end
+	end
+	return apu 
+end
+
 function dcsCommon.getUnitAlt(theUnit)
 	if not theUnit then return 0 end
 	if not Unit.isExist(theUnit) then return 0 end -- safer 
@@ -3028,16 +2830,6 @@ function dcsCommon.unitIsInfantry(theUnit)
 	if not theUnit then return false end 
 	if not theUnit:isExist() then return end
 	local theType = theUnit:getTypeName()
---[[--
-	local isInfantry =  
-				dcsCommon.containsString(theType, "infantry", false) or 
-				dcsCommon.containsString(theType, "paratrooper", false) or
-				dcsCommon.containsString(theType, "stinger", false) or
-				dcsCommon.containsString(theType, "manpad", false) or
-				dcsCommon.containsString(theType, "soldier", false) or 
-				dcsCommon.containsString(theType, "SA-18 Igla", false)
-	return isInfantry
---]]--
 	return dcsCommon.typeIsInfantry(theType)
 end
 

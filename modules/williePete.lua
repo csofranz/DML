@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "1.0.2"
+williePete.version = "2.0.0"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -14,12 +14,16 @@ williePete.requiredLibs = {
 	1.0.0 - Initial version 
 	1.0.1 - update to suppress verbosity
     1.0.2 - added Gazelle WP	
-	
+	2.0.0 - dmlZones, OOP
+		  - Guards for multi-unit player groups 
+		  - getFirstLivingPlayerInGroupNamed()
 --]]--
 
 williePete.willies = {}
 williePete.wpZones = {}
 williePete.playerGUIs = {} -- used for unit guis 
+williePete.groupGUIs = {} -- because some people may want to install 
+-- multip-unit player groups
 williePete.blastedObjects = {} -- used when we detonate something 
 
 -- recognizes WP munitions. May require regular update when new
@@ -90,30 +94,29 @@ end
 
 
 function williePete.createWPZone(aZone)
-	aZone.coalition = cfxZones.getCoalitionFromZoneProperty(aZone, "wpTarget", 0) -- side that marks it on map, and who fires arty
-	aZone.shellStrength = cfxZones.getNumberFromZoneProperty(aZone, "shellStrength", 500) -- power of shells (strength)
-	aZone.shellNum = cfxZones.getNumberFromZoneProperty(aZone, "shellNum", 17) -- number of shells in bombardment
-	aZone.transitionTime = cfxZones.getNumberFromZoneProperty(aZone, "transitionTime", 20) -- average time of travel for projectiles 
-	aZone.coolDown = cfxZones.getNumberFromZoneProperty(aZone, "coolDown", 180) -- cooldown after arty fire, used to set readyTime
-	aZone.baseAccuracy = cfxZones.getNumberFromZoneProperty(aZone, "baseAccuracy", 50) 
+	aZone.coalition = aZone:getCoalitionFromZoneProperty("wpTarget", 0) -- side that marks it on map, and who fires arty
+	aZone.shellStrength = aZone:getNumberFromZoneProperty( "shellStrength", 500) -- power of shells (strength)
+	aZone.shellNum = aZone:getNumberFromZoneProperty("shellNum", 17) -- number of shells in bombardment
+	aZone.transitionTime = aZone:getNumberFromZoneProperty( "transitionTime", 20) -- average time of travel for projectiles 
+	aZone.coolDown = aZone:getNumberFromZoneProperty("coolDown", 180) -- cooldown after arty fire, used to set readyTime
+	aZone.baseAccuracy = aZone:getNumberFromZoneProperty( "baseAccuracy", 50) 
 	
 	aZone.readyTime = 0 -- if readyTime > now we are not ready
 	aZone.trackingPlayer = nil -- name player's unit who is being tracked for wp. may not be neccessary
 	aZone.checkedIn = {} -- dict of all planes currently checked in
 	
-	aZone.wpMethod = cfxZones.getStringFromZoneProperty(aZone, "wpMethod", "change")
-	
-	aZone.checkInRange = cfxZones.getNumberFromZoneProperty(aZone, "checkInRange", williePete.checkInRange) -- default to my default
-	
-	aZone.ackSound = cfxZones.getStringFromZoneProperty(aZone, "ackSound", williePete.ackSound)
-	aZone.guiSound = cfxZones.getStringFromZoneProperty(aZone, "guiSound", williePete.guiSound)
-	
-	if cfxZones.hasProperty(aZone, "method") then 
-		aZone.wpMethod = cfxZones.getStringFromZoneProperty(aZone, "method", "change")
+	aZone.wpMethod = aZone:getStringFromZoneProperty("wpMethod", "change")
+	if aZone:hasProperty("method") then 
+		aZone.wpMethod = aZone:getStringFromZoneProperty("method", "change")
 	end
 	
-	if cfxZones.hasProperty(aZone, "wpFire!") then 
-		aZone.wpFire = cfxZones.getStringFromZoneProperty(aZone, "wpFire!", "<none)")
+	aZone.checkInRange = aZone:getNumberFromZoneProperty( "checkInRange", williePete.checkInRange) -- default to my default
+	
+	aZone.ackSound = aZone:getStringFromZoneProperty("ackSound", williePete.ackSound)
+	aZone.guiSound = aZone:getStringFromZoneProperty("guiSound", williePete.guiSound)
+	
+	if aZone:hasProperty("wpFire!") then 
+		aZone.wpFire = aZone:getStringFromZoneProperty("wpFire!", "<none)")
 	end
 	
 	if aZone.verbose then 
@@ -142,6 +145,7 @@ function williePete.startPlayerGUI()
 		end 
 		
 		unitInfo.name = uName -- needed for reverse-lookup 
+		unitInfo.gName = gName -- also needed for reverse lookup 
 		unitInfo.coa = coa 
 		unitInfo.gID = gData.groupId
 		unitInfo.uID = uData.unitId
@@ -159,12 +163,20 @@ function williePete.startPlayerGUI()
 		
 		if pass then -- we install a menu for this group 
 			-- we may not want check in stuff, but it could be cool
-			unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, "FAC")
-			unitInfo.checkIn = missionCommands.addCommandForGroup(unitInfo.gID, "Check In", unitInfo.root, williePete.redirectCheckIn, unitInfo)
+			if williePete.playerGUIs[gName] then 
+				trigger.action.outText("+++WP: Warning: we already have WP menu for unit <" .. uName .. "> in group <" .. gName .. ">. Skipped.", 30)
+			elseif williePete.groupGUIs[gName] then 
+				trigger.action.outText("+++WP: Warning: POSSIBLE MULTI-PLAYER UNIT GROUP DETECTED. We already have WP menu for Player Group <" .. gName .. ">. Skipped, only first unit supported. ", 30)
+			else 
+				unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, "FAC")
+				unitInfo.checkIn = missionCommands.addCommandForGroup(unitInfo.gID, "Check In", unitInfo.root, williePete.redirectCheckIn, unitInfo)
+				williePete.groupGUIs[gName] = unitInfo
+				williePete.playerGUIs[gName] = unitInfo
+			end
 		end 
 		
-		-- store it 
-		williePete.playerGUIs[uName] = unitInfo
+		-- store it - WARNING: ASSUMES SINGLE-UNIT Player Groups 
+		--williePete.playerGUIs[uName] = unitInfo
 	end
 end
 
@@ -177,7 +189,7 @@ function williePete.doBoom(args)
 		-- note that unit who commânded fire may no longer be alive 
 		-- so check it every time. unit must be alive 
 		-- to receive credits later
-		local uName = unitInfo.name
+		local uName = unitInfo.gName
 		local blastRad = math.floor(math.sqrt(args.strength)) * 2
 		if blastRad < 10 then blastRad = 10 end 
 		
@@ -187,7 +199,7 @@ function williePete.doBoom(args)
 			if williePete.verbose then 
 				trigger.action.outText("<" .. aName .. "> is in blast Radius (" .. blastRad .. "m) of shells for <" .. uName .. ">'s target coords", 30)
 			end
-			williePete.blastedObjects[aName] = uName -- last one gets the kill
+			williePete.blastedObjects[aName] = unitInfo.name -- last one gets the kill
 		end 
 	end
 	trigger.action.explosion(args.point, args.strength)
@@ -237,16 +249,36 @@ function williePete.redirectCheckIn(unitInfo)
 	timer.scheduleFunction(williePete.doCheckIn, unitInfo, timer.getTime() + 0.1)
 end
 
+-- fix for multi-unit player groups where only one of them is 
+-- alive: get first living player in group. Will be added to 
+-- dcsCommon soon 
+function williePete.getFirstLivingPlayerInGroupNamed(gName)
+	local theGroup = Group.getByName(gName)
+	if not theGroup then return nil end 
+	local theUnits = theGroup:getUnits()
+	for idx, aUnit in pairs(theUnits) do 
+		if Unit.isExist(aUnit) and aUnit.getPlayerName and 
+		aUnit:getPlayerName() then 
+			return aUnit -- return first living player unit 
+		end
+	end
+	return nil 
+end
+
 function williePete.doCheckIn(unitInfo)
-	--trigger.action.outText("check-in received", 30)
-	local theUnit = Unit.getByName(unitInfo.name)
+	-- WARNING: unitInfo points to first processed player in 
+	-- group. May not work fully with multi-unit player groups 
+	local gName = unitInfo.gName
+	local theUnit = williePete.getFirstLivingPlayerInGroupNamed(gName) --Unit.getByName(unitInfo.name)
 	if not theUnit then 
 		-- dead man calling. Pilot dead but unit still alive 
+		-- OR second unit in multiplayer group, but unit 1 
+		-- does not / no longer exists 
 		trigger.action.outText("Calling station, say again, can't read you.", 30)
 		return 
 	end
 	
-	local p = theUnit:getPoint()
+	local p = theUnit:getPoint() -- only react to first player unit
 	local theZone, dist = williePete.closestCheckInTgtZoneForCoa(p, unitInfo.coa)
 
 	if not theZone then 
@@ -256,21 +288,23 @@ function williePete.doCheckIn(unitInfo)
 			trigger.action.outSoundForGroup(unitInfo.gID, williePete.guiSound)
 			return 
 		end
-	 
-		trigger.action.outTextForGroup(unitInfo.gID, "Too far from target zone, closest target zone is " .. theZone.name, 30)
+		dist = math.floor(dist /100) / 10 
+		bearing = dcsCommon.bearingInDegreesFromAtoB(p, theZone:getPoint())
+		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.gName .. ", you are too far from target zone, closest target zone is " .. theZone.name .. ", " .. dist .. "km at bearing " .. bearing .. "°", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, theZone.guiSound)
 		return 
 	end
 	
 	-- we are now checked in to zone -- unless we are already checked in
-	if theZone.checkedIn[unitInfo.name] then 
-		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.name .. ", " .. theZone.name .. ", we heard you the first time, proceed.", 30)
+	-- NOTE: we use group name, not unit name!
+	if theZone.checkedIn[unitInfo.gName] then 
+		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.gName .. ", " .. theZone.name .. ", we heard you the first time, proceed.", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, theZone.guiSound)
 		return 
 	end
 	
 	-- we now check in 
-	theZone.checkedIn[unitInfo.name] = unitInfo
+	theZone.checkedIn[unitInfo.gName] = unitInfo
 	
 	-- add the 'Target marked' menu 
 	unitInfo.targetMarked = missionCommands.addCommandForGroup(unitInfo.gID, "Target Marked, commence firing", unitInfo.root, williePete.redirectTargetMarked, unitInfo)
@@ -280,7 +314,7 @@ function williePete.doCheckIn(unitInfo)
 	-- add 'check out'
 	unitInfo.checkOut = missionCommands.addCommandForGroup(unitInfo.gID, "Check Out of " .. theZone.name, unitInfo.root, williePete.redirectCheckOut, unitInfo)
 	
-	trigger.action.outTextForGroup(unitInfo.gID, "Roger " .. unitInfo.name .. ", " .. theZone.name .. " tracks you, standing by for target data.", 30)
+	trigger.action.outTextForGroup(unitInfo.gID, "Roger " .. unitInfo.gName .. ", " .. theZone.name .. " tracks you, standing by for target data.", 30)
 	trigger.action.outSoundForGroup(unitInfo.gID, theZone.guiSound)
 end
 
@@ -293,17 +327,17 @@ function williePete.doCheckOut(unitInfo)
 	local wasCheckedIn = false 
 	local fromZone = ""
 	for idx, theZone in pairs(williePete.wpZones) do 
-		if theZone.checkedIn[unitInfo.name] then 
+		if theZone.checkedIn[unitInfo.gName] then 
 			wasCheckedIn = true 
 			fromZone = theZone.name
 		end 
-		theZone.checkedIn[unitInfo.name] = nil 
+		theZone.checkedIn[unitInfo.gName] = nil 
 	end
 	if not wasCheckedIn then 
-		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.name .. ", roger cecked-out. Good hunting!", 30)
+		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.gName .. ", roger cecked-out. Good hunting!", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, williePete.guiSound)
 	else 
-		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.name .. "has checked out of " .. fromZone ..".", 30)
+		trigger.action.outTextForGroup(unitInfo.gID, unitInfo.gName .. " has checked out of " .. fromZone ..".", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, williePete.guiSound)
 	end
 	
@@ -326,7 +360,7 @@ function williePete.rogerDodger(args)
 	local unitInfo = args[1]
 	local theZone = args[2]
 	
-	trigger.action.outTextForCoalition(unitInfo.coa, "Roger " .. unitInfo.name .. ", good copy, firing.", 30)
+	trigger.action.outTextForCoalition(unitInfo.coa, "Roger " .. unitInfo.gName .. ", good copy, firing.", 30)
 	trigger.action.outSoundForCoalition(unitInfo.coa, theZone.ackSound)
 end
 
@@ -357,9 +391,9 @@ function williePete.doTargetMarked(unitInfo)
 	
 	local tgtZone = unitInfo.wpInZone 
 	-- see if we are checked into that zone 
-	if not tgtZone.checkedIn[unitInfo.name] then 
+	if not tgtZone.checkedIn[unitInfo.gName] then 
 		-- zones don't match
-		trigger.action.outTextForGroup(unitInfo.gID, "Say again " .. unitInfo.name .. ", we have crosstalk. Try and reset coms", 30)
+		trigger.action.outTextForGroup(unitInfo.gID, "Say again " .. unitInfo.gName .. ", we have crosstalk. Try and reset coms", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, williePete.guiSound)
 		return
 	end
@@ -368,7 +402,7 @@ function williePete.doTargetMarked(unitInfo)
 	local timeRemaining = math.floor(tgtZone.readyTime - now)
 	if timeRemaining > 0 then 
 		-- zone not ready
-		trigger.action.outTextForGroup(unitInfo.gID, "Stand by " .. unitInfo.name .. ", artillery not ready. Expect " .. timeRemaining + math.random(1, 5) .. " seconds.", 30)
+		trigger.action.outTextForGroup(unitInfo.gID, "Stand by " .. unitInfo.gName .. ", artillery not ready. Expect " .. timeRemaining + math.random(1, 5) .. " seconds.", 30)
 		trigger.action.outSoundForGroup(unitInfo.gID, tgtZone.guiSound)
 		return
 	end
@@ -378,7 +412,7 @@ function williePete.doTargetMarked(unitInfo)
 	local grid = coord.LLtoMGRS(coord.LOtoLL(unitInfo.pos))
 	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
 	local theLoc = mgrs 
-	trigger.action.outTextForCoalition(unitInfo.coa, tgtZone.name ..", " .. unitInfo.name .." is transmitting target location. Fire at " .. theLoc .. ", elevation " .. alt .. " meters, target marked.", 30)
+	trigger.action.outTextForCoalition(unitInfo.coa, tgtZone.name ..", " .. unitInfo.gName .." is transmitting target location. Fire at " .. theLoc .. ", elevation " .. alt .. " meters, target marked.", 30)
 	trigger.action.outSoundForCoalition(unitInfo.coa, tgtZone.guiSound)
 	timer.scheduleFunction(williePete.rogerDodger, {unitInfo, tgtZone},timer.getTime() + math.random(2, 5))
 	
@@ -401,10 +435,13 @@ end
 -- return true if a zone is actively tracking theUnit to place 
 -- a wp 
 
-function williePete.zoneIsTracking(theUnit)
+function williePete.zoneIsTracking(theUnit) -- group level!
 	local uName = theUnit:getName()
+	local uGroup = theUnit:getGroup()
+	local gName = uGroup:getName() 
+	
 	for idx, theZone in pairs(williePete.wpZones) do
-		if theZone.checkedIn[uName] then return true end
+		if theZone.checkedIn[gName] then return true end
 	end	
 	return false
 end
@@ -426,6 +463,8 @@ function williePete.zedsDead(theObject)
 	
 	local theName = theObject:getName()
 	-- now check if it's a registered blasted object:getSampleRate()
+	-- in multi-unit player groups, this can can lead to 
+	-- mis-attribution, beware!
 	local blaster = williePete.blastedObjects[theName]
 	if blaster then 
 		local theUnit = Unit.getByName(blaster)
@@ -459,7 +498,7 @@ function williePete:onEvent(event)
 	
 	local theUnit = event.initiator
 	local pType = "(AI)"
-	if theUnit.getPlayerName then pType = "(" .. theUnit:getName() .. ")" end
+	if theUnit.getPlayerName and theUnit:getPlayerName() then pType = "(" .. theUnit:getName() .. ")" end
 		
 	if event.id == 1 then -- S_EVENT_SHOT
 		-- initiator is who fired. maybe want to test if player  
@@ -470,7 +509,7 @@ function williePete:onEvent(event)
 		end
 		
 		-- make sure that whoever fired it is being tracked by 
-		-- a zone 
+		-- a zone. zoneIsTracking checks on GROUP level!
 		if not williePete.zoneIsTracking(theUnit) then 
 			return  
 		end
@@ -479,6 +518,8 @@ function williePete:onEvent(event)
 		local theWillie = {}
 		theWillie.firedBy = theUnit:getName()
 		theWillie.theUnit = theUnit 
+		theWillie.theGroup = theUnit:getGroup() 
+		theWillie.gName = theWillie.theGroup:getName()
 		theWillie.weapon = event.weapon
 		theWillie.wt = theWillie.weapon:getTypeName()
 		theWillie.pos = theWillie.weapon:getPoint()
@@ -486,15 +527,6 @@ function williePete:onEvent(event)
 		
 		williePete.addWillie(theWillie)
 	end
-
---[[--
-	if event.id == 2 then -- hit 
-		local what = "something"
-		if event.target then what = event.target:getName() end 
-		--trigger.action.outText("Weapon " .. event.weapon:getTypeName() .. " fired by unit ".. theUnit:getName() .. " " .. pType .. " hit " .. what, 30)
-		-- may need to remove willie from willies
-	end
---]]--
 	
 end 
 
@@ -505,17 +537,15 @@ function williePete.isInside(theWillie)
 	local theUnit = Unit.getByName(theUnitName) 
 	if not theUnit then return false end -- unit dead 
 	if not Unit.isExist(theUnit) then return false end -- dito 
-	
-	local thePlayer = williePete.playerGUIs[theUnitName]
-	if not thePlayer then return nil end 
+	local theGroup = theUnit:getGroup()
+	local gName = theGroup:getName() 
+	local unitInfo = williePete.groupGUIs[gName] -- returns unitInfo struct, contains group info 
+	if not unitInfo then return nil end 
 	for idx, theZone in pairs(williePete.wpZones) do
 		if cfxZones.pointInZone(thePoint, theZone) then 
 			-- we are inside. but is this the right coalition?
-			if thePlayer.coa == theZone.coalition then 
-				--trigger.action.outText("Willie in " .. theZone.name, 30)
+			if unitInfo.coa == theZone.coalition then 
 				return theZone
-			else 
-				--trigger.action.outText("Willie wrong coa", 30)
 			end
 			-- if we want to allow neutral zones (doens't make sense)
 			-- add another guard below 
@@ -532,8 +562,9 @@ function williePete.projectileHit(theWillie)
 	local vmod = dcsCommon.vMultScalar(theWillie.v, 0.5 / williePete.ups)
 	theWillie.pos = dcsCommon.vAdd(theWillie.pos, vmod) 
 	
-	-- reset last mark for player
-	local thePlayer = williePete.playerGUIs[theWillie.firedBy]
+	-- reset last mark for player's group 
+	-- access unitInfo 
+	local thePlayer = williePete.playerGUIs[theWillie.gName]
 	thePlayer.pos = nil
 	thePlayer.wpInZone = nil 
 	
@@ -583,20 +614,25 @@ function williePete.playerUpdate()
 		-- the zone that they checked in, or they are checked out 
 		--local zp = cfxZones.getPoint(theZone)
 		for idy, unitInfo in pairs(theZone.checkedIn) do 
-			-- make sure unit still exists
+			-- make sure at least one unit still exists
 			local dropUnit = true 
-			local theUnit = Unit.getByName(unitInfo.name)
-			if theUnit and Unit.isExist(theUnit) then 
-				local up = theUnit:getPoint()
-				up.y = 0
-				local isInside, dist = cfxZones.isPointInsideZone(up, theZone, theZone.checkInRange)
-				 
-				if isInside then 
-					dropUnit = false
+			local theGroup = Group.getByName(unitInfo.gName)
+			local allUnits = theGroup:getUnits()
+			for idx, theUnit in pairs(allUnits) do 
+			--local theUnit = Unit.getByName(unitInfo.name)
+				if theUnit and Unit.isExist(theUnit) and 
+				theUnit.getPlayerName and theUnit:getPlayerName() then 
+					local up = theUnit:getPoint()
+					up.y = 0
+					local isInside, dist = cfxZones.isPointInsideZone(up, theZone, theZone.checkInRange)
+					 
+					if isInside then 
+						dropUnit = false
+					end
 				end
 			end
 			if dropUnit then 
-				-- remove from zone check-in 
+				-- all outside, remove from zone check-in 
 				-- williePete.doCheckOut(unitInfo)
 				timer.scheduleFunction(williePete.doCheckOut, unitInfo, timer.getTime() + 0.1) -- to not muck up iteration
 			end
@@ -612,13 +648,10 @@ end
 function williePete.readConfigZone()
 	local theZone = cfxZones.getZoneByName("wpConfig") 
 	if not theZone then 
-		if williePete.verbose then 
-			trigger.action.outText("+++wp: NO config zone!", 30)
-		end 
 		theZone = cfxZones.createSimpleZone("wpConfig") 
 	end 
 	
-	local facTypes = cfxZones.getStringFromZoneProperty(theZone, "facTypes", "all")
+	local facTypes = theZone:getStringFromZoneProperty("facTypes", "all")
 	facTypes = string.upper(facTypes)
 	
 	-- make this an array 
@@ -631,19 +664,19 @@ function williePete.readConfigZone()
 	williePete.facTypes = dcsCommon.trimArray(allTypes)
 	
 	-- how long a wp is active. must not be more than 5 minutes
-	williePete.wpMaxTime = cfxZones.getNumberFromZoneProperty(theZone, "wpMaxTime", 3 * 60)
+	williePete.wpMaxTime = theZone:getNumberFromZoneProperty( "wpMaxTime", 3 * 60)
 	
 	-- default check-in range, added to target zone's range and used 
 	-- for auto-check-out 
-	williePete.checkInRange = cfxZones.getNumberFromZoneProperty(theZone, "checkInRange", 10000) -- 10 km outside
+	williePete.checkInRange = theZone:getNumberFromZoneProperty("checkInRange", 10000) -- 10 km outside
 	
-	williePete.ackSound = cfxZones.getStringFromZoneProperty(theZone, "ackSound", "some")
-	williePete.guiSound = cfxZones.getStringFromZoneProperty(theZone, "guiSound", "some")
+	williePete.ackSound = theZone:getStringFromZoneProperty( "ackSound", "some")
+	williePete.guiSound = theZone:getStringFromZoneProperty( "guiSound", "some")
 	
-	williePete.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	williePete.verbose = theZone.verbose
 	
 	if williePete.verbose then 
-		trigger.action.outText("+++msgr: read config", 30)
+		trigger.action.outText("+++wp: read config", 30)
 	end 
 end
 

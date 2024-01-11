@@ -12,24 +12,27 @@ debugger.log = ""
 
 --[[--
 	Version History
-	1.0.0 - Initial version
-	1.0.1 - made ups available to config zone 
-	      - changed 'on' to 'active' in config zone 
-		  - merged debugger and debugDemon
-		  - QoL check for 'debug' attribute (no '?')
-	1.1.0 - logging 
-	      - trigger.action --> debugger for outText 
-		  - persistence of logs
-		  - save <name>
-	1.1.1 - warning when trying to set a flag to a non-int
-	1.1.2 - remove command 
 	2.0.0 - dmlZones OOP 
 	      - eventmon command 
-		  - all, off, event #
+		  - eventmon all, off, event #
 		  - standard events 
-		  - adding events 
+		  - adding events via #
 		  - events? attribute from any zone 
- 
+		  - eventmon last command 
+		  - q - query MSE Lua variables 
+		  - w - write/overwrite MSE Lua variables 
+		  - a - analyse Lua tables / variables 
+		  - smoke
+		  - spawn system with predefines
+		  - spawn coalition
+		  - spawn number 
+		  - spawn heading
+		  - spawn types 
+		  - spawn aircraft: add waypoints 
+		  - spawn "?"
+		  - debuggerSpawnTypes zone 
+		  - reading debuggerSpawnTypes 
+		  - removed some silly bugs / inconsistencies
 --]]--
 
 debugger.requiredLibs = {
@@ -45,6 +48,7 @@ debugger.debugUnits = {}
 debugger.debugGroups = {}
 debugger.debugObjects = {}
 debugger.showEvents = {}
+debugger.lastEvent = nil 
 
 debugDemon.eventList = {
   ["0"] = "S_EVENT_INVALID = 0",
@@ -105,6 +109,26 @@ debugDemon.eventList = {
   ["55"] = "S_EVENT_POSTPONED_TAKEOFF = 55", 
   ["56"] = "S_EVENT_POSTPONED_LAND = 56", 
   ["57"] = "S_EVENT_MAX = 57",
+}
+
+debugger.spawnTypes = {
+ ["inf"] = "Soldier M4",
+ ["ifv"] = "BTR-80",
+ ["tank"] = "T-90",
+ ["ship"] = "PERRY",
+ ["helo"] = "AH-1W",
+ ["jet"] = "MiG-21Bis",
+ ["awacs"] = "A-50",
+ ["ww2"] = "SpitfireLFMkIX",
+ ["bomber"] = "B-52H",
+ ["cargo"] = "ammo_cargo",
+ ["sam"] = "Roland ADS",
+ ["aaa"] = "ZSU-23-4 Shilka",
+ ["arty"] = "M-109",
+ ["truck"] = "KAMAZ Truck",
+ ["drone"] = "MQ-9 Reaper",
+ ["manpad"] = "Soldier stinger",
+ ["obj"] = "house2arm"
 }
 --
 -- Logging & saving 
@@ -235,7 +259,6 @@ function debugger.createEventMonWithZone(theZone)
 		debugger.outText("*** monitoring events defined in <" .. theZone.name .. ">:", 30)
 	end
 	for idx, aFlag in pairs(flagArray) do 
-		
 		local evt = tonumber(aFlag) 		
 		if evt and (debugger.verbose or theZone.verbose) then 
 			if evt < 0 then evt = 0 end 
@@ -288,7 +311,6 @@ function debugger.isObserving(flagName)
 			end 
 		end
 	end
-
 	return observers 
 end
 
@@ -476,42 +498,61 @@ end
 function debugger.readConfigZone()
 	local theZone = cfxZones.getZoneByName("debuggerConfig") 
 	if not theZone then 
-		if debugger.verbose then 
-			debugger.outText("+++debug: NO config zone!", 30)
-		end 
 		theZone = cfxZones.createSimpleZone("debuggerConfig") 
 	end 
 	debugger.configZone = theZone 
 	
-	debugger.active = cfxZones.getBoolFromZoneProperty(theZone, "active", true)
-	debugger.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	debugger.active = theZone:getBoolFromZoneProperty("active", true)
+	debugger.verbose = theZone.verbose 
 	
-	if cfxZones.hasProperty(theZone, "on?") then 
-		debugger.onFlag = cfxZones.getStringFromZoneProperty(theZone, "on?", "<none>")
+	if theZone:hasProperty("on?") then 
+		debugger.onFlag = theZone:getStringFromZoneProperty("on?", "<none>")
 		debugger.lastOn = cfxZones.getFlagValue(debugger.onFlag, theZone)
 	end 
 
-	if cfxZones.hasProperty(theZone, "off?") then 
-		debugger.offFlag = cfxZones.getStringFromZoneProperty(theZone, "off?", "<none>")
+	if theZone:hasProperty("off?") then 
+		debugger.offFlag = theZone:getStringFromZoneProperty("off?", "<none>")
 		debugger.lastOff = cfxZones.getFlagValue(debugger.offFlag, theZone)
 	end 
 
-	if cfxZones.hasProperty(theZone, "reset?") then 
-		debugger.resetFlag = cfxZones.getStringFromZoneProperty(theZone, "reset?", "<none>")
+	if theZone:hasProperty("reset?") then 
+		debugger.resetFlag = theZone:getStringFromZoneProperty("reset?", "<none>")
 		debugger.lastReset = cfxZones.getFlagValue(debugger.resetFlag, theZone)
 	end
 	
-	if cfxZones.hasProperty(theZone, "state?") then 
-		debugger.stateFlag = cfxZones.getStringFromZoneProperty(theZone, "state?", "<none>")
+	if theZone:hasProperty("state?") then 
+		debugger.stateFlag = theZone:getStringFromZoneProperty("state?", "<none>")
 		debugger.lastState = cfxZones.getFlagValue(debugger.stateFlag, theZone)
 	end
 	
-	debugger.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 4)
-	
-	if debugger.verbose then 
-		debugger.outText("+++debug: read config", 30)
-	end 
+	debugger.ups = theZone:getNumberFromZoneProperty("ups", 4)
 end
+
+function debugger.readSpawnTypeZone()
+	local theZone = cfxZones.getZoneByName("debuggerSpawnTypes") 
+	if not theZone then 
+		theZone = cfxZones.createSimpleZone("debuggerSpawnTypes") 
+	end 
+	local allAttribuites = theZone:getAllZoneProperties()
+	for attrName, aValue in pairs(allAttribuites) do 
+		local theLow = string.lower(attrName)
+		local before = debugger.spawnTypes[theLow]
+		if before then 
+			debugger.spawnTypes[theLow] = aValue
+			if theZone.verbose or debugger.verbose then 
+				trigger.action.outText("+++debug: changed generic '" .. theLow .. "' from <" .. before .. "> to <" .. aValue .. ">", 30)
+			end
+		else 
+			if theZone.verbose or debugger.verbose then
+				if theLow == "verbose" then -- filtered 
+				else 
+					trigger.action.outText("+++debug: generic '" .. theLow .. "' unknown, not replaced.", 30)
+				end
+			end 
+		end 
+	end 
+end 
+
 
 function debugger.start()
 	-- lib check
@@ -526,6 +567,9 @@ function debugger.start()
 	-- read config 
 	debugger.readConfigZone()
 	
+	-- read spawn types 
+	debugger.readSpawnTypeZone() 
+	
 	-- process debugger Zones 
 	-- old style
 	local attrZones = cfxZones.getZonesWithAttributeNamed("debug?")
@@ -536,7 +580,7 @@ function debugger.start()
 	
 	local attrZones = cfxZones.getZonesWithAttributeNamed("debug")
 	for k, aZone in pairs(attrZones) do 
-		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
+		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' attribute. Are you perhaps missing a '?'", 30)
 	end
 	
 	local attrZones = cfxZones.getZonesWithAttributeNamed("events?")
@@ -546,7 +590,7 @@ function debugger.start()
 	
 	local attrZones = cfxZones.getZonesWithAttributeNamed("events")
 	for k, aZone in pairs(attrZones) do 
-		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has a 'debug' flag. Are you perhaps missing a '?'", 30)
+		debugger.outText("***Warning: Zone <" .. aZone.name .. "> has an 'events' attribute. Are you perhaps missing a '?'", 30)
 	end
 	-- events 
 	
@@ -683,7 +727,7 @@ function debugDemon.getArgs(theCommands)
 end
 
 --
--- stage demon's main command interpreter. 
+-- debug demon's main command interpreter. 
 -- magic lies in using the keywords as keys into a 
 -- function table that holds all processing functions
 -- I wish we had that back in the Oberon days. 
@@ -743,7 +787,7 @@ debugger.outText("*** debugger: commands are:" ..
 	"\n  " .. debugDemon.markOfDemon .. "o <flagname> [with <observername>] -- observe a flag for change" ..
 	"\n  " .. debugDemon.markOfDemon .. "forget <flagname> [with <observername>] -- stop observing a flag" ..
 	"\n  " .. debugDemon.markOfDemon .. "new <observername> [[for] <condition>] -- create observer for flags" ..
-	"\n  " .. debugDemon.markOfDemon .. "update <observername> [[to] <condition>] -- change observer's condition" ..
+	"\n  " .. debugDemon.markOfDemon .. "update <observername> [to] <condition> -- change observer's condition" ..
 	"\n  " .. debugDemon.markOfDemon .. "drop <observername> -- remove observer from debugger" ..
 	"\n  " .. debugDemon.markOfDemon .. "list [<match>] -- list observers [name contains <match>]" ..
 	"\n  " .. debugDemon.markOfDemon .. "who <flagname> -- all who observe <flagname>" ..
@@ -752,10 +796,16 @@ debugger.outText("*** debugger: commands are:" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "snap [<observername>] -- create new snapshot of flags" ..
 	"\n  " .. debugDemon.markOfDemon .. "compare -- compare snapshot flag values with current" ..
 	"\n  " .. debugDemon.markOfDemon .. "note <your note> -- add <your note> to the text log" ..
-	"\n\n  " .. debugDemon.markOfDemon .. "remove <group/unit/object name> -- remove named item from mission" ..
+	"\n\n  " .. debugDemon.markOfDemon .. "spawn [<number>] [<coalition>] <type> [heading=<number>] | [?] -- spawn" .. 
+	"\n               units/aircraft/objects (? for help)" ..
+	"\n  " .. debugDemon.markOfDemon .. "remove <group/unit/object name> -- remove named item from mission" ..
+	"\n  " .. debugDemon.markOfDemon .. "smoke <color> -- place colored smoke on the ground" ..
+	"\n  " .. debugDemon.markOfDemon .. "boom <number> -- place explosion of strenght <number> on the ground" ..
 	
 	"\n\n  " .. debugDemon.markOfDemon .. "eventmon [all | off | <number> | ?] -- show events for all | none | event <number> | list" ..
+	"\n  " .. debugDemon.markOfDemon .. "eventmon last -- analyse last reported event" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "q <Lua Var> -- Query value of Lua variable <Lua Var>" ..
+	"\n  " .. debugDemon.markOfDemon .. "a <Lua Var> -- Analyse structure of Lua variable <Lua Var>" ..
 	"\n  " .. debugDemon.markOfDemon .. "w <Lua Var> [=] <Lua Value> -- Write <Lua Value> to variable <Lua Var>" ..
 	"\n\n  " .. debugDemon.markOfDemon .. "start -- starts debugger" ..
 	"\n  " .. debugDemon.markOfDemon .. "stop -- stop debugger" ..
@@ -807,7 +857,7 @@ function debugDemon.processNewCommand(args, event)
 			return false 
 		end
 		theZone.debugInputMethod = condition
-	end
+	end	
 	
 	debugger.addDebugger(theZone)
 	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debugger: new observer <" .. observerName .. "> for <" .. theZone.debugInputMethod .. ">", 30)
@@ -815,7 +865,7 @@ function debugDemon.processNewCommand(args, event)
 end
 
 function debugDemon.processUpdateCommand(args, event)
-	-- syntax update <observername> [[to] <condition>]
+	-- syntax update <observername> [to] <condition>
 	local observerName = args[1]
 	if not observerName then 
 		debugger.outText("*** update: missing observer name.", 30)
@@ -1271,6 +1321,7 @@ end
 
 function debugDemon.doEventMon(theEvent)
 	if not theEvent then return end 
+	if not debugger.active then return end 
 	local ID = theEvent.id 
 	if debugger.showEvents[ID] then
 		-- we show this event 
@@ -1287,11 +1338,47 @@ function debugDemon.doEventMon(theEvent)
 			end 
 		end 
 		debugger.outText(m, 30)
+		-- save it to lastevent so we can analyse 
+		debugger.lastEvent = theEvent 
 	end
 end 
 
+debugDemon.m = ""
+-- dumpVar2m, invoke externally dumpVar2m(varname, var)
+function debugDemon.dumpVar2m(key, value, prefix, inrecursion)
+	-- based on common's dumpVar, appends to var "m" 
+	if not inrecursion then 
+		-- start, init m
+		debugDemon.m = "analysis of <" .. key .. ">\n==="
+	end
+	if not value then value = "nil" end
+	if not prefix then prefix = "" end
+	prefix = " " .. prefix
+	if type(value) == "table" then 
+		debugDemon.m = debugDemon.m .. "\n" .. prefix .. key .. ": [ "
+		-- iterate through all kvp
+		for k,v in pairs (value) do
+			debugDemon.dumpVar2m(k, v, prefix, true)
+		end
+		debugDemon.m = debugDemon.m .. "\n" .. prefix .. " ] - end " .. key
+		
+	elseif type(value) == "boolean" then 
+		local b = "false"
+		if value then b = "true" end
+		debugDemon.m = debugDemon.m .. "\n" .. prefix .. key .. ": " .. b
+
+	else -- simple var, show contents, ends recursion
+		debugDemon.m = debugDemon.m .. "\n" .. prefix .. key .. ": " .. value
+	end
+	
+	if not inrecursion then 
+		-- output a marker to find in the log / screen
+		debugDemon.m = debugDemon.m .. "\n" .. "=== analysis end\n"
+	end
+end
+
 function debugDemon.processEventMonCommand(args, event)
-	-- turn event monito on/off  
+	-- turn event monitor all/off/?/last  
 	-- syntax: -eventmon  on|off 
 	local aParam = dcsCommon.trim(event.remainder)
 	if not aParam or aParam:len() < 1 then 
@@ -1300,7 +1387,6 @@ function debugDemon.processEventMonCommand(args, event)
 	aParam = string.upper(aParam)
 	evtNum = tonumber(aParam)
 	if aParam == "ON" or aParam == "ALL" then 
---		debugger.eventmon = true 
 		debugger.outText("*** eventmon: turned ON, showing ALL events", 30)
 		local events = {}
 		for idx,evt in pairs(debugDemon.eventList) do 
@@ -1322,6 +1408,13 @@ function debugDemon.processEventMonCommand(args, event)
 			m = m .. "\n" ..  evt 
 		end			
 		debugger.outText(m .. "\n*** end of list", 30)
+	elseif aParam == "LAST" then 
+		if debugger.lastEvent then 
+			debugDemon.dumpVar2m("event", debugger.lastEvent)
+			debugger.outText(debugDemon.m, 39)
+		else 
+			debugger.outText("*** eventmon: no event on record", 39)
+		end
 	else 
 		debugger.outText("*** eventmon: unknown parameter <" .. event.remainder .. ">", 30)
 	end
@@ -1335,9 +1428,7 @@ end
 function debugDemon.processQueryCommand(args, event)
 	-- syntax -q <name> with name a (qualified) Lua table reference 
 	local theName = args[1]
---	local p = args [2]
---	trigger.action.outText("args1 = " .. theName, 30)
---	if args[2] then trigger.action.outText("param = " .. args[2], 30) end 
+
 	if not theName then 
 		debugger.outText("*** q: missing Lua table/element name.", 30)
 		return false -- allows correction 
@@ -1360,6 +1451,33 @@ function debugDemon.processQueryCommand(args, event)
 			res = res .. " (a " .. type(res) .. ")"
 		else res = "[Lua " .. type(res) .. "]"
 		end
+	else 
+		res = "[Lua error]"
+	end 
+	
+	debugger.outText("[" .. dcsCommon.nowString() .. "] <" .. theName .. "> = ".. res, 30)
+	
+	return true 
+end
+
+function debugDemon.processAnalyzeCommand(args, event)
+	-- syntax -a <name> with name a (qualified) Lua table reference 
+	local theName = args[1]
+
+	if not theName then 
+		debugger.outText("*** a: missing Lua table/element name.", 30)
+		return false -- allows correction 
+	end
+	theName = dcsCommon.stringRemainsStartingWith(event.remainder, theName)
+
+	-- put this into a string, and execute it 
+	local exec = "return " .. theName 
+	local f = loadstring(exec) 
+	local res
+	if pcall(f) then 
+		res = f()
+		debugDemon.dumpVar2m(theName, res)
+		res = debugDemon.m
 	else 
 		res = "[Lua error]"
 	end 
@@ -1402,6 +1520,324 @@ function debugDemon.processWriteCommand(args, event)
 	return true 
 end
 
+--
+-- smoke & boom 
+-- 
+
+function debugDemon.processSmokeCommand(args, event)
+	-- syntax -color 
+	local color = 0 -- green default 
+	local colorCom = args[1]
+	if colorCom then 
+		colorCom = colorCom:lower()
+		if colorCom == "red" or colorCom == "1" then color = 1
+		elseif colorCom == "white" or colorCom == "2" then color = 2 
+		elseif colorCom == "orange" or colorCom == "3" then color = 3 
+		elseif colorCom == "blue" or colorCom == "4" then color = 4
+		elseif colorCom == "green" or colorCom == "0" then color = 0
+		else 
+			debugger.outText("*** smoke: unknown color <" .. colorCom .. ">, using green.", 30)
+		end 
+		local pos = event.pos 
+		local h = land.getHeight({x = pos.x, y = pos.z}) + 1
+		local p = { x = event.pos.x, y = h, z = event.pos.z} 
+		trigger.action.smoke(p, color)
+		debugger.outText("*** smoke: placed smoke at <" .. dcsCommon.point2text(p, true) .. ">.", 30)
+	end 
+end 
+
+function debugDemon.processBoomCommand(args, event)
+	-- syntax -color 
+	local power = 1 -- boom default 
+	local powerCom = args[1]
+	if powerCom then 
+		powerCom = tonumber(powerCom)
+		if powerCom then
+			power = powerCom
+		end 
+	end
+	local pos = event.pos 
+	local h = land.getHeight({x = pos.x, y = pos.z}) + 1
+	local p = { x = event.pos.x, y = h, z = event.pos.z} 
+	trigger.action.explosion(p, power)
+	debugger.outText("*** boom: placed <" .. power .. "> explosion at <" .. dcsCommon.point2text(p, true) .. ">.", 30) 
+end 
+
+--
+-- spawning units at the location of the mark 
+--
+
+function debugDemon.getCoaFromCommand(args)
+	for i=1, #args do
+		local aParam = args[i]
+		if dcsCommon.stringStartsWith(aParam, "red", true) then return 1, i end
+		if dcsCommon.stringStartsWith(aParam, "blu", true) then return 2, i end
+		if dcsCommon.stringStartsWith(aParam, "neu", true) then return 0, i end
+	end
+	return 0, nil  
+end 
+
+function debugDemon.getAirFromCommand(args)
+	for i=1, #args do
+		local aParam = args[i]
+		if aParam:lower() == "inair" then return true, i end
+		if aParam:lower() == "air" then return true, i end
+	end
+	return false, nil  
+end 
+
+function debugDemon.getHeadingFromCommand(args)
+	for i=1, #args do
+		local aParam = args[i]
+		if dcsCommon.stringStartsWith(aParam, "heading=", true) then 
+			local parts = dcsCommon.splitString(aParam, "=")
+			local num = parts[2]
+			if num and tonumber(num) then 
+				return tonumber(num), i
+			end 
+		end
+	end
+	return 0, nil  
+end
+
+function debugDemon.getNumFromCommand(args)
+	for i=1, #args do
+		local aParam = args[i]
+		local num = tonumber(aParam)
+		if num then return num, i end
+	end
+	return 1, nil  
+end 
+
+function debugDemon.processSpawnCommand(args, event)
+	-- complex syntax: 
+	-- spawn [red|blue|neutral] [number] <type> [heading=<number>] | "?"
+	local params = dcsCommon.clone(args)
+--	for i=1, #params do 
+--		trigger.action.outText("arg[" .. i .."] = <" .. params[i] .. ">", 30)
+--	end
+	
+	-- get coalition from input 
+	
+	local coa, idx = debugDemon.getCoaFromCommand(params)
+	if idx then table.remove(params, idx) end 
+	local inAir, idy = debugDemon.getAirFromCommand(params)
+	if idy then table.remove(params, idy) end
+	local num, idz = debugDemon.getNumFromCommand(params)
+	if idz then table.remove(params, idz) end 
+	local heading, idk = debugDemon.getHeadingFromCommand(params)
+	if idk then table.remove(params, idk) end 
+	
+	local class = params[1]
+	if not class then 
+		debugger.outText("*** spawn: missing keyword (what to spawn).", 30)
+		return 
+	end 
+	
+	class = class:lower() 
+	
+	-- when we are here, we have reduced all params, so class is [1]
+--	trigger.action.outText("spawn with class <" .. class .. ">, num <" .. num .. ">, inAir <" .. dcsCommon.bool2Text(inAir) .. ">, coa <" .. coa .. ">, hdg <" .. heading .. ">", 30)
+	heading = heading  * 0.0174533 -- in rad 
+	
+	local pos = event.pos 
+	local h = land.getHeight({x = pos.x, y = pos.z}) + 1
+	local p = { x = event.pos.x, y = h, z = event.pos.z} 
+		
+	if class == "tank" or class == "tanks" then 
+		-- spawn the 'tank' class 
+		local theType = debugger.spawnTypes["tank"]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p,  nil,heading)
+	elseif class == "man" or class == "soldier" or class == "men" then 
+		local theType = debugger.spawnTypes["inf"]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p,  nil,heading)
+	
+	elseif class == "inf" or class == "ifv" or class == "sam" or 
+	       class == "arty" or class == "aaa" then 
+		local theType = debugger.spawnTypes[class]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p,  nil,heading)
+	elseif class == "truck" or class == "trucks" then 
+		local theType = debugger.spawnTypes["truck"]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p,  nil,heading)	
+	elseif class == "manpad" or class == "manpads" or class == "pad" or class == "pads" then 
+		local theType = debugger.spawnTypes["manpad"]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p,  nil,heading)
+
+	elseif class == "ship" or class == "ships" then 
+		local theType = debugger.spawnTypes["ship"]
+		return debugDemon.spawnTypeWithCat(theType, coa, num, p, Group.Category.SHIP, heading)
+
+	elseif class == "jet" or class == "jets" then 
+		local theType = debugger.spawnTypes["jet"]
+		return debugDemon.spawnAirWIthCat(theType, coa, num, p, nil, 1000, 160, heading)
+
+	elseif class == "ww2" then 
+		local theType = debugger.spawnTypes[class]
+		return debugDemon.spawnAirWIthCat(theType, coa, num, p, nil, 1000, 100, heading)
+
+	elseif class == "bomber" or class == "awacs" then 
+		local theType = debugger.spawnTypes[class]
+		return debugDemon.spawnAirWIthCat(theType, coa, num, p, nil, 8000, 200, heading)
+		
+	elseif class == "drone" then 
+		local theType = debugger.spawnTypes[class]
+		return debugDemon.spawnAirWIthCat(theType, coa, num, p, nil, 3000, 77, heading)
+	
+	elseif class == "helo" or class == "helos" then 
+		local theType = debugger.spawnTypes["helo"]
+		return debugDemon.spawnAirWIthCat(theType, coa, num, p, Group.Category.HELICOPTER, 200, 40, heading)
+		
+	elseif class == "cargo" or class == "obj" then 
+		local isCargo = (class == "cargo") 
+		local theType = debugger.spawnTypes[class]
+		return debugDemon.spawnObjects(theType, coa, num, p, isCargo, heading)
+	
+	elseif class == "?" then 
+		local m = " spawn: invoke '-spawn [number] [coalition] <type> [heading]' with \n" ..
+		" number = any number, default is 1\n" ..
+		" coalition = 'red' | 'blue' | 'neutral', default is neutral\n" ..
+		" heading = 'heading=<number>' - direction to face, in degrees, no blanks\n" ..
+		" <type> = what to spawn, any of the following pre-defined (no quotes)\n" ..
+		"   'tank' - a tank " .. debugDemon.tellType("tank") .. "\n" ..
+		"   'ifv' - an IFV " .. debugDemon.tellType("ifv") .. "\n" ..
+		"   'inf' - an infantry soldier " .. debugDemon.tellType("inf") .. "\n" ..
+		"   'sam' - a SAM vehicle " .. debugDemon.tellType("sam") .. "\n" .. 
+		"   'aaa' - a AAA vehicle " .. debugDemon.tellType("aaa") .. "\n" ..
+		"   'arty' - artillery vehicle " .. debugDemon.tellType("arty") .. "\n" ..
+		"   'manpad' - a soldier with SAM " .. debugDemon.tellType("manpad") .. "\n" ..
+		"   'truck' - a truck " .. debugDemon.tellType("truck") .. "\n\n" ..
+		"   'jet' - a fast aircraft " .. debugDemon.tellType("jet") .. "\n" ..
+		"   'ww2' - a warbird " .. debugDemon.tellType("ww2") .. "\n" ..
+		"   'bomber' - a heavy bomber " .. debugDemon.tellType("bomber") .. "\n" ..
+		"   'awacs' - an AWACS plane " .. debugDemon.tellType("awacs") .. "\n" ..
+		"   'drone' - a drone " .. debugDemon.tellType("drone") .. "\n" ..
+		"   'helo' - a helicopter " .. debugDemon.tellType("helo") .. "\n\n" ..
+		"   'ship' - a naval unit" .. debugDemon.tellType("ship") .. "\n\n" ..
+		"   'cargo' - some helicopter cargo " .. debugDemon.tellType("cargo") .. "\n" ..
+		"   'obj' - a static object " .. debugDemon.tellType("obj") .. "\n" 
+		
+		debugger.outText(m, 30)
+		return true 
+	else 
+		debugger.outText("*** spawn: unknown kind <" .. class .. ">.", 30)
+		return false 
+	end 
+end
+
+function debugDemon.tellType(theType)
+	return " [" .. debugger.spawnTypes[theType] .. "]"
+end 
+
+function debugDemon.spawnTypeWithCat(theType, coa, num, p, cat, heading)
+	trigger.action.outText("heading is <" .. heading .. ">", 30)
+	if not cat then cat = Group.Category.GROUND end 
+	if not heading then heading = 0 end 
+	
+	local xOff = 0
+	local yOff = 0
+	-- build group 
+	local groupName = dcsCommon.uuid(theType)
+	local gData = dcsCommon.createEmptyGroundGroupData(groupName)
+	for i=1, num do 
+		local aUnit = {}
+		aUnit = dcsCommon.createGroundUnitData(groupName .. "-" .. i, theType)
+		--aUnit.heading = heading 
+		dcsCommon.addUnitToGroupData(aUnit, gData, xOff, yOff, heading)
+		xOff = xOff + 10 
+		yOff = yOff + 10
+	end 
+	
+	-- arrange in a grid formation
+	local radius = math.floor(math.sqrt(num) * 10)
+	if cat == Group.Category.SHIP then 
+		radius = math.floor(math.sqrt(num) * 100)
+	end 
+	
+	dcsCommon.arrangeGroupDataIntoFormation(gData, radius, 10, "GRID")
+	
+	-- move to destination 
+	dcsCommon.moveGroupDataTo(gData, p.x, p.z)
+
+	-- spawn 
+	local cty = dcsCommon.getACountryForCoalition(coa)
+	local theGroup = coalition.addGroup(cty, cat, gData)
+	if theGroup then 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] created units at " .. dcsCommon.point2text(p, true), 30)
+		return true
+	else 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] failed to created units", 30)
+		return false
+	end 
+	return false
+end 
+
+function debugDemon.spawnAirWIthCat(theType, coa, num, p, cat, alt, speed, heading)
+	if not cat then cat = Group.Category.AIRPLANE end 
+	local xOff = 0
+	local yOff = 0
+	-- build group 
+	local groupName = dcsCommon.uuid(theType)
+	local gData = dcsCommon.createEmptyAircraftGroupData(groupName)
+	for i=1, num do 
+		local aUnit = {}
+		aUnit = dcsCommon.createAircraftUnitData(groupName .. "-" .. i, theType, false, alt, speed)
+		--aUnit.heading = heading 
+		dcsCommon.addUnitToGroupData(aUnit, gData, xOff, yOff, heading)
+		xOff = xOff + 30 
+		yOff = yOff + 30
+	end 
+	-- move to destination 
+	dcsCommon.moveGroupDataTo(gData, p.x, p.z)
+
+	-- make waypoints: initial point and 200 km away in direction heading
+	local p2 = dcsCommon.pointInDirectionOfPointXYY(heading, 200000, p)
+	local wp1 = dcsCommon.createSimpleRoutePointData(p, alt, speed)
+	local wp2 = dcsCommon.createSimpleRoutePointData(p2, alt, speed)
+	-- add waypoints 
+	dcsCommon.addRoutePointForGroupData(gData, wp1)
+	dcsCommon.addRoutePointForGroupData(gData, wp2)
+	
+	-- spawn 
+	local cty = dcsCommon.getACountryForCoalition(coa)
+	local theGroup = coalition.addGroup(cty, cat, gData)
+	if theGroup then 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] created air units at " .. dcsCommon.point2text(p, true), 30)
+		return true
+	else 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] failed to created air units", 30)
+		return false
+	end 
+end
+
+function debugDemon.spawnObjects(theType, coa, num, p, cargo, heading)
+	if not cargo then cargo = false end 
+	local cty = dcsCommon.getACountryForCoalition(coa)
+	local xOff = 0
+	local yOff = 0
+	local success = false 
+	-- build static objects and spawn individually
+	for i=1, num do 
+		local groupName = dcsCommon.uuid(theType)
+		local gData = dcsCommon.createStaticObjectData(groupName, theType, 0, false, cargo, 1000)
+		gData.x = xOff + p.x 
+		gData.y = yOff + p.z 
+		gData.heading = heading
+		local theGroup = coalition.addStaticObject(cty, gData)
+		success = theGroup
+		xOff = xOff + 10 -- stagger by 10m, 10m 
+		yOff = yOff + 10
+	end 
+	
+	-- was it worth it?
+	if success then 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] created objects at " .. dcsCommon.point2text(p, true), 30)
+		return true
+	else 
+		debugger.outText("[" .. dcsCommon.nowString() .. "] failed to create objects", 30)
+		return false
+	end 
+end 
+
 
 --
 -- init and start
@@ -1429,6 +1865,7 @@ function debugDemon.readConfigZone()
 		debugger.outText("+++debug (deamon): read config", 30)
 	end 
 end
+
 
 function debugDemon.init()
 	if not dcsCommon.libCheck then 
@@ -1473,10 +1910,15 @@ function debugDemon.init()
 	debugDemon.addCommndProcessor("help", debugDemon.processHelpCommand)
 
 	debugDemon.addCommndProcessor("remove", debugDemon.processRemoveCommand)
+	debugDemon.addCommndProcessor("spawn", debugDemon.processSpawnCommand)
+	debugDemon.addCommndProcessor("add", debugDemon.processSpawnCommand)
 
 	debugDemon.addCommndProcessor("eventmon", debugDemon.processEventMonCommand)
 	debugDemon.addCommndProcessor("q", debugDemon.processQueryCommand)
 	debugDemon.addCommndProcessor("w", debugDemon.processWriteCommand)
+	debugDemon.addCommndProcessor("a", debugDemon.processAnalyzeCommand)
+	debugDemon.addCommndProcessor("smoke", debugDemon.processSmokeCommand)
+	debugDemon.addCommndProcessor("boom", debugDemon.processBoomCommand)
 	return true 
 end
 
@@ -1512,14 +1954,9 @@ end
 	- inspect objects, dumping category, life, if it's tasking, latLon, alt, speed, direction 
 	
 	- exec files. save all commands and then run them from script 
-
-	- query objects: -q persistence.active returns boolean, true 
-	  -q x.y returns table, 12 elements
-	  -q a.b.x returns number 12
-	  -q d.e.f returns string "asdasda..."
-	  -q sada returs <nil>
 	
 	- xref: which zones/attributes reference a flag, g.g. '-xref go'
+		
+	- track lua vars for change in value
 	
-	- dml version can config to start with events list, e.g.  1, 4, 7 
 --]]--

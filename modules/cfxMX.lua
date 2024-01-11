@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "1.2.6"
+cfxMX.version = "2.0.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -7,26 +7,11 @@ cfxMX.verbose = false
  Copyright (c) 2022, 2023 by Christian Franz and cf/x AG
  
  Version History
-   1.0.0 - initial version 
-   1.0.1 - getStaticFromDCSbyName()
-   1.1.0 - getStaticFromDCSbyName also copies groupID when not fetching orig
-	     - on start up collects a cross reference table of all 
-		   original group id 
-		 - add linkUnit for statics 
-   1.2.0 - added group name reference table 
-		 - added group type reference 
-		 - added references for allFixed, allHelo, allGround, allSea, allStatic
-   1.2.1 - added countryByName
-         - added linkByName 
-   1.2.2 - fixed ctry bug in countryByName
-         - playerGroupByName
-		 - playerUnitByName
-   1.2.3 - groupTypeByName
-		 - groupCoalitionByName
-   1.2.4 - playerUnit2Group cross index 
-   1.2.5 - unitIDbyName index added 
    1.2.6 - cfxMX.allTrainsByName
 		 - train carve-outs for vehicles
+   2.0.0 - clean-up 
+         - harmonized with cfxGroups 
+   
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
@@ -47,13 +32,21 @@ cfxMX.playerGroupByName = {} -- returns data only if a player is in group
 cfxMX.playerUnitByName = {} -- returns data only if this is a player unit 
 cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
+cfxMX.groups = {} -- all groups indexed b yname, cfxGroups folded into cfxMX 
+--[[-- group objects are 
+	{
+		name= "", 
+		coalition = "" (red, blue, neutral), 
+		coanum = # (0, 1, 2 for neutral, red, blue)
+		category = "" (helicopter, ship, plane, vehicle, static),
+		hasPlayer = true/false,
+		playerUnits = {} (for each player unit in group: name, point, action)
+		
+	}
+	
+--]]--
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
-	-- fetch the group description for goup named aName (if exists)
-	-- returned structure must be parsed for useful information 
-	-- returns data, category, countyID and coalitionID 
-	-- unless fetchOriginal is true, creates a deep clone of 
-	-- group data structure 
 		
 	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
 		local coa_name = coa_name_miz
@@ -135,11 +128,6 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 					if type(cntry_data) == 'table' then	-- filter strings .id and .name 
 						for obj_type_name, obj_type_data in pairs(cntry_data) do
 							if obj_type_name == "static"
---							   obj_type_name == "helicopter" or 
---							   obj_type_name == "ship" or 
---							   obj_type_name == "plane" or 
---							   obj_type_name == "vehicle" or 
---							   obj_type_name == "static" 
 							then -- (only look at statics)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one static in group!
@@ -149,7 +137,7 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 										if group_data and group_data.route and group_data.route and group_data.route.points[1] then 
 											linkUnit = group_data.route.points[1].linkUnit
 											if linkUnit then 
-												--trigger.action.outText("MX: found missing link to " .. linkUnit .. " in " .. group_data.name, 30)
+
 											end 
 										end 
 										
@@ -207,7 +195,7 @@ function cfxMX.createCrossReferences()
 							   obj_type_name == "plane" or 
 							   obj_type_name == "vehicle" or 
 							   obj_type_name == "static" -- what about "cargo"?
-							   -- not that trains appear as 'vehicle'
+							   -- note that trains appear as 'vehicle'
 							then -- (so it's not id or name)
 								local category = obj_type_name
 								if ((type(obj_type_data) == 'table') and obj_type_data.group and (type(obj_type_data.group) == 'table') and (#obj_type_data.group > 0)) then	--there's at least one group!
@@ -252,6 +240,12 @@ function cfxMX.createCrossReferences()
 										end
 										-- now iterate all units in this group 
 										-- for unit xref like player info and ID
+										local hasPlayer = false 
+										local playerUnits = {}
+										local groupName = group_data.name
+										if env.mission.version > 7 then -- translate raw to actual 
+											groupName = env.getValueDictByKey(groupName)
+										end
 										for unit_num, unit_data in pairs(group_data.units) do
 											if unit_data.skill then 
 												if unit_data.skill == "Client" or  unit_data.skill == "Player" then
@@ -259,10 +253,38 @@ function cfxMX.createCrossReferences()
 													cfxMX.playerUnitByName[unit_data.name] = unit_data
 													cfxMX.playerGroupByName[aName] = group_data -- inefficient, but works
 													cfxMX.playerUnit2Group[unit_data.name] = group_data
+													
+													hasPlayer = true 
+													local playerData = {}
+													playerData.name = unit_data.name
+													playerData.point = {}
+													playerData.point.x = unit_data.x
+													playerData.point.y = 0
+													playerData.point.z = unit_data.y
+													playerData.action = "none" -- default 
+													
+													-- access initial waypoint data by 'reaching up'
+													-- into group data and extract route.points[1]
+													if group_data.route and group_data.route.points and (#group_data.route.points > 0) then 
+														playerData.action = group_data.route.points[1].action
+													end
+													table.insert(playerUnits, playerData)
+													
 												end -- if unit skill client
 											end -- if has skill
 											cfxMX.unitIDbyName[unit_data.name] = unit_data.unitId 
 										end -- for all units
+										
+										local entry = {}
+										entry.name = groupName
+										entry.coalition = coa_name
+										entry.coaNum = coaNum 
+										entry.category  = category
+										entry.hasPlayer = hasPlayer 
+										entry.playerUnits = playerUnits
+										-- add to db
+										cfxMX.groups[groupName] = entry
+											
 									end -- for all groups 
 								end --if has category data 
 							end --if plane, helo etc... category
@@ -274,6 +296,31 @@ function cfxMX.createCrossReferences()
 	end --for all coalitions in mission 
 end
 
+
+-- return all groups that can have players in them
+-- includes groups that currently are not or not anymore alive
+function cfxMX.getPlayerGroup()
+	local playerGroups = {}
+	for gName, gData in pairs (cfxMX.groups) do 
+		if gData.hasPlayer then
+			table.insert(playerGroups, gData)
+		end
+	end
+	return playerGroups 
+end
+
+-- return all group names that can have players in them
+-- includes groups that currently are not or not anymore alive
+function cfxMX.getPlayerGroupNames()
+	local playerGroups = {}
+	for gName, gData in pairs (cfxMX.groups) do 
+		if gData.hasPlayer then
+			table.insert(playerGroups, gName)
+		end
+	end
+	return playerGroups 
+end
+
 function cfxMX.catText2ID(inText) 
 	local outCat = 0 -- airplane 
 	local c = inText:lower()
@@ -283,7 +330,7 @@ function cfxMX.catText2ID(inText)
 	if c == "vehicle" then outCat = 2 end 
 	if c == "train" then outCat = 4 end 
 	if c == "static" then outCat = -1 end 
-	--trigger.action.outText("cat2text: in <" .. inText .. "> out <" .. outCat .. ">", 30)
+
 	return outCat
 end
  
@@ -292,6 +339,7 @@ function cfxMX.start()
 	if cfxMX.verbose then 
 		trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)
 	end
+	trigger.action.outText("cfxMX v." .. cfxMX.version .. " started.", 30)
 end
 
 -- start 

@@ -1,5 +1,5 @@
 fireFX = {}
-fireFX.version = "1.1.0"
+fireFX.version = "2.0.1"
 fireFX.verbose = false 
 fireFX.ups = 1 
 fireFX.requiredLibs = {
@@ -15,7 +15,7 @@ fireFX.fx = {}
 	1.1.1 - agl attribute 
     2.0.0 - dmlZones OOP 
 		  - rndLoc 
-		  
+	2.0.1 - fixed rndLoc determination
 --]]--
 
 function fireFX.addFX(theZone)
@@ -92,9 +92,9 @@ function fireFX.createFXWithZone(theZone)
 	end 
 	
 	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
-	if theZone.max + 1 and (not theZone.rndLoc) then 
+	if theZone.max > 1 and (not theZone.rndLoc) then 
 		if theZone.verbose or fireFX.verbose then 
-			trigger.action.outText("+++ffx: more than 1 fires, will set to random loc")
+			trigger.action.outText("+++ffx: more than 1 fires, will set to random loc", 30)
 		end 
 		theZone.rndLoc = true 
 	end
@@ -113,7 +113,7 @@ function fireFX.startTheFire(theZone)
 		theZone.fireNames = {}
 		local num = cfxZones.randomInRange(theZone.min, theZone.max)
 		for i = 1, num do 
-			local p = cfxZones.getPoint(theZone)
+			local p = theZone:getPoint()
 			if theZone.rndLoc then 
 				p = theZone:randomPointInZone()
 			end

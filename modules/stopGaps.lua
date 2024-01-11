@@ -52,7 +52,7 @@ stopGap.requiredLibs = {
 	
 --]]--
 
-stopGap.standInGroups = {}
+stopGap.standInGroups = {} -- idx by name, if set has a static 
 stopGap.myGroups = {} -- for fast look-up of mx orig data 
 stopGap.stopGapZones = {} -- DML only 
 

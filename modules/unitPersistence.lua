@@ -1,10 +1,10 @@
 unitPersistence = {}
-unitPersistence.version = '1.1.1'
+unitPersistence.version = '2.0.0'
 unitPersistence.verbose = false 
 unitPersistence.updateTime = 60 -- seconds. Once every minute check statics
 unitPersistence.requiredLibs = {
-	"dcsCommon", -- always
-	"cfxZones", -- Zones, of course 
+	"dcsCommon",
+	"cfxZones",  
 	"persistence",
 	"cfxMX",
 }
@@ -19,7 +19,8 @@ unitPersistence.requiredLibs = {
 	1.1.0 - added air and sea units - for filtering destroyed units
 	1.1.1 - fixed static link (again)
 	      - fixed air spawn (fixed wing)
-		  
+	2.0.0 - dmlZones, OOP
+			cleanup 
 	
 	REQUIRES PERSISTENCE AND MX
 

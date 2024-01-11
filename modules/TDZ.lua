@@ -1,5 +1,5 @@
 tdz = {}
-tdz.version = "1.0.1"
+tdz.version = "1.0.2"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -15,6 +15,8 @@ VERSION HISTORY
 		 multiple zone support
 		 hops detection improvement
 		 helo attribute 
+ 1.0.2 - manual placement option 
+         filters FARPs 
 
 --]]--
 
@@ -80,24 +82,41 @@ end
 --
 function tdz.createTDZ(theZone)
 	local p = theZone:getPoint()
-	local theBase = dcsCommon.getClosestAirbaseTo(p) -- never get FARPS
+	local theBase = dcsCommon.getClosestAirbaseTo(p, 0) -- never get FARPS
 	theZone.base = theBase 
 	theZone.baseName = theBase:getName()
 	theZone.helos = false 
 	
-	-- get closest runway to TDZ
-	-- may get a bit hairy, so let's find a good way 
-	local allRwys = theBase:getRunways()
 	local nearestRwy = nil 
-	local minDist = math.huge
-	for idx, aRwy in pairs(allRwys) do 
-		local rp = aRwy.position
-		local dist = dcsCommon.distFlat(p, rp)
-		if dist < minDist then 
-			nearestRwy = aRwy 
-			minDist = dist
+	-- see if this is a manually placed runway 
+	if theZone:getBoolFromZoneProperty("manual", true) then
+		-- construct runway from trigger zone attributes 
+		if theZone.verbose or tdz.verbose then 
+			trigger.action.outText("+++TDZ: runway for <" .. theZone.name .. "> is manually placed", 30)
+		end 
+		nearestRwy = {}
+		nearestRwy.length = theZone:getNumberFromZoneProperty("length", 2500)
+		nearestRwy.width = theZone:getNumberFromZoneProperty("width", 60)
+		local hdgRaw = theZone:getNumberFromZoneProperty("course", 0) -- in degrees 
+		hdgRaw = hdgRaw * 0.0174533 -- rads 
+		nearestRwy.course = hdgRaw * (-1) -- why? because DCS.
+		nearestRwy.position = theZone:getPoint(true)
+		theZone.baseName = theZone.name .. "(manual placement)"
+	else 
+		-- get closest runway to TDZ
+		-- may get a bit hairy, so let's find a good way 
+		local allRwys = theBase:getRunways()
+		
+		local minDist = math.huge
+		for idx, aRwy in pairs(allRwys) do 
+			local rp = aRwy.position
+			local dist = dcsCommon.distFlat(p, rp)
+			if dist < minDist then 
+				nearestRwy = aRwy 
+				minDist = dist
+			end
 		end
-	end
+	end 
 	local bearing = nearestRwy.course * (-1)
 	if bearing < 0 then bearing = bearing + math.pi * 2 end 
 	theZone.bearing = bearing 

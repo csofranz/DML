@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.0.10"
+cfxZones.version = "4.1.1"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -9,31 +9,6 @@ cfxZones.version = "4.0.10"
 --
 
 --[[-- VERSION HISTORY
-- 3.0.0   - support for DCS 2.8 linkUnit attribute, integration with 
-            linedUnit and warning.
-		  - initZoneVerbosity()
-- 3.0.1   - updateMovingZones() better tracks linked units by name
-- 3.0.2   - maxRadius for all zones, only differs from radius in polyZones 
-          - re-factoring zone-base string processing from messenger module
-		  - new processStringWildcards() that does almost all that messenger can 
-- 3.0.3   - new getLinkedUnit()
-- 3.0.4   - new createRandomPointOnZoneBoundary()
-- 3.0.5   - getPositiveRangeFromZoneProperty() now also supports upper bound (optional)
-- 3.0.6   - new createSimplePolyZone()
-		  - new createSimpleQuadZone()
-- 3.0.7   - getPoint() can also get land y when passing true as second param
-- 3.0.8   - new cfxZones.pointInOneOfZones(thePoint, zoneArray, useOrig) 
-- 3.0.9   - new getFlareColorStringFromZoneProperty()
-- 3.1.0	  - new getRGBVectorFromZoneProperty()
-			new getRGBAVectorFromZoneProperty()
-- 3.1.1   - getRGBAVectorFromZoneProperty now supports #RRGGBBAA and #RRGGBB format 
-          - owner for all, default 0 
-- 3.1.2   - getAllZoneProperties has numbersOnly option 
-- 3.1.3   - new numberArrayFromString()
-		  - new declutterZone()
-		  - new getZoneVolume()
-		  - offsetZone also updates zone bounds when moving zones 
-		  - corrected bug in calculateZoneBounds()
 - 4.0.0   - dmlZone OOP API started 
 		  - code revision / refactoring 
 		  - moved createPoint and copxPoint to dcsCommon, added bridging code 
@@ -66,6 +41,9 @@ cfxZones.version = "4.0.10"
 		  - createPolyZone now correctly inits dcsOrigin
 		  - createCircleZone noew correctly inits dcsOrigin
 - 4.0.10  - getBoolFromZoneProperty also supports "on" (=true) and "off" (=false)
+- 4.1.0   - getBoolFromZoneProperty 'on/off' support for dml variant as well 
+- 4.1.1   - evalRemainder() updates 
+
 --]]--
 
 --
@@ -98,40 +76,6 @@ cfxZones.ups = 1 -- updates per second. updates moving zones
 
 cfxZones.zones = {} -- these are the zone as retrieved from the mission.
 					-- ALWAYS USE THESE, NEVER DCS's ZONES!!!!
-
--- a zone has the following attributes
--- x, z -- coordinate of center. note they have correct x, 0, z coordinates so no y-->z mapping
--- radius (zero if quad zone)
--- isCircle (true if quad zone)
--- poly the quad coords are in the poly attribute and are a 
--- 1..n, wound counter-clockwise as (currently) in DCS:
--- lower left, lower right upper left, upper right, all coords are x, 0, z 
--- bounds - contain the AABB coords for the zone: ul (upper left), ur, ll (lower left), lr 
---          for both circle and poly, all (x, 0, z)
-
--- zones can carry information in their names that can get processed into attributes
--- use 
--- zones can also carry information in their 'properties' tag that ME allows to 
--- edit. cfxZones provides an easy method to access these properties 
---  - getZoneProperty (returns as string)
---  - getMinMaxFromZoneProperty
---  - getBoolFromZoneProperty
---  - getNumberFromZoneProperty
-
-
--- SUPPORTED PROPERTIES
--- - "linkedUnit" - zone moves with unit of that name. must be exact match
---   can be combined with other attributes that extend (e.g. scar manager and
---   limited pilots/airframes 
---
-
---
--- readZonesFromDCS is executed exactly once at the beginning
--- from then on, use only the cfxZones.zones table 
--- WARNING: cfxZones is NOT case-sensitive. All zone names are 
--- indexed by upper case. If you have two zones with same name but 
--- different case, one will be replaced
---
 
 function cfxZones.readFromDCS(clearfirst)
 	if (clearfirst) then
@@ -617,9 +561,7 @@ function cfxZones.createRandomZoneInZone(name, inZone, targetRadius, entirelyIns
 	-- if entirelyInside is false, only the zone's center is guaranteed to be inside
 	-- inZone.
 	-- entirelyInside is not guaranteed for polyzones
-	
---	trigger.action.outText("Zones: creating rZiZ with tr = " .. targetRadius .. " for " .. inZone.name .. " that as r = " .. inZone.radius, 10)
-	
+		
 	if inZone.isCircle then 
 		local sourceRadius = inZone.radius
 		if entirelyInside and targetRadius > sourceRadius then targetRadius = sourceRadius end
@@ -1364,11 +1306,11 @@ end
 
 
 -- creating units in a zone
-function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, theZone, theUnits, formation, heading) 
+function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, theZone, theUnits, formation, heading, liveries) 
 	-- theUnits can be string or table of string 
 	if not groupName then groupName = "G_"..theZone.name end 
 	-- group name will be taken from zone name and prependend with "G_"
-	local theGroup = dcsCommon.createGroundGroupWithUnits(groupName, theUnits, theZone.radius, nil, formation)
+	local theGroup = dcsCommon.createGroundGroupWithUnits(groupName, theUnits, theZone.radius, nil, formation, nil, liveries)
 	
 	-- turn the entire formation to heading
 	if (not heading) then heading = 0 end
@@ -1379,7 +1321,6 @@ function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, 
 	dcsCommon.moveGroupDataTo(theGroup, 
 						  theZone.point.x, 
 						  theZone.point.z) -- watchit: Z!!!
-
 
 	-- create the group in the world and return it
 	-- first we need to translate the coalition to a legal 
@@ -1446,7 +1387,7 @@ function cfxZones.unPulseFlag(args)
 	cfxZones.setFlagValue(theFlag, newVal, theZone)
 end
 
-function cfxZones.evalRemainder(remainder)
+function cfxZones.evalRemainder(remainder, theZone)
 	local rNum = tonumber(remainder)
 	if not rNum then 
 		-- we use remainder as name for flag 
@@ -1473,6 +1414,10 @@ function cfxZones.evalRemainder(remainder)
 		rNum = cfxZones.getFlagValue(remainder, theZone)
 	end 
 	return rNum
+end
+
+function dmlZone:evalRemainder(remainder)
+	return cfxZones.evalRemainder(remainder, self)
 end
 
 function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
@@ -2381,7 +2326,7 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 
-		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p == "on")
+		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p == 'on')
 		return theBool
 	end
 	
@@ -2407,13 +2352,13 @@ function dmlZone:getBoolFromZoneProperty(theProperty, defaultVal)
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 
-		theBool = (p == 'true') or (p == 'yes') or p == "1"
+		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p=="on")
 		return theBool
 	end
 	
 	local theBool = true 
 	-- only go false if exactly no or false or "0"
-	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") 
+	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") and (p ~= "off")
 	return theBool
 end
 
@@ -3576,8 +3521,6 @@ function cfxZones.init()
 
 	-- pre-read zone owner for all zones
 	-- much like verbose, all zones have owner
---	local pZones = cfxZones.zonesWithProperty("owner")
---	for n, aZone in pairs(pZones) do
     for n, aZone in pairs(cfxZones.zones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)
 	end

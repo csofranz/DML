@@ -1,5 +1,5 @@
 factoryZone = {}
-factoryZone.version = "2.0.0"
+factoryZone.version = "3.0.0"
 factoryZone.verbose = false 
 factoryZone.name = "factoryZone" 
 
@@ -9,6 +9,8 @@ factoryZone.name = "factoryZone"
 	  - "production" and "defenders" simplification 
 	  - now optional specification for red/blue 
 	  - use maxRadius from zone for spawning to support quad zones 
+3.0.0 - support for liveries via "factoryLiveries" zone 
+      - OOP dmlZones
 
 --]]--
 factoryZone.requiredLibs = {
@@ -20,6 +22,7 @@ factoryZone.requiredLibs = {
 }
 
 factoryZone.zones = {} -- my factory zones 
+factoryZone.liveries = {} -- indexed by type name 
 factoryZone.ups = 1
 factoryZone.initialized = false 
 factoryZone.defendingTime = 100 -- seconds until new defenders are produced
@@ -28,7 +31,7 @@ factoryZone.shockTime = 200 -- 'shocked' period of inactivity
 factoryZone.repairTime = 200 -- time until we raplace one lost unit, also repairs all other units to 100%  
 
 -- persistence: all attackers we ever sent out.
--- is regularly verified and cut to size 
+-- is regularly verified and cut to size via GC
 factoryZone.spawnedAttackers = {}
 
 -- factoryZone is a module that manages production of units
@@ -38,24 +41,6 @@ factoryZone.spawnedAttackers = {}
 --
 -- *** EXTENTDS ZONES ***
 --
--- zone attributes when owned
---  owner: coalition that owns the zone. Managed externally
---  status: FSM for spawning
---  defendersRED/BLUE - coma separated type string for the group to spawn on defense cycle completion
---  attackersRED/BLUE - as above for attack cycle. 
---  timeStamp - time when zone switched into current state 
---  spawnRadius - overrides zone's radius when placing defenders. can be use to place defenders inside or outside zone itself
---  formation - defender's formation
---  attackFormation - attackers formation 
---  attackRadius - radius of circle in which attackers are spawned. informs formation 
---  attackDelta - polar coord: r from zone center where attackers are spawned
---  attackPhi - polar degrees where attackers are to be spawned
---  paused - will not spawn. default is false 
-
---
--- M I S C
---
-
 
 function factoryZone.getFactoryZoneByName(zName)
 	for zKey, theZone in pairs (factoryZone.zones) do 
@@ -65,59 +50,58 @@ function factoryZone.getFactoryZoneByName(zName)
 end
 
 function factoryZone.addFactoryZone(aZone)
-	--aZone.worksFor = cfxZones.getCoalitionFromZoneProperty(aZone, "factory", 0) -- currently unused, have RED/BLUE separate types 
 	aZone.state = "init"
 	aZone.timeStamp = timer.getTime()
 	
 	-- set up production default 
-	local factory = cfxZones.getStringFromZoneProperty(aZone, "factory", "none")
+	local factory = aZone:getStringFromZoneProperty("factory", "none")
 	
-	local production = cfxZones.getStringFromZoneProperty(aZone, "production", factory)
+	local production = aZone:getStringFromZoneProperty("production", factory)
 	
-	local defenders = cfxZones.getStringFromZoneProperty(aZone, "defenders", factory)
+	local defenders = aZone:getStringFromZoneProperty("defenders", factory)
 		
-	if cfxZones.hasProperty(aZone, "attackersRED") then 
+	if aZone:hasProperty("attackersRED") then 
 		-- legacy support
-		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "attackersRED", production)
+		aZone.attackersRED = aZone:getStringFromZoneProperty( "attackersRED", production)
 	else
-		aZone.attackersRED = cfxZones.getStringFromZoneProperty(aZone, "productionRED", production)
+		aZone.attackersRED = aZone:getStringFromZoneProperty( "productionRED", production)
 	end
 	
-	if cfxZones.hasProperty(aZone, "attackersBLUE") then 	
+	if aZone:hasProperty("attackersBLUE") then 	
 		-- legacy support 
-		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "attackersBLUE", production)
+		aZone.attackersBLUE = aZone:getStringFromZoneProperty( "attackersBLUE", production)
 	else 
-		aZone.attackersBLUE = cfxZones.getStringFromZoneProperty(aZone, "productionBLUE", production)
+		aZone.attackersBLUE = aZone:getStringFromZoneProperty( "productionBLUE", production)
 	end
 	
 	-- set up defenders default, or use production / factory 
-	aZone.defendersRED = cfxZones.getStringFromZoneProperty(aZone, "defendersRED", defenders)
-	aZone.defendersBLUE = cfxZones.getStringFromZoneProperty(aZone, "defendersBLUE", defenders)
+	aZone.defendersRED = aZone:getStringFromZoneProperty("defendersRED", defenders)
+	aZone.defendersBLUE = aZone:getStringFromZoneProperty("defendersBLUE", defenders)
 	
-	aZone.formation = cfxZones.getStringFromZoneProperty(aZone, "formation", "circle_out")
-	aZone.attackFormation = cfxZones.getStringFromZoneProperty(aZone, "attackFormation", "circle_out") -- cfxZones.getZoneProperty(aZone, "attackFormation")
-	aZone.spawnRadius = cfxZones.getNumberFromZoneProperty(aZone, "spawnRadius", aZone.maxRadius-5) -- "-5" so they remaininside radius 
-	aZone.attackRadius = cfxZones.getNumberFromZoneProperty(aZone, "attackRadius", aZone.maxRadius)
-	aZone.attackDelta = cfxZones.getNumberFromZoneProperty(aZone, "attackDelta", 10) -- aZone.radius)
-	aZone.attackPhi = cfxZones.getNumberFromZoneProperty(aZone, "attackPhi", 0)
+	aZone.formation = aZone:getStringFromZoneProperty("formation", "circle_out")
+	aZone.attackFormation = aZone:getStringFromZoneProperty( "attackFormation", "circle_out") -- cfxZones.getZoneProperty(aZone, "attackFormation")
+	aZone.spawnRadius = aZone:getNumberFromZoneProperty("spawnRadius", aZone.maxRadius-5) -- "-5" so they remaininside radius 
+	aZone.attackRadius = aZone:getNumberFromZoneProperty("attackRadius", aZone.maxRadius)
+	aZone.attackDelta = aZone:getNumberFromZoneProperty("attackDelta", 10) -- aZone.radius)
+	aZone.attackPhi = aZone:getNumberFromZoneProperty("attackPhi", 0)
 	
-	aZone.paused = cfxZones.getBoolFromZoneProperty(aZone, "paused", false)
+	aZone.paused = aZone:getBoolFromZoneProperty("paused", false)
 	aZone.factoryOwner = aZone.owner -- copy so we can compare next round
 	
 	-- pause? and activate?
-	if cfxZones.hasProperty(aZone, "pause?") then 
-		aZone.pauseFlag = cfxZones.getStringFromZoneProperty(aZone, "pause?", "none")
+	if aZone:hasProperty("pause?") then 
+		aZone.pauseFlag = aZone:getStringFromZoneProperty("pause?", "none")
 		aZone.lastPauseValue = trigger.misc.getUserFlag(aZone.pauseFlag)
 	end
 	
-	if cfxZones.hasProperty(aZone, "activate?") then 
-		aZone.activateFlag = cfxZones.getStringFromZoneProperty(aZone, "activate?", "none")
+	if aZone:hasProperty("activate?") then 
+		aZone.activateFlag = aZone:getStringFromZoneProperty("activate?", "none")
 		aZone.lastActivateValue = trigger.misc.getUserFlag(aZone.activateFlag)
 	end
 	
-	aZone.factoryTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(aZone, "factoryTriggerMethod") then 
-		aZone.factoryTriggerMethod = cfxZones.getStringFromZoneProperty(aZone, "factoryTriggerMethod", "change")
+	aZone.factoryTriggerMethod = aZone:getStringFromZoneProperty( "triggerMethod", "change")
+	if aZone:hasProperty("factoryTriggerMethod") then 
+		aZone.factoryTriggerMethod = aZone:getStringFromZoneProperty( "factoryTriggerMethod", "change")
 	end
 	
 	factoryZone.zones[aZone.name] = aZone 
@@ -159,11 +143,12 @@ function factoryZone.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation)
 	
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				aCoalition, -- theCountry,							
-				aZone.name .. " (A) " .. dcsCommon.numberUUID(), -- must be unique 
-				spawnZone, 											
-				unitTypes, 													
+				aZone.name .. " (A) " .. dcsCommon.numberUUID(),
+				spawnZone,				
+				unitTypes, 									
 				aFormation, -- outward facing
-				0)
+				0,
+				factoryZone.liveries)
 	return theGroup, theData
 end
 
@@ -184,10 +169,12 @@ function factoryZone.spawnDefensiveTroops(theTypes, aZone, aCoalition, aFormatio
 	local spawnZone = cfxZones.createSimpleZone("spawnZone", aZone.point, aZone.spawnRadius)
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				aCoalition, --theCountry,				
-				aZone.name .. " (D) " .. dcsCommon.numberUUID(), -- must be unique 
-				spawnZone, 										unitTypes,
+				aZone.name .. " (D) " .. dcsCommon.numberUUID(),
+				spawnZone, 										
+				unitTypes,
 				aFormation, -- outward facing
-				0)
+				0, 
+				factoryZone.liveries)
 	return theGroup, theData
 end
 
@@ -308,7 +295,8 @@ function factoryZone.repairDefenders(aZone)
 				livingTypes, 
 				
 				aZone.formation, -- outward facing
-				0)
+				0,
+				factoryZone.liveries)
 	aZone.defenders = theGroup
 	aZone.lastDefenders = theGroup:getSize()
 end
@@ -686,14 +674,25 @@ end
 function factoryZone.readConfigZone(theZone)
 	if not theZone then theZone = cfxZones.createSimpleZone("factoryZoneConfig") end 
 	factoryZone.name = "factoryZone" -- just in case, so we can access with cfxZones 
-	factoryZone.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	factoryZone.defendingTime = cfxZones.getNumberFromZoneProperty(theZone, "defendingTime", 100)
-	factoryZone.attackingTime = cfxZones.getNumberFromZoneProperty(theZone, "attackingTime", 300)
-	factoryZone.shockTime = cfxZones.getNumberFromZoneProperty(theZone, "shockTime", 200)
-	factoryZone.repairTime = cfxZones.getNumberFromZoneProperty(theZone, "repairTime", 200)
+	factoryZone.verbose = theZone.verbose
+	factoryZone.defendingTime = theZone:getNumberFromZoneProperty( "defendingTime", 100)
+	factoryZone.attackingTime = theZone:getNumberFromZoneProperty( "attackingTime", 300)
+	factoryZone.shockTime = theZone:getNumberFromZoneProperty("shockTime", 200)
+	factoryZone.repairTime = theZone:getNumberFromZoneProperty( "repairTime", 200)
 	factoryZone.targetZones = "OWNED"
 
 end
+
+function factoryZone.readLiveries()
+	theZone = cfxZones.getZoneByName("factoryLiveries") 
+	if not theZone then return end 
+	factoryZone.liveries = theZone:getAllZoneProperties()
+	trigger.action.outText("Custom liveries detected. All factories now use:", 30)
+	for aType, aLivery in pairs (factoryZone.liveries) do 
+		trigger.action.outText(" type <" .. aType .. "> now uses livery <" .. aLivery .. ">", 30)
+	end 
+end
+
 
 function factoryZone.init()
 	-- check libs
@@ -706,12 +705,12 @@ function factoryZone.init()
 	local theZone = cfxZones.getZoneByName("factoryZoneConfig") 
 	factoryZone.readConfigZone(theZone)
 
+	-- read livery presets for factory production 
+	factoryZone.readLiveries()
+	
 	-- collect all zones by their 'factory' property 
 	-- start the process
 	local pZones = cfxZones.zonesWithProperty("factory")
-	
-	-- now add all zones to my zones table, and convert the owner property into 
-	-- a proper attribute 
 	for k, aZone in pairs(pZones) do
 		factoryZone.addFactoryZone(aZone)
 	end

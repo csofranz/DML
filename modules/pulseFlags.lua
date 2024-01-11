@@ -11,34 +11,6 @@ pulseFlags.requiredLibs = {
 	Copyright 2022 by Christian Franz and cf/x 
 	
 	Version History
-	- 1.0.0 Initial version 
-	- 1.0.1 pause behavior debugged 
-	- 1.0.2 zero pulse optional initial pulse suppress
-	- 1.0.3 pollFlag switched to cfxZones 
-			uses randomDelayFromPositiveRange
-			flag! now is string 
-			WARNING: still needs full alphaNum flag upgrade 
-	- 1.1.0 Full DML flag integration 
-	        removed zone!
-			made pulse and pulse! the out flag carrier
-			done!
-			pulsesDone! synonym
-			pausePulse? synonym
-			pulseMethod synonym
-			startPulse? synonym 
-			pulseStopped synonym
-	- 1.2.0 DML Watchflag integration 
-	        corrected bug in loading last pulse value for paused
-	- 1.2.1 pulseInterval synonym for time 
-			pulses now supports range 
-			zone-local verbosity
-	- 1.2.2 outputMethod synonym
-	- 1.2.3 deprecated paused/pulsePaused 
-	        returned onStart, defaulting to true
-	- 1.3.0 persistence
-	- 1.3.1 typos corrected
-	- 1.3.2 removed last pulse's timeID upon entry in doPulse
-	- 1.3.3 removed 'pulsing' when pausing, so we can restart
 	- 2.0.0 dmlZones / OOP
 	        using method on all outputs
 	- 2.0.1 activateZoneFlag now works correctly
@@ -165,7 +137,7 @@ function pulseFlags.doPulse(args)
 	-- first, we only do an initial pulse if zeroPulse is set
 	if theZone.hasPulsed or theZone.zeroPulse then 
 		if pulseFlags.verbose or theZone.verbose then 
-			trigger.action.outText("+++pulF: will bang " .. theZone.pulseFlag, 30);
+			trigger.action.outText("+++pulF: will bang " .. theZone.pulseFlag .. " for <" .. theZone.name .. ">", 30);
 		end
 		
 		theZone:pollFlag(theZone.pulseFlag, theZone.pulseMethod) 

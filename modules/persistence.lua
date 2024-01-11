@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "1.0.7"
+persistence.version = "2.0.0"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -10,39 +10,25 @@ persistence.saveDir = nil -- set at start
 persistence.name = "persistence" -- for cfxZones 
 persistence.missionData = {} -- loaded from file 
 persistence.requiredLibs = {
-	"dcsCommon", -- always
-	"cfxZones", -- Zones, of course 
+	"dcsCommon", 
+	"cfxZones",  
 }
 --[[--
 	Version History 
-	1.0.0 - initial version
-	1.0.1 - when available, module sets flag "cfxPersistence" to 1
-		  - when data availabe, cfxPersistenceHasData is set to 1
-		  - spelling 
-		  - cfxZones interface
-		  - always output save location
-	1.0.2 - QoL when verbosity is on 
-	1.0.3 - no longer always tells " mission saved to"
-		    new 'saveNotification" can be off 
-	1.0.4 - new optional 'root' property 
-	1.0.5 - desanitize check on readConfig to early-abort
-	1.0.6 - removed potential verbosity bug
-    1.0.7 - correct abort for sanitized DCS, when non-verbose	
-		  
+	2.0.0 - dml zones, OOP
+			cleanup
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
-	
 --]]--
 
--- in order to work, Host must desanitize lfs and io 
--- only works when run as server 
+-- in order to work, HOST MUST DESANITIZE lfs and io 
 
 --
 -- flags to save. can be added to by saveFlags attribute 
 --
 persistence.flagsToSave = {} -- simple table 
-persistence.callbacks = {} -- cbblocks, dictionary
+persistence.callbacks = {} -- cbblocks, dictionary by name
 
 
 --
@@ -417,13 +403,13 @@ end
 --
 
 function persistence.collectFlagsFromZone(theZone)
-	local theFlags = cfxZones.getStringFromZoneProperty(theZone, "saveFlags", "*dummy")
+	local theFlags = theZone:getStringFromZoneProperty("saveFlags", "*dummy")
 	persistence.registerFlagsToSave(theFlags, theZone)
 end
 
 function persistence.readConfigZone()
 	if not _G["lfs"] then 
-		trigger.action.outText("+++persistence: DCS not correctly desanitized. Persistence disabled", 30)
+		trigger.action.outText("+++persistence: DCS correctly not 'desanitized'. Persistence disabled", 30)
 		return 
 	end
 	
@@ -436,10 +422,10 @@ function persistence.readConfigZone()
 	
 	-- serverDir is the path from the server save directory, usually "Missions/".
     -- will be added to lfs.writedir() unless given a root attribute 
-	if cfxZones.hasProperty(theZone, "root") then 
+	if theZone:hasProperty("root") then 
 		-- we split this to enable further processing down the 
 		-- line if neccessary
-		persistence.root = cfxZones.getStringFromZoneProperty(theZone, "root", lfs.writedir()) -- safe default
+		persistence.root = theZone:getStringFromZoneProperty("root", lfs.writedir()) -- safe default
 		if not dcsCommon.stringEndsWith(persistence.root, "\\") then 
 			persistence.root = persistence.root .. "\\"
 		end
@@ -453,11 +439,11 @@ function persistence.readConfigZone()
 		end
 	end
 	
-	persistence.serverDir = cfxZones.getStringFromZoneProperty(theZone, "serverDir", "Missions\\")
+	persistence.serverDir = theZone:getStringFromZoneProperty("serverDir", "Missions\\")
 
 	if hasConfig then 
-		if cfxZones.hasProperty(theZone, "saveDir")	then 
-			persistence.saveDir = cfxZones.getStringFromZoneProperty(theZone, "saveDir", "")
+		if theZone:hasProperty("saveDir") then 
+			persistence.saveDir = theZone:getStringFromZoneProperty("saveDir", "")
 		else 
 			-- local missname = net.dostring_in("gui", "return DCS.getMissionName()") .. " (data)"
 			persistence.saveDir = dcsCommon.getMissionName() .. " (data)"
@@ -472,32 +458,32 @@ function persistence.readConfigZone()
 		trigger.action.outText("*** WARNING: persistence is set to write to main mission directory!", 30)
 	end
 	
-	if cfxZones.hasProperty(theZone, "saveFileName") then 
-		persistence.saveFileName = cfxZones.getStringFromZoneProperty(theZone, "saveFileName", dcsCommon.getMissionName() .. " Data.txt")
+	if theZone:hasProperty("saveFileName") then 
+		persistence.saveFileName = theZone:getStringFromZoneProperty("saveFileName", dcsCommon.getMissionName() .. " Data.txt")
 	end
 	
-	if cfxZones.hasProperty(theZone, "versionID") then
-		persistence.versionID = cfxZones.getStringFromZoneProperty(theZone, "versionID", "") -- to check for full restart 
+	if theZone:hasProperty("versionID") then
+		persistence.versionID = theZone:getStringFromZoneProperty("versionID", "") -- to check for full restart 
 	end 
 	
-	persistence.saveInterval = cfxZones.getNumberFromZoneProperty(theZone, "saveInterval", -1) -- default to manual save
+	persistence.saveInterval = theZone:getNumberFromZoneProperty("saveInterval", -1) -- default to manual save
 	if persistence.saveInterval > 0 then 
 		persistence.saveTime = persistence.saveInterval * 60 + timer.getTime()
 	end
 	
-	if cfxZones.hasProperty(theZone, "cleanRestart?") then 
-		persistence.cleanRestart = cfxZones.getStringFromZoneProperty(theZone, "cleanRestart?", "*<none>")
-		persistence.lastCleanRestart = cfxZones.getFlagValue(persistence.cleanRestart, theZone)
+	if theZone:hasProperty("cleanRestart?") then 
+		persistence.cleanRestart = theZone:getStringFromZoneProperty("cleanRestart?", "*<none>")
+		persistence.lastCleanRestart = theZone:getFlagValue(persistence.cleanRestart)
 	end
 	
-	if cfxZones.hasProperty(theZone, "saveMission?") then 
-		persistence.saveMission = cfxZones.getStringFromZoneProperty(theZone, "saveMission?", "*<none>")
-		persistence.lastSaveMission = cfxZones.getFlagValue(persistence.saveMission, theZone)
+	if theZone:hasProperty("saveMission?") then 
+		persistence.saveMission = theZone:getStringFromZoneProperty("saveMission?", "*<none>")
+		persistence.lastSaveMission = theZone:getFlagValue(persistence.saveMission)
 	end
 	
-	persistence.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	persistence.verbose = theZone.verbose
 	
-	persistence.saveNotification = cfxZones.getBoolFromZoneProperty(theZone, "saveNotification", true)
+	persistence.saveNotification = theZone:getBoolFromZoneProperty("saveNotification", true)
 	
 	if persistence.verbose then 
 		trigger.action.outText("+++persistence: read config", 30)
@@ -534,14 +520,13 @@ function persistence.start()
 		return false
 	end
 	
---	local mainDir = lfs.writedir() .. persistence.serverDir
 	local mainDir = persistence.root .. persistence.serverDir 
 	if not dcsCommon.stringEndsWith(mainDir, "\\") then 
 		mainDir = mainDir .. "\\"
 	end
+
 	-- lets see if we can access the server's mission directory and 
-	-- save directory 
-	
+	-- save directory 	
 	if persistence.isDir(mainDir) then 
 		if persistence.verbose then 
 			trigger.action.outText("persistence: main dir is <" .. mainDir .. ">", 30)
@@ -613,7 +598,6 @@ function persistence.start()
 	-- and start updating 
 	persistence.update()
 	
-	
 	return persistence.active 
 end
 
@@ -627,5 +611,3 @@ if not persistence.start() then
 	end
 	-- we do NOT remove the methods so we don't crash 
 end
-
--- add zones for saveFlags so authors can easily save flag values 

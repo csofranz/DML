@@ -324,6 +324,9 @@ function stopGap.update()
 				busy = true 
 				-- count up for auto-release after n seconds
 				trigger.action.setUserFlag(theGroup.sgName, sgState + 1)
+				if stopGap.verbose then 
+					trigger.action.outText("+++StopG: [cooldown] cooldown for group <" .. name .. ">, val now is <" .. sgState .. ">.", 30)
+				end 	
 			end
 			
 			if busy then 
@@ -331,6 +334,9 @@ function stopGap.update()
 			else 
 				local theStaticGroup = stopGap.createStandInsForMXGroup(theGroup)
 				stopGap.standInGroups[name] = theStaticGroup
+				if stopGap.verbose then 
+					trigger.action.outText("+++StopG: [server command] placing static stand-in for group <" .. name .. ">.", 30)
+				end 	
 			end	
 		else 
 			-- plane is currently static and visible

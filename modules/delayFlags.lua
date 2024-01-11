@@ -1,5 +1,5 @@
 delayFlag = {}
-delayFlag.version = "1.4.0"
+delayFlag.version = "2.0.0"
 delayFlag.verbose = false  
 delayFlag.requiredLibs = {
 	"dcsCommon", -- always
@@ -11,35 +11,12 @@ delayFlag.flags = {}
 	delay flags - simple flag switch & delay, allows for randomize
 	and dead man switching 
 	
-	Copyright (c) 2022 by Christian Franz and cf/x AG
+	Copyright (c) 2022-2024 by Christian Franz and cf/x AG
 	
 	Version History
-	1.0.0 - Initial Version 
-	1.0.1 - message attribute 
-	1.0.2 - slight spelling correction 
-		  - using cfxZones for polling 
-		  - removed pollFlag 
-	1.0.3 - bug fix for config zone name
-		  - removed message attribute, moved to own module 
-		  - triggerFlag --> triggerDelayFlag
-	1.0.4 - startDelay
-	1.1.0 - DML flag upgrade 
-		  - removed onStart. use local raiseFlag instead 
-		  - delayDone! synonym
-		  - pauseDelay?
-		  - unpauseDelay?
-	1.2.0 - Watchflags 
-	1.2.1 - method goes to dlyMethod
-	      - delay done is correctly inited 
-	1.2.2 - delayMethod defaults to inc 
-		  - zone-local verbosity
-		  - code clean-up 
-	1.2.3 - pauseDelay
-	      - continueDelay 
-		  - delayLeft
-	1.3.0 - persistence
 	1.4.0 - dmlZones 
 		  - delayLeft#
+	2.0.0 - clean-up 
 	
 --]]--
 
@@ -317,7 +294,7 @@ function delayFlag.readConfigZone()
 		theZone = cfxZones.createSimpleZone("delayFlagsConfig")
 	end 
 	
-	delayFlag.verbose = theZone.verbose -- cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	delayFlag.verbose = theZone.verbose 
 	
 	if delayFlag.verbose then 
 		trigger.action.outText("+++dlyF: read config", 30)

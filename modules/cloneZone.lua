@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "1.9.1"
+cloneZones.version = "2.0.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -27,79 +27,9 @@ cloneZones.respawnOnGroupID = true
 
 --[[--
 	Clones Groups from ME mission data
-	Copyright (c) 2022 by Christian Franz and cf/x AG
+	Copyright (c) 2022-2024 by Christian Franz and cf/x AG
 	
 	Version History
-	1.0.0 - initial version 
-	1.0.1 - preWipe attribute
-	1.1.0 - support for static objects
-		  - despawn? attribute 
-	1.1.1 - despawnAll: isExist guard 
-		  - map in? to f? 
-	1.2.0 - Lua API integration: callbacks 
-		  - groupXlate struct
-		  - unitXlate struct 
-		  - resolveReferences 
-		  - getGroupsInZone rewritten for data 
-		  - static resolve 
-		  - linkUnit resolve 
-		  - clone? synonym
-		  - empty! and method attributes
-	1.3.0 - DML flag upgrade 
-	1.3.1 - groupTracker interface 
-		  - trackWith: attribute
-	1.4.0 - Watchflags 
-	1.4.1 - trackWith: accepts list of trackers 
-	1.4.2 - onstart delays for 0.1 s to prevent static stacking
-		  - turn bug for statics (bug in dcsCommon, resolved)
-	1.4.3 - embark/disembark now works with cloners 
-	1.4.4 - removed some debugging verbosity 
-	1.4.5 - randomizeLoc, rndLoc keyword
-		  - cargo manager integration - pass cargo objects when present
-	1.4.6 - removed some verbosity for spawned aircraft with airfields on their routes
-	1.4.7 - DML watchflag and DML Flag polish, method-->cloneMethod
-	1.4.8 - added 'wipe?' synonym 
-	1.4.9 - onRoad option 
-	      - rndHeading option 
-	1.5.0 - persistence 
-	1.5.1 - fixed static data cloning bug (load & save)
-	1.5.2 - fixed bug in trackWith: referencing wrong cloner 
-	1.5.3 - centerOnly/wholeGroups attribute for rndLoc, rndHeading and onRoad
-	1.5.4 - parking for aircraft processing when cloning from template 
-	1.5.5 - removed some verbosity 
-	1.6.0 - fixed issues with cloning for zones with linked units
-		  - cloning with useHeading 
-		  - major declutter 
-	1.6.1 - removed some verbosity when not rotating routes
-		  - updateTaskLocations ()
-		  - cloning groups now also adjusts tasks like search and engage in zone
-		  - cloning with rndLoc supports polygons
-		  - corrected rndLoc without centerOnly to not include individual offsets
-		  - ensure support of recovery tanker resolve cloned group 
-	1.6.2 - optimization to hasLiveUnits()
-	1.6.3 - removed verbosity bug with rndLoc 
-	        uniqueNameGroupData has provisions for naming scheme 
-			new uniqueNameStaticData() for naming scheme
-	1.6.4 - uniqueCounter is now configurable via config zone 
-			new lclUniqueCounter config, also added to persistence 
-			new globalCount
-	1.7.0 - wildcard "*" for masterOwner 
-		  - identical attribute: makes identical ID and name for unit and group as template
-		  - new sameIDUnitData()
-		  - nameScheme attribute: allow parametric names  
-		  - <o>, <z>, <s> wildcards
-		  - <uid>, <lcl>, <i>, <g> wildcards 
-		  - identical=true overrides nameScheme
-		  - masterOwner "*" convenience shortcut
-	1.7.1 - useDelicates handOff for delicates 
-	      - forcedRespawn passes zone instead of verbose
-	1.7.2 - onPerimeter attribute 
-	1.7.3 - declutter option 
-	1.8.0 - OOP cfxZones 
-		  - removed "empty+1" as planned
-		  - upgraded config zone parsing 
-	1.8.1 - clone zone definition now supports quads
-	1.8.2 - on pre-wipe, delay respawn by 0.5s to avoid 'dropping' statics
 	1.9.0 - minor clean-up for synonyms
 		  - spawnWithSpawner alias for HeloTroops etc requestable SPAWN
 		  - requestable attribute 
@@ -107,6 +37,9 @@ cloneZones.respawnOnGroupID = true
 		  - cloner collects all types used 
 		  - groupScheme attribute
 	1.9.1 - useAI attribute 
+	2.0.0 - clean-up 
+	2.0.1 - improved empty! logic to account for deferred spawn 
+		    when pre-wipe is active 
 --]]--
 
 --
@@ -136,16 +69,6 @@ function cloneZones.addCallback(theCallback)
 	table.insert(cloneZones.callbacks, theCallback)
 end
 
--- reasons for callback 
--- "will despawn group" - args is the group about to be despawned
--- "did spawn group" -- args is group that was spawned
--- "will despawn static"
--- "did spawn static"
--- "spawned" -- completed spawn cycle. args contains .groups and .statics spawned 
--- "empty" -- all spawns have been killed, args is empty 
--- "wiped" -- preWipe executed 
--- "<none" -- something went wrong 
-
 function cloneZones.invokeCallbacks(theZone, reason, args)
 	if not theZone then return end 
 	if not reason then reason = "<none>" end 
@@ -157,8 +80,6 @@ function cloneZones.invokeCallbacks(theZone, reason, args)
 		cb(theZone, reason, args)
 	end
 end
-
--- group translation orig id 
 
 --
 -- reading zones
@@ -217,7 +138,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.cloner = true -- this is a cloner zoner 
 	theZone.mySpawns = {}
 	theZone.myStatics = {} 
-	-- update: getPoint is bad if it's a moving zone. 
 	-- use getDCSOrigin instead 
 	theZone.origin = theZone:getDCSOrigin() 
 	
@@ -247,7 +167,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 				-- iterate all units and save their individual types
 				for idy, aUnit in pairs(rawData.units) do 
 					local theType = aUnit.type 
---					trigger.action.outText("proccing type <" .. theType .. ">", 30)
 					if not theZone.allTypes[theType] then 
 						theZone.allTypes[theType] = 1 -- first one
 					else 
@@ -318,11 +237,8 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	
 	theZone.cooldown = theZone:getNumberFromZoneProperty("cooldown", -1) -- anything > 0 activates cd 
 	theZone.lastSpawnTimeStamp = -10000
-	
 	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
-	
 	theZone.moveRoute = theZone:getBoolFromZoneProperty("moveRoute", false)
-	
 	theZone.preWipe = theZone:getBoolFromZoneProperty("preWipe", false)
 		
 	if theZone:hasProperty("empty!") then 
@@ -383,7 +299,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.rndHeading = theZone:getBoolFromZoneProperty("rndHeading", false)
 	
 	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
-	
 	theZone.onPerimeter = theZone:getBoolFromZoneProperty("onPerimeter", false)
 
 	-- check for name scheme and / or identical 
@@ -418,9 +333,7 @@ function cloneZones.despawnAll(theZone)
 	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: despawn all - wiping zone <" .. theZone.name .. ">", 30)
 	end 
-	for idx, aGroup in pairs(theZone.mySpawns) do 
-		--trigger.action.outText("++clnZ: despawn all " .. aGroup.name, 30)
-		
+	for idx, aGroup in pairs(theZone.mySpawns) do 		
 		if aGroup:isExist() then 
 			if theZone.verbose then 
 				trigger.action.outText("+++clnZ: will destroy <" .. aGroup:getName() .. ">", 30)
@@ -638,9 +551,6 @@ function cloneZones.nameFromSchema(schema, inName, theZone, sourceName, i)
 		pos = string.find(outName, "<g>")
 	end
 	
-	--if theZone.verbose then 
-	--	trigger.action.outText("+++cln: schema [" .. schema .. "] for unit <" .. inName .. "> in zone <" .. theZone.name .. "> returns <" .. outName .. ">, iter = " .. iter, 30)
-	--end
 	return outName, iter
 end
 
@@ -866,7 +776,6 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						for grpIdx, gID in pairs(embarkers) do 
 							local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
 							table.insert(newEmbarkers, resolvedID)
-							--trigger.action.outText("+++clnZ: resolved embark group id <" .. gID .. "> to <" .. resolvedID .. ">", 30)
 						end
 						-- replace old with new table
 						taskData.params.groupsForEmbarking = newEmbarkers
@@ -884,7 +793,6 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 								-- translate old to new 
 								local resolvedID = cloneZones.resolveGroupID(gID, rawData, dataTable, "embark")
 								table.insert(newEmbarkers, resolvedID)
-								--trigger.action.outText("+++clnZ: resolved distribute unit/group id <" .. aUnit .. "/" .. gID .. "> to <".. newUnit .. "/" .. resolvedID .. ">", 30)
 							end
 							-- store this as new group for 
 							-- translated transportID
@@ -892,7 +800,6 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						end
 						-- replace old distribution with new 
 						taskData.params.distribution = newDist 
-						--trigger.action.outText("+++clnZ: rebuilt distribution", 30)
 					end
 					
 					-- resolve selectedTransport unit reference 
@@ -900,7 +807,6 @@ function cloneZones.resolveWPReferences(rawData, theZone, dataTable)
 						local tID = taskData.params.selectedTransport
 						local newTID = cloneZones.resolveUnitID(tID, rawData, dataTable, "transportID")
 						taskData.params.selectedTransport = newTID
-						--trigger.action.outText("+++clnZ: resolved selected transport <" .. tID .. "> to <" .. newTID .. ">", 30)
 					end
 					
 					-- note: we may need to process x and y as well
@@ -932,7 +838,6 @@ function cloneZones.resolveReferences(theZone, dataTable)
 	-- when an action refers to another group, we check if 
 	-- the group referred to is also a clone, and update 
 	-- the reference to the newest incardnation 
-	
 	for idx, rawData in pairs(dataTable) do 
 		-- resolve references in waypoints
 		cloneZones.resolveWPReferences(rawData, theZone, dataTable)
@@ -946,7 +851,6 @@ function cloneZones.handoffTracking(theGroup, theZone)
 		return 
 	end
 	local trackerName = theZone.trackWith
-	--if trackerName == "*" then trackerName = theZone.name end 
 	-- now assemble a list of all trackers
 	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: clone pass-off: " .. trackerName, 30)
@@ -1065,8 +969,6 @@ function cloneZones.forcedRespawn(args)
 	if newGroupID == theData.CZTargetID then 
 		if verbose then 
 			trigger.action.outText("GOOD REPLACEMENT new ID <" .. newGroupID .. "> matches target <" .. theData.CZTargetID .. "> for <" .. theData.name .. ">", 30)
-		-- we can now remove the former group 
-		-- and replace it with the new one 
 			trigger.action.outText("will replace table entry at <" .. pos .. "> with new group", 30)
 		end
 		spawnedGroups[pos] = theGroup
@@ -1104,7 +1006,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	local newCenter = spawnZone:getPoint() -- includes zone following updates
 	local oCenter = theZone:getDCSOrigin() -- get original coords on map for cloning offsets 
 	-- calculate zoneDelta, is added to all vectors 
-	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin) -- oCenter) --theZone.origin)
+	local zoneDelta = dcsCommon.vSub(newCenter, theZone.origin) 
 	
 	-- precalc turn value for linked rotation
 	local dHeading = 0 -- for linked zones 
@@ -1280,7 +1182,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 				
 		-- make group, unit[1] and route point [1] all match up
 		if rawData.route and rawData.units[1] then 
-			-- trigger.action.outText("matching route point 1 and group with unit 1", 30)
 			rawData.route.points[1].x = rawData.units[1].x
 			rawData.route.points[1].y = rawData.units[1].y
 			rawData.x = rawData.units[1].x
@@ -1439,7 +1340,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		if not spawnZone.identical then
 			-- make sure static name is unique and remember original 
 			cloneZones.uniqueNameStaticData(rawData, spawnZone, theZone.name)
-			--rawData.name = dcsCommon.uuid(rawData.name)
 			rawData.unitId = cloneZones.uniqueID()
 		end 
 		rawData.CZTargetID = rawData.unitId 
@@ -1529,7 +1429,6 @@ function cloneZones.turnOffAI(args)
 	local theGroup = args[1]
 	local theController = theGroup:getController()
 	theController:setOnOff(false)
---	trigger.action.outText("turned off AI for group <" .. theGroup:getName() .. "> ", 30)
 end 
 
 -- retro-fit for helo troops and others to provide 'requestable' support 
@@ -1721,7 +1620,6 @@ function cloneZones.getRequestableClonersInRange(aPoint, aRange, aSide)
 		if aSide ~= 0 then 
 			-- check if side is correct for owned zone 
 			local resolved = cloneZones.resolveOwningCoalition(aZone)
-			--if resolved ~= 0 and resolved ~= aSide then
 			if resolved == 0 or resolved ~= aSide then			
 				-- failed ownership test. must match and not be zero
 				hasMatch = false
@@ -1749,7 +1647,7 @@ function cloneZones.update()
 	for idx, aZone in pairs(cloneZones.cloners) do
 		-- see if deSpawn was pulled. Must run before spawn
 		if aZone.deSpawnFlag then 
-			local currTriggerVal = aZone:getFlagValue(aZone.deSpawnFlag) -- trigger.misc.getUserFlag(aZone.deSpawnFlag)
+			local currTriggerVal = aZone:getFlagValue(aZone.deSpawnFlag) 
 			if currTriggerVal ~= aZone.lastDeSpawnValue then 
 				if cloneZones.verbose or aZone.verbose then 
 					trigger.action.outText("+++clnZ: DEspawn triggered for <" .. aZone.name .. ">", 30)
@@ -1760,20 +1658,23 @@ function cloneZones.update()
 		end
 		
 		-- see if we got spawn? command
+		local willSpawn = false -- init to false.
 		if aZone:testZoneFlag(aZone.spawnFlag, aZone.cloneTriggerMethod, "lastSpawnValue") then
-			if cloneZones.verbose then 
+			if cloneZones.verbose or aZone.verbose then 
 				trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. ">", 30)
 			end 
 			cloneZones.spawnWithCloner(aZone)
+			willSpawn = true -- in case prewipe, we delay
+			-- can mess with empty, so we tell empty to skip 
 		end
 		
 		-- empty handling 
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
-		if isEmpty then 
+		if isEmpty and (willSpawn == false) then 
 			-- see if we need to bang a flag 			
 			if aZone.emptyBangFlag then 
 				aZone:pollFlag(aZone.emptyBangFlag, aZone.cloneMethod)
-				if cloneZones.verbose then 
+				if cloneZones.verbose or aZone.verbose then 
 					trigger.action.outText("+++clnZ: bang! on " .. aZone.emptyBangFlag, 30)
 				end
 			end
@@ -1983,7 +1884,6 @@ function cloneZones.loadData()
 				trigger.action.outText("+++clnZ: linked static <" .. oName .. "> to unit <" .. newStatic.linkUnit .. ">", 30)
 		end
 		local cty = newStatic.cty 
---		local cat = staticData.cat
 		-- spawn new one, replacing same.named old, dead if required 
 		gStatic =  coalition.addStaticObject(cty, newStatic)
 		
@@ -2004,7 +1904,7 @@ function cloneZones.loadData()
 	for cName, cData in pairs(allCloners) do 
 		local theCloner = cloneZones.getCloneZoneByName(cName)
 		if theCloner then 
-			theCloner.isStarted = true -- ALWAYS TRUE WHEN WE COME HERE! cData.isStarted
+			theCloner.isStarted = true 
 			-- init myUniqueCounter if it exists 
 			if cData.myUniqueCounter then 
 				theCloner.myUniqueCounter = cData.myUniqueCounter
@@ -2094,10 +1994,7 @@ function cloneZones.start()
 	cloneZones.readConfigZone()
 	
 	-- process cloner Zones 
-	local attrZones = cfxZones.getZonesWithAttributeNamed("cloner")
-	
-	-- now create an rnd gen for each one and add them
-	-- to our watchlist 
+	local attrZones = cfxZones.getZonesWithAttributeNamed("cloner")	
 	for k, aZone in pairs(attrZones) do 
 		cloneZones.createClonerWithZone(aZone) -- process attribute and add to zone
 		cloneZones.addCloneZone(aZone) 

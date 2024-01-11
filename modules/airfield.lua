@@ -1,13 +1,13 @@
 airfield = {}
-airfield.version = "1.1.2"
+airfield.version = "2.0.0"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
 }
-airfield.verbose = false 
 airfield.myAirfields = {} -- indexed by name 
-airfield.farps = false 
 airfield.gracePeriod = 3
+airfield.allAirfields = {} -- inexed by name 
+
 --[[--
 	This module generates signals when the nearest airfield changes hands, 
 	can force the coalition of an airfield, and always provides the 
@@ -24,17 +24,47 @@ airfield.gracePeriod = 3
 	1.1.2 - 'show' attribute 
 			line color attributes per zone 
 			line color defaults in config
+	2.0.0 - show all airfields option
+		  - fully reworked show options
+		  - unmanaged airfields are automatically updated 
+		  - full color support
+		  -- support for FARPS as well
+	
 --]]--
+
+-- init all airfields DB
+function airfield.collectAll()
+	local allBases = world.getAirbases() -- get all 
+	local count = 0 
+	local dropped = 0 
+	for idx, aBase in pairs(allBases) do 
+		local entry = {}
+		local cat = Airbase.getCategory(aBase) -- DCS 2.9 hardened
+		-- cats: 0 = airfield, 1 = farp, 2 = ship 
+		if (cat == 0) or (cat == 1) then 	
+			local name = aBase:getName()
+			entry.base = aBase 
+			entry.cat = cat 
+			-- entry.linkedTo holds zone if linked to. that how we know
+			airfield.allAirfields[name] = entry
+			count = count + 1
+		else 
+			dropped = dropped + 1
+		end
+	end
+	if airfield.verbose then 
+		trigger.action.outText("+++airF: init - count = <" .. count .. ">, dropped = <" .. dropped .. ">", 30)
+	end 
+end
 
 --
 -- setting up airfield
 --
 function airfield.createAirFieldFromZone(theZone)
---trigger.action.outText("Enter airfield for <" .. theZone.name  .. ">", 30)
 	theZone.farps = theZone:getBoolFromZoneProperty("farps", false)
 
 	local filterCat = 0
-	if (airfield.farps or theZone.farps) then filterCat = {0, 1} end -- bases and farps
+	if (theZone.farps) then filterCat = {0, 1} end -- bases and farps
 	local p = theZone:getPoint()
 	local theBase = dcsCommon.getClosestAirbaseTo(p, filterCat)
 	theZone.airfield = theBase
@@ -113,9 +143,29 @@ function airfield.createAirFieldFromZone(theZone)
 	theZone.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", airfield.neutralFill)
 	
 	airfield.showAirfield(theZone)
+
+	-- now mark this zone as handled 
+	local entry = airfield.allAirfields[theZone.afName]
+	entry.linkedTo = theZone -- only remember last, but that's enough.
 	
---trigger.action.outText("Exit airfield for <" .. theZone.name  .. ">", 30)
-	
+end
+
+function airfield.markAirfieldOnMap(theAirfield, lineColor, fillColor)
+	local markID = dcsCommon.numberUUID()
+	local radius = 2000 -- meters 
+	local p = theAirfield:getPoint()
+	-- if there are runways, we center on first runway 
+	local rws = theAirfield:getRunways()
+	if rws then -- all airfields and farps have runways defined, but that array isnt filled for FARPS
+		local rw1 = rws[1]
+		if rw1 then 
+			p.x = rw1.position.x 
+			p.z = rw1.position.z
+		end 
+	end 
+	p.y = 0 
+	trigger.action.circleToAll(-1, markID, p, radius, lineColor, fillColor, 1, true, "")
+	return markID 
 end
 
 function airfield.showAirfield(theZone)
@@ -138,35 +188,9 @@ function airfield.showAirfield(theZone)
 		fillColor = theZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
 	
-	-- always center on airfield, always 2km radius
-	local markID = dcsCommon.numberUUID()
-	local radius = 2000 -- meters 
-	local p = theZone.airfield:getPoint()
-	-- if there are runways, we center on first runway 
-	local rws = theZone.airfield:getRunways()
-	if rws then -- all airfields and farps have runways, but that array isnt filled for FARPS
-		local rw1 = rws[1]
-		if rw1 then 
-			p.x = rw1.position.x 
-			p.z = rw1.position.z
-			if airfield.verbose or theZone.verbose then 
-				trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has rw1, x=" .. p.x .. ", z=" .. p.z, 30)
-			end
-		else 
-			if airfield.verbose or theZone.verbose then 
-				trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has no rw1", 30)
-			end
-		end
-	else 
-		if airfield.verbose or theZone.verbose then 
-			trigger.action.outText("+++airF: zone <" .. theZone.name .. "> assoc airfield <" .. theZone.afName .. "> has no runways", 30)
-		end
-	end 
-	p.y = 0 
+	theZone.ownerMark = airfield.markAirfieldOnMap(theZone.airfield, lineColor, fillColor)
 	
-	trigger.action.circleToAll(-1, markID, p, radius, lineColor, fillColor, 1, true, "")
-	theZone.ownerMark = markID 
-	
+
 end
 
 function airfield.assumeControl(theZone)
@@ -188,12 +212,40 @@ end
 --
 -- event handling
 --
+function airfield.untendedCapture(theName, theBase) 
+	if airfield.showAll and airfield.allAirfields[theName] then 
+		-- we draw and handle all airfields, even those 
+		-- without an attached handler zone 
+		local theEntry = airfield.allAirfields[theName]
+		if not theEntry.linkedTo then -- merely safety 
+			if theEntry.ownerMark then 
+				-- remove previous mark 
+				trigger.action.removeMark(theEntry.ownerMark)
+				theEntry.ownerMark = nil 
+			end 
+			local owner = theBase:getCoalition()
+			local lineColor = airfield.redLine  
+			local fillColor = airfield.redFill  
+			if owner == 2 then 
+				lineColor = airfield.blueLine 
+				fillColor = airfield.blueFill 
+			elseif owner == 0 or owner == 3 then 
+				lineColor = airfield.neutralLine 
+				fillColor = airfield.neutralFill 
+			end
+			theEntry.ownerMark = airfield.markAirfieldOnMap(theBase, lineColor, fillColor)
+		end
+	end
+end
 
 function airfield.airfieldCaptured(theBase)
 	-- retrieve the zone that controls this airfield 
 	local bName = theBase:getName()
 	local theZone = airfield.myAirfields[bName]
-	if not theZone then return end -- not handled 
+	if not theZone then 
+		airfield.untendedCapture(bName, theBase)
+		return 
+	end -- not attached to a zone 
 	local newCoa = theBase:getCoalition()
 	theZone.owner = newCoa 
 	
@@ -227,15 +279,8 @@ function airfield:onEvent(event)
 		-- get category 
 		local desc = theBase:getDesc()
 		local bName = theBase:getName()
-		local cat = desc.category -- never get cat directly!
---[[--		if cat == 1 then 
-			if not airfield.farps then 
-				if airfield.verbose then 
-					trigger.action.outText("+++airF: ignored cap event for FARP <" .. bName .. ">", 30)
-				end
-				return
-			end
-		end --]]
+		local cat = desc.category -- never get cat directly! DCS 2.0 safe
+
 		if airfield.verbose then 
 			trigger.action.outText("+++airF: cap event for <" .. bName .. ">, cat = (" .. cat .. ")", 30)
 		end
@@ -391,7 +436,7 @@ function airfield.readConfig()
 		theZone = cfxZones.createSimpleZone("airfieldConfig")
 	end
 	airfield.verbose = theZone.verbose 
-	airfield.farps = theZone:getBoolFromZoneProperty("farps", false)
+--	airfield.farps = theZone:getBoolFromZoneProperty("farps", false)
 	
 	-- colors for line and fill 
 	airfield.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", {1.0, 0, 0, 1.0})
@@ -400,11 +445,24 @@ function airfield.readConfig()
 	airfield.blueFill = theZone:getRGBAVectorFromZoneProperty("blueFill", {0.0, 0, 1.0, 0.2})
 	airfield.neutralLine = theZone:getRGBAVectorFromZoneProperty("neutralLine", {0.8, 0.8, 0.8, 1.0})
 	airfield.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", {0.8, 0.8, 0.8, 0.2})
+	
+	airfield.showAll = theZone:getBoolFromZoneProperty("show", false)
+end
+
+function airfield.showUnlinked() 
+	for name, entry in pairs(airfield.allAirfields) do 
+		if not entry.linkedTo then 
+			airfield.untendedCapture(name, entry.base) 
+		end
+	end 
 end
 
 function airfield.start()
 	if not dcsCommon.libCheck("cfx airfield", airfield.requiredLibs) 
 	then return false end
+
+	-- set up DB
+	airfield.collectAll()
 	
 	-- read config
 	airfield.readConfig()
@@ -414,6 +472,9 @@ function airfield.start()
 	for idx, aZone in pairs(abZones) do
 		airfield.createAirFieldFromZone(aZone)
 	end
+	
+	-- show all unlinked 
+	if airfield.showAll then airfield.showUnlinked() end 
 	
 	-- connect event handler
 	world.addEventHandler(airfield)
@@ -442,7 +503,3 @@ if not airfield.start() then
 	trigger.action.outText("+++ aborted airfield v" .. airfield.version .. "  -- startup failed", 30)
 	airfield = nil 
 end
-
---[[--
-	ideas: what if we made this airfield movable?
---]]--
