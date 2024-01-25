@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.1.1"
+cfxZones.version = "4.1.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -43,6 +43,7 @@ cfxZones.version = "4.1.1"
 - 4.0.10  - getBoolFromZoneProperty also supports "on" (=true) and "off" (=false)
 - 4.1.0   - getBoolFromZoneProperty 'on/off' support for dml variant as well 
 - 4.1.1   - evalRemainder() updates 
+- 4.1.2   - hash property missing warning 
 
 --]]--
 
@@ -2295,6 +2296,14 @@ function dmlZone:hasProperty(theProperty)
 			local lessOp = theProperty:sub(1,-2)
 			if self:getZoneProperty(lessOp) ~= nil then 
 				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be missing a colon (':') at end", 30)
+			end
+			return false 
+		end
+		
+		if string.sub(theProperty, -1) == "#" then 
+			local lessOp = theProperty:sub(1,-2)
+			if self:getZoneProperty(lessOp) ~= nil then 
+				trigger.action.outText("*** NOTE: " .. self.name .. "'s property <" .. lessOp .. "> may be missing a hash mark ('#') at end", 30)
 			end
 			return false 
 		end

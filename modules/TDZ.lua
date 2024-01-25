@@ -1,5 +1,5 @@
 tdz = {}
-tdz.version = "1.0.2"
+tdz.version = "1.0.3"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -17,7 +17,8 @@ VERSION HISTORY
 		 helo attribute 
  1.0.2 - manual placement option 
          filters FARPs 
-
+ 1.0.3 - "manual" now defaults to false 
+ 
 --]]--
 
 tdz.allTdz = {}
@@ -89,7 +90,7 @@ function tdz.createTDZ(theZone)
 	
 	local nearestRwy = nil 
 	-- see if this is a manually placed runway 
-	if theZone:getBoolFromZoneProperty("manual", true) then
+	if theZone:getBoolFromZoneProperty("manual", false) then
 		-- construct runway from trigger zone attributes 
 		if theZone.verbose or tdz.verbose then 
 			trigger.action.outText("+++TDZ: runway for <" .. theZone.name .. "> is manually placed", 30)

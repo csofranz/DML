@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "2.0.0"
+williePete.version = "2.0.2"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -17,6 +17,8 @@ williePete.requiredLibs = {
 	2.0.0 - dmlZones, OOP
 		  - Guards for multi-unit player groups 
 		  - getFirstLivingPlayerInGroupNamed()
+	2.0.1 - added Harrier's FFAR M156 WP
+	2.0.2 - hardened playerUpdate() 
 --]]--
 
 williePete.willies = {}
@@ -28,7 +30,7 @@ williePete.blastedObjects = {} -- used when we detonate something
 
 -- recognizes WP munitions. May require regular update when new
 -- models come out. 
-williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM", "SNEB_TYPE254_H1_GREEN", "SNEB_TYPE254_H1_RED", "SNEB_TYPE254_H1_YELLOW"}
+williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM", "SNEB_TYPE254_H1_GREEN", "SNEB_TYPE254_H1_RED", "SNEB_TYPE254_H1_YELLOW", "FFAR M156 WP"}
 
 function williePete.addWillie(theWillie)
 	table.insert(williePete.willies, theWillie)
@@ -617,19 +619,23 @@ function williePete.playerUpdate()
 			-- make sure at least one unit still exists
 			local dropUnit = true 
 			local theGroup = Group.getByName(unitInfo.gName)
-			local allUnits = theGroup:getUnits()
-			for idx, theUnit in pairs(allUnits) do 
-			--local theUnit = Unit.getByName(unitInfo.name)
-				if theUnit and Unit.isExist(theUnit) and 
-				theUnit.getPlayerName and theUnit:getPlayerName() then 
-					local up = theUnit:getPoint()
-					up.y = 0
-					local isInside, dist = cfxZones.isPointInsideZone(up, theZone, theZone.checkInRange)
-					 
-					if isInside then 
-						dropUnit = false
+			if theGroup then 
+				local allUnits = theGroup:getUnits()
+				for idx, theUnit in pairs(allUnits) do 
+				--local theUnit = Unit.getByName(unitInfo.name)
+					if theUnit and Unit.isExist(theUnit) and 
+					theUnit.getPlayerName and theUnit:getPlayerName() then 
+						local up = theUnit:getPoint()
+						up.y = 0
+						local isInside, dist = cfxZones.isPointInsideZone(up, theZone, theZone.checkInRange)
+						 
+						if isInside then 
+							dropUnit = false
+						end
 					end
 				end
+			else 
+				trigger.action.outText("+++wp: strange issues with group <" .. gName .. ">, does not exist. Skipped in playerUpdate()", 30)
 			end
 			if dropUnit then 
 				-- all outside, remove from zone check-in 

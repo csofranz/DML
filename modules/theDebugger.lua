@@ -1,8 +1,8 @@
--- theDebugger 
+-- theDebugger 2.x
 debugger = {}
-debugger.version = "2.0.0"
+debugger.version = "2.1.0"
 debugDemon = {}
-debugDemon.version = "2.0.0"
+debugDemon.version = "2.1.0"
 
 debugger.verbose = false 
 debugger.ups = 4 -- every 0.25 second  
@@ -33,6 +33,13 @@ debugger.log = ""
 		  - debuggerSpawnTypes zone 
 		  - reading debuggerSpawnTypes 
 		  - removed some silly bugs / inconsistencies
+	2.1.0 - debugging code is now invoked deferred to avoid 
+	        DCS crash after exiting. Debug code now executes 
+			outside of the event code's bracket.
+			debug invocation on clone of data structure 
+			readback verification of flag set 
+			fixed getProperty() in debugger with zone 
+			
 --]]--
 
 debugger.requiredLibs = {
@@ -201,7 +208,7 @@ end
 function debugger.createDebuggerWithZone(theZone)
 	-- watchflag input trigger
 	theZone.debugInputMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
-	if theZone.hasProperty("debugTriggerMethod") then 
+	if theZone:hasProperty("debugTriggerMethod") then 
 		theZone.debugInputMethod = theZone:getStringFromZoneProperty("debugTriggerMethod", "change")
 	elseif theZone:hasProperty("inputMethod") then 
 		theZone.debugInputMethod = theZone:getStringFromZoneProperty(theZone, "inputMethod", "change")
@@ -644,7 +651,8 @@ debugDemon.splitDelimiter = " "
 debugDemon.commandTable = {} -- key, value pair for command processing per keyword
 debugDemon.keepOpen = false -- keep mark open after a successful command
 debugDemon.snapshot = {}
-
+debugDemon.activeIdx = -1 -- to detect if a window was close 
+						  -- and prevent execution of debugger 
 function debugDemon.hasMark(theString) 
 	-- check if the string begins with the sequece to identify commands 
 	if not theString then return false end
@@ -676,6 +684,7 @@ function debugDemon:onEvent(theEvent)
 	end
     
     if theEvent.id == world.event.S_EVENT_MARK_CHANGE then
+--		trigger.action.outText("debugger: Mark Change event received", 30)
 		-- when changed, the mark's text is examined for a command
 		-- if it starts with the 'mark' string ("-" by  default) it is processed
 		-- by the command processor
@@ -683,12 +692,19 @@ function debugDemon:onEvent(theEvent)
 		-- else an error is displayed and the mark remains.
 		if debugDemon.hasMark(theEvent.text) then 
 			-- strip the mark 
-			local commandString = theEvent.text:sub(1+debugDemon.markOfDemon:len())
+			local cCommand = dcsCommon.clone(theEvent.text, true)
+			local commandString = cCommand:sub(1+debugDemon.markOfDemon:len())
 			-- break remainder apart into <command> <arg1> ... <argn>
 			local commands = dcsCommon.splitString(commandString, debugDemon.splitDelimiter)
 
 			-- this is a command. process it and then remove it if it was executed successfully
-			local success = debugDemon.executeCommand(commands, theEvent)
+			local cTheEvent = dcsCommon.clone(theEvent, true) -- strip meta tables
+			local args = {commands, cTheEvent}	
+			-- defer execution for 0.1s to get out of trx bracked
+			timer.scheduleFunction(debugDemon.deferredDebug, args, timer.getTime() + 0.1)
+			debugDemon.activeIdx = cTheEvent.idx 
+			--[[--
+			local success = debugDemon.executeCommand(commands, cTheEvent) -- execute on a clone, not original 
 						
 			-- remove this mark after successful execution
 			if success then 
@@ -696,12 +712,34 @@ function debugDemon:onEvent(theEvent)
 			else 
 				-- we could play some error sound
 			end
+			--]]--
 		end 
     end 
 	
 	if theEvent.id == world.event.S_EVENT_MARK_REMOVED then
+--		trigger.action.outText("Mark Remove received, removing idx <" .. theEvent.idx .. ">.", 30)
+		debugDemon.activeIdx = nil 
     end
 end
+
+function debugDemon.deferredDebug(args)
+--	trigger.action.outText("enter deferred debug command", 30)
+--	if not debugDemon.activeIdx then 
+--		trigger.action.outText("Debugger: window was closed, debug command ignored.", 30)
+--		return 
+--	end 
+	local commands = args[1]
+	local cTheEvent = args[2]
+	local success = debugDemon.executeCommand(commands, cTheEvent) -- execute on a clone, not original 
+				
+	-- remove this mark after successful execution
+	if success then 
+		trigger.action.removeMark(cTheEvent.idx) 
+		debugDemon.activeIdx = nil 
+	else 
+		-- we could play some error sound
+	end
+end 
 
 --
 -- add / remove commands to/from vocabulary
@@ -1102,6 +1140,11 @@ function debugDemon.processSetCommand(args, event)
 	end
 	
 	debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: set flag <" .. theName .. "> to <" .. theVal .. ">" .. note, 30)
+	
+	local newVal = trigger.misc.getUserFlag(theName)
+	if theVal ~= newVal then 
+		debugger.outText("*** [" .. dcsCommon.nowString() .. "] debug: readback failure for flag <" .. theName .. ">: expected <" .. theVal .. ">, got <" .. newVal .. "!", 30)
+	end 
 	
 	return true 
 end

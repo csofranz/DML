@@ -1,37 +1,6 @@
 civAir = {}
-civAir.version = "3.0.1"
+civAir.version = "3.0.2"
 --[[--
-	1.0.0 initial version
-	1.1.0 exclude list for airfields 
-	1.1.1 bug fixes with remove flight 
-	      and betweenHubs 
-		  check if slot is really free before spawning
-		  add overhead waypoint
-	1.1.2 inAir start possible
-	1.2.0 civAir can use own config file
-	1.2.1 slight update to config file (moved active/idle)
-	1.3.0 add ability to use zones to add closest airfield to 
-	      trafficCenters or excludeAirfields
-	1.4.0 ability to load config from zone to override 
-	      all configs it finds 
-		  module check 
-		  removed obsolete civAirConfig module
-	1.5.0 process zones as in all other modules
-	      verbose is part of config zone 
-		  reading type array from config corrected
-		  massive simplifications: always between zoned airfieds
-		  exclude list and include list 
-	1.5.1 added depart only and arrive only options for airfields 
-	1.5.2 fixed bugs inb verbosity 
-	2.0.0 dmlZones 
-		  inbound zones 
-		  outbound zones 
-		  on start location is randomizes 30-70% of the way
-		  guarded 'no longer exist' warning for verbosity 
-		  changed unit naming from -civA to -GA
-		  strenghtened guard on testing against free slots for other units
-		  flights are now of random neutral countries 
-		  maxFlights synonym for maxTraffic
 	3.0.0 liveries support
 		  default liveries for Yak-50 (main test case)
 		  default liveries for C-130, c-17A, IL-76MD, An-30M, An-26B
@@ -45,6 +14,7 @@ civAir.version = "3.0.1"
 	3.0.1 protest option, on by default
 		  protest action 
 		  spawning now works correctly for groupType
+	3.0.2 clean-up
 
 --]]--
 

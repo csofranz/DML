@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.0"
+dcsCommon.version = "3.0.1"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -8,6 +8,7 @@ dcsCommon.version = "3.0.0"
 	   - new pointInDirectionOfPointXYY()
 	   - createGroundGroupWithUnits now supports liveries
 	   - new getAllExistingPlayersAndUnits()
+3.0.1  - clone: better handling of string type 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1187,6 +1188,9 @@ dcsCommon.version = "3.0.0"
 					copy = tmp 
 				end
 			end
+		elseif orig_type == "string" then 
+			local tmp = ""
+			copy = tmp .. orig 
 		else -- number, string, boolean, etc
 			copy = orig
 		end

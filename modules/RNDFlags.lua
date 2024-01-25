@@ -12,27 +12,7 @@ rndFlags.requiredLibs = {
 	Copyright 2022 by Christian Franz and cf/x 
 	
 	Version History
-	1.0.0 - Initial Version 
-	1.1.0 - DML flag conversion:
-				flagArrayFromString: strings OK, trim 
-				remove pollFlag
-				pollFlag from cfxZones, include zone 
-				randomBetween for pollSize
-				pollFlag to bang done with inc
-				getFlagValue in update 
-				some code clean-up
-				rndMethod synonym 
-	1.2.0 - Watchflag integration
-	1.3.0 - DML simplification: RND!
-	        zone-local verbosity 
-	1.3.1 - 'done+1' --> 'done!', using rndMethod instead of 'inc'
-	      - added zonal verbosity 
-		  - added 'rndDone!' flag 
-		  - rndMethod defaults to "inc"
-	1.3.2 - moved flagArrayFromString to dcsCommon
-	      - minor clean-up
-	1.4.0 - persistence 
-	1.4.1 - a little less verbosity 
+
 	2.0.0 - dmlZones, OOP
 
 --]]

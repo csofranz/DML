@@ -12,6 +12,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - sceneryObject detection improvements 
 		  - DCS 2.9 safe 
 	3.0.1 - cleanup
+	3.0.2 - interface with ObjectDestructDetector for scoring scenery objects
 	
 --]]--
 
@@ -208,8 +209,9 @@ function cfxPlayerScore.cat2BaseScore(inCat)
 	return 1 
 end
 
-function cfxPlayerScore.object2score(inVictim) -- does not have group
-	if not inVictim then return 0 end 
+function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
+	if not inVictim then return 0 end
+	if not killSide then killSide = -1 end 
 	local inName = inVictim:getName()
 	if dcsCommon.isSceneryObject(inVictim) then 
 		local desc = inVictim:getDesc() 
@@ -217,6 +219,12 @@ function cfxPlayerScore.object2score(inVictim) -- does not have group
 		-- same as object destruct detector to 
 		-- avoid ID changes 
 		inName = desc.typeName 
+		if cfxObjectDestructDetector then 
+			-- ask ODD if it knows the object and what score was 
+			-- awarded for a kill from that side 
+			local objectScore = cfxObjectDestructDetector.playerScoreForKill(inVictim, killSide)
+			if objectScore then return objectScore end 
+		end
 	end
 	if not inName then return 0 end 
 	if type(inName) == "number" then 
@@ -744,7 +752,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	if wasBuilding then 
 		-- these objects have no coalition; we simply award the score if 
 		-- it exists in look-up table. 
-		local staticScore = cfxPlayerScore.object2score(victim)
+		local staticScore = cfxPlayerScore.object2score(victim, killSide)
 		if staticScore > 0 then 
 			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
 			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
@@ -754,8 +762,10 @@ function cfxPlayerScore.killDetected(theEvent)
 	end
 
 	-- was it fratricide?
+	-- if we get here, it CANT be a scenery object 
+	-- but can be a static object, and stO have a coalition
 	local vicSide = victim:getCoalition()
-	local fraternicide = killSide == vicSide
+	local fraternicide = (killSide == vicSide)
 	local vicDesc = victim:getTypeName()
 	local scoreMod = 1 -- start at one 
 
@@ -767,7 +777,7 @@ function cfxPlayerScore.killDetected(theEvent)
 		-- static objects have no group 		
 		local staticName = victim:getName() -- on statics, this returns 
 		-- name as entered in TOP LINE
-		local staticScore = cfxPlayerScore.object2score(victim)
+		local staticScore = cfxPlayerScore.object2score(victim, killSide)
 
 		if staticScore > 0 then 
 			-- this was a named static, return the score - unless our own
@@ -1488,6 +1498,7 @@ score zones
 	- zones outside of which no scoring counts, but feats are still ok 
 	
 - add take off feats
+- integrate with objectDestructDetector
 
 can be extended with other, standalone feat modules that follow the 
 same pattern, e.g. enter a zone, detect someone 

@@ -1,34 +1,26 @@
 airfield = {}
-airfield.version = "2.0.0"
+airfield.version = "2.1.1"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
 }
-airfield.myAirfields = {} -- indexed by name 
+airfield.myAirfields = {} -- indexed by af name, zone that links to it 
 airfield.gracePeriod = 3
-airfield.allAirfields = {} -- inexed by name 
+airfield.allAirfields = {} -- inexed by af name, db entries: base, cat  
 
 --[[--
 	This module generates signals when the nearest airfield changes hands, 
 	can force the coalition of an airfield, and always provides the 
 	current owner as a value
 	
-	Version History
-	1.0.0 - initial release 
-	1.1.0 - added 'fixed' attribute
-		  - added 'farps' attribute to individual zones 
-		  - allow zone.local farps designation 
-	      - always checks farp cap events 
-		  - added verbosity
-	1.1.1 - GC grace period correction of ownership 
-	1.1.2 - 'show' attribute 
-			line color attributes per zone 
-			line color defaults in config
+	Version History^
 	2.0.0 - show all airfields option
 		  - fully reworked show options
 		  - unmanaged airfields are automatically updated 
 		  - full color support
 		  -- support for FARPS as well
+	2.1.0 - added support for makeNeutral? 
+	2.1.1 - bug fixing for DCS 2.9x airfield retrofit 
 	
 --]]--
 
@@ -39,7 +31,9 @@ function airfield.collectAll()
 	local dropped = 0 
 	for idx, aBase in pairs(allBases) do 
 		local entry = {}
-		local cat = Airbase.getCategory(aBase) -- DCS 2.9 hardened
+		--local cat = Airbase.getCategory(aBase) -- DCS 2.9 hardened
+		-- ho! dcs 2.9.x retrofit screwed with Airfield.getCategory.
+		local cat = aBase:getDesc().category
 		-- cats: 0 = airfield, 1 = farp, 2 = ship 
 		if (cat == 0) or (cat == 1) then 	
 			local name = aBase:getName()
@@ -50,6 +44,7 @@ function airfield.collectAll()
 			count = count + 1
 		else 
 			dropped = dropped + 1
+--			trigger.action.outText("***dropped airbase <" .. aBase:getName() .. ">, cat = <" .. cat .. ">", 30)
 		end
 	end
 	if airfield.verbose then 
@@ -96,6 +91,11 @@ function airfield.createAirFieldFromZone(theZone)
 	if theZone:hasProperty("makeBlue?") then 
 		theZone.makeBlue = theZone:getStringFromZoneProperty("makeBlue?", "<none>")
 		theZone.lastMakeBlue = trigger.misc.getUserFlag(theZone.makeBlue)
+	end
+	
+	if theZone:hasProperty("makeNeutral?") then 
+		theZone.makeNeutral = theZone:getStringFromZoneProperty("makeNeutral?", "<none>")
+		theZone.lastMakeNeutral = trigger.misc.getUserFlag(theZone.makeNeutral)
 	end
 	
 	if theZone:hasProperty("autoCap?") then 
@@ -146,8 +146,11 @@ function airfield.createAirFieldFromZone(theZone)
 
 	-- now mark this zone as handled 
 	local entry = airfield.allAirfields[theZone.afName]
-	entry.linkedTo = theZone -- only remember last, but that's enough.
-	
+	if not entry then 
+		trigger.action.outText("+++airF: WARNING - unlinked airfield <" .. theZone.afName .. "> for zone <" .. theZone.name .. ">", 30)
+	else 
+		entry.linkedTo = theZone -- only remember last, but that's enough.
+	end
 end
 
 function airfield.markAirfieldOnMap(theAirfield, lineColor, fillColor)
@@ -246,6 +249,10 @@ function airfield.airfieldCaptured(theBase)
 		airfield.untendedCapture(bName, theBase)
 		return 
 	end -- not attached to a zone 
+	if theZone.verbose or airfield.verbose then 
+		trigger.action.outText("+++airF: capturing <" .. bName .. "> for zone <" .. theZone.name .. ">", 30)
+	end
+	
 	local newCoa = theBase:getCoalition()
 	theZone.owner = newCoa 
 	
@@ -323,6 +330,21 @@ function airfield.update()
 				airfield.airfieldCaptured(theAirfield)
 			end 
 		end
+
+		if theZone.makeNeutral and theZone:testZoneFlag(theZone.makeNeutral, theZone.triggerMethod, "lastMakeNeutral") then 
+			if theZone.verbose or airfield.verbose then 
+				trigger.action.outText("+++airF: 'makeNeutral' triggered for airfield <" .. afName .. "> in zone <" .. theZone:getName() .. ">", 30)
+			end
+			if theAirfield:autoCaptureIsOn() then 
+				-- turn off autoCap 
+				airfield.assumeControl(theZone)
+			end
+			theAirfield:setCoalition(0) -- make it blue 
+			if theZone.owner ~= 0 then -- only send cap event when capped
+				airfield.airfieldCaptured(theAirfield) -- 0 cap will not cause any signals, but we do this anyway
+			end 
+		end
+
 		
 		if theZone.autoCap and theZone:testZoneFlag(theZone.autoCap, theZone.triggerMethod, "lastAutoCap") then 
 			if theAirfield:autoCaptureIsOn() then 

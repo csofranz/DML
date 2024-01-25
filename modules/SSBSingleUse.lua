@@ -158,3 +158,13 @@ if not cfxSSBSingleUse.start()then
 	trigger.action.outText("SSB Single Use failed to start up.", 30)
 	cfxSSBSingleUse = nil
 end
+
+
+--[[-- 
+	limited use rebuild
+	have planes inside a zone to regulate:
+	numUp attribute for number of lives. defaults to one
+    reinforce? to make availabe again, resets numLeft to numUp - warning: check with other inhibitors
+	onStart = no will inhibit at start 
+	exempt - limits to not apply to planes in this zone. same as -1 for numUp
+--]]--

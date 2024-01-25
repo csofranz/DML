@@ -1,5 +1,5 @@
 factoryZone = {}
-factoryZone.version = "3.0.0"
+factoryZone.version = "3.1.0"
 factoryZone.verbose = false 
 factoryZone.name = "factoryZone" 
 
@@ -11,6 +11,12 @@ factoryZone.name = "factoryZone"
 	  - use maxRadius from zone for spawning to support quad zones 
 3.0.0 - support for liveries via "factoryLiveries" zone 
       - OOP dmlZones
+3.1.0 - redD!, blueD!
+	  - redP!, blueP! 
+	  - method 
+	  - productionTime config synonyme
+	  - defendMe? attribute 
+	  - triggered 'shocked' mode via defendMe 
 
 --]]--
 factoryZone.requiredLibs = {
@@ -104,16 +110,55 @@ function factoryZone.addFactoryZone(aZone)
 		aZone.factoryTriggerMethod = aZone:getStringFromZoneProperty( "factoryTriggerMethod", "change")
 	end
 	
+	aZone.factoryMethod = aZone:getStringFromZoneProperty("factoryMethod", "inc")
+	if aZone:hasProperty("method") then 
+		aZone.factoryMethod = aZone:getStringFromZoneProperty("method", "inc")
+	end 
+	
+	if aZone:hasProperty("redP!") then 
+		aZone.redP = aZone:getStringFromZoneProperty("redP!", "none")
+	end 
+	if aZone.redP and aZone.attackersRED ~= "none" then 
+		trigger.action.outText("***WARNING: factory <" .. aZone.name .. "> has RED production and uses 'redP!'", 30)
+	end
+
+	if aZone:hasProperty("blueP!") then 
+		aZone.blueP = aZone:getStringFromZoneProperty("blueP!", "none")
+	end
+	if aZone.blueP and aZone.attackersBLUE ~= "none" then 
+		trigger.action.outText("***WARNING: factory <" .. aZone.name .. "> has BLUE production and uses 'blueP!'", 30)
+	end
+	
+	if aZone:hasProperty("redD!") then 
+		aZone.redD = aZone:getStringFromZoneProperty("redD!", "none")
+	end
+	if aZone.redD and aZone.defendersRED ~= "none" then 
+		trigger.action.outText("***WARNING: factory <" .. aZone.name .. "> has RED defenders and uses 'redD!'", 30)
+	end 
+	
+	
+	if aZone:hasProperty("blueD!") then 
+		aZone.blueD = aZone:getStringFromZoneProperty("blueD!", "none")
+	end
+	if aZone.blueD and aZone.defendersBLUE ~= "none" then 
+		trigger.action.outText("***WARNING: factory <" .. aZone.name .. "> has BLUE defenders and uses 'blueD!'", 30)
+	end
+	
+	if aZone:hasProperty("defendMe?") then 
+		aZone.defendMe = aZone:getStringFromZoneProperty("defendMe?", "none")
+		aZone.lastDefendMeValue = trigger.misc.getUserFlag(aZone.defendMe)
+	end 
+	
 	factoryZone.zones[aZone.name] = aZone 
 	factoryZone.verifyZone(aZone)
 end
 
 function factoryZone.verifyZone(aZone)
 	-- do some sanity checks
-	if not cfxGroundTroops and (aZone.attackersRED ~= "none" or aZone.attackersBLUE ~= "none") then 
-		trigger.action.outText("+++factZ: " .. aZone.name .. " attackers need cfxGroundTroops to function", 30)
-	end
-	
+--	if not cfxGroundTroops and (aZone.attackersRED ~= "none" or aZone.attackersBLUE ~= "none") then 
+	-- now can also bang on flags, no more verification 
+	-- unless we want to beef them up 
+--	end
 end
 
 function factoryZone.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation)
@@ -183,6 +228,7 @@ end
 --
 
 function factoryZone.sendOutAttackers(aZone)
+
 	-- sanity check: never done for neutral zones 
 	if aZone.owner == 0 then 
 		if aZone.verbose or factoryZone.verbose then 
@@ -193,16 +239,31 @@ function factoryZone.sendOutAttackers(aZone)
 	
 	-- only spawn if there are zones to attack
 	if not cfxOwnedZones.enemiesRemaining(aZone) then 
-		if factoryZone.verbose then 
+		if aZone.verbose or factoryZone.verbose then 
 			trigger.action.outText("+++factZ - no enemies, resting ".. aZone.name, 30)
 		end
 		return 
 	end
 
-	if factoryZone.verbose then 
+	if factoryZone.verbose or aZone.verbose then 
 		trigger.action.outText("+++factZ - attack cycle for ".. aZone.name, 30)
 	end
 
+	-- bang on xxxP!
+	if aZone.owner == 1 and aZone.redP then 
+		if aZone.verbose or factoryZone.verbose then
+			trigger.action.outText("+++factZ: polling redP! <" .. aZone.redP .. "> for factrory <" .. aZone.name .. ">")
+		end 
+		aZone:pollFlag(aZone.redP, aZone.factoryMethod)
+	end
+
+	if aZone.owner == 2 and aZone.blueP then 
+		if aZone.verbose or factoryZone.verbose then
+			trigger.action.outText("+++factZ: polling blueP! <" .. aZone.blueP .. "> for factrory <" .. aZone.name .. ">")
+		end 
+		aZone:pollFlag(aZone.blueP, aZone.factoryMethod)
+	end
+	
 	-- step one: get the attackers 
 	local attackers = aZone.attackersRED;
 	if (aZone.owner == 2) then attackers = aZone.attackersBLUE end
@@ -248,8 +309,23 @@ function factoryZone.repairDefenders(aZone)
 	if (aZone.owner == 2) then defenders = aZone.defendersBLUE end
 	local unitTypes = {} -- build type names
 	
-	-- if none, we are done
-	if defenders == "none" then return end 
+	-- if none, we are done, save for the outputs 
+	if (not defenders) or (defenders == "none") then 
+		if aZone.owner == 1 and aZone.redD then 
+			if aZone.verbose or factoryZone.verbose then
+				trigger.action.outText("+++factZ: polling redD! <" .. aZone.redD .. "> for repair factory <" .. aZone.name .. ">", 30)
+			end 
+			aZone:pollFlag(aZone.redD, aZone.factoryMethod)
+		end
+		
+		if aZone.owner == 2 and aZone.blueD then 
+			if aZone.verbose or factoryZone.verbose then
+				trigger.action.outText("+++factZ: polling blueD! <" .. aZone.blueD .. "> for repair factory <" .. aZone.name .. ">", 30)
+			end 
+			aZone:pollFlag(aZone.blueD, aZone.factoryMethod)
+		end
+		return 
+	end 
 
 	-- split theTypes into an array of types	
 	allTypes = dcsCommon.trimArray(
@@ -308,14 +384,32 @@ end
 
 function factoryZone.spawnDefenders(aZone)
 	-- sanity check: never done for non-neutral zones 
+	if aZone.verbose or factoryZone.verbose then 
+		trigger.action.outText("+++factZ: starting defender cycle for <" .. aZone.name .. ">", 30)
+	end
+
 	if aZone.owner == 0 then 
 		if aZone.verbose or factoryZone.verbose then 
 			trigger.action.outText("+++factZ: spawnDefenders invoked for NEUTRAL zone <" .. aZone.name .. ">", 30)
 		end
 		return 
 	end
-	
+
+	-- bang! on xxxD!	
 	local defenders = aZone.defendersRED;
+	if aZone.owner == 1 and aZone.redD then 
+		if aZone.verbose or factoryZone.verbose then
+			trigger.action.outText("+++factZ: polling redD! <" .. aZone.redD .. "> for factrory <" .. aZone.name .. ">", 30)
+		end 
+		aZone:pollFlag(aZone.redD, aZone.factoryMethod)
+	end
+	
+	if aZone.owner == 2 and aZone.blueD then 
+		if aZone.verbose or factoryZone.verbose then
+			trigger.action.outText("+++factZ: polling blueD! <" .. aZone.blueD .. "> for factory <" .. aZone.name .. ">", 30)
+		end 
+		aZone:pollFlag(aZone.blueD, aZone.factoryMethod)
+	end
 	
 	if (aZone.owner == 2) then defenders = aZone.defendersBLUE end
 	-- before we spawn new defenders, remove the old ones
@@ -388,7 +482,7 @@ function factoryZone.updateZoneProduction(aZone)
 	   aZone.defenders then 
 		-- we have defenders
 		if aZone.defenders:isExist() then
-			-- isee if group was damaged 
+			-- see if group was damaged 
 			if not aZone.lastDefenders then
 				-- fresh group, probably from persistence, needs init 
 				aZone.lastDefenders = -1 
@@ -458,7 +552,7 @@ function factoryZone.updateZoneProduction(aZone)
 		if timer.getTime() > aZone.timeStamp + factoryZone.repairTime then 
 			aZone.timeStamp = timer.getTime()
 			-- wait's up, repair one defender, then check if full strength
-			factoryZone.repairDefenders(aZone)
+			factoryZone.repairDefenders(aZone) -- will also bang on redD and blueD if present 
 			-- see if we are full strenght and if so go to attack, else set timer to reair the next unit
 			if aZone.defenders and aZone.defenders:isExist() and aZone.defenders:getSize() >= aZone.defenders:getInitialSize() then
 				-- we are at max size, time to produce some attackers
@@ -467,7 +561,14 @@ function factoryZone.updateZoneProduction(aZone)
 				aZone.timeStamp = timer.getTime()
 				if factoryZone.verbose then 
 					trigger.action.outText("+++factZ: State " .. aZone.state .. " to " .. nextState .. " for " .. aZone.name, 30)
-				end
+				end 
+			elseif (aZone.redD or aZone.blueD) then 
+				-- we start attacking cycle for out signal 
+				nextState = "attacking"
+				aZone.timeStamp = timer.getTime()
+				if factoryZone.verbose then 
+					trigger.action.outText("+++factZ: progessing tate " .. aZone.state .. " to " .. nextState .. " for " .. aZone.name .. " for redD/blueD", 30)
+				end 
 			end
 
 		end
@@ -540,6 +641,19 @@ function factoryZone.update()
 		if theZone.activateFlag and cfxZones.testZoneFlag(theZone, theZone.activateFlag, theZone.factoryTriggerMethod, "lastActivateValue") then
 			theZone.paused = false 
 		end
+		
+		-- see if zone external defendMe was polled to bring it to 
+		-- shoked state 
+		if theZone.defendMe and theZone:testZoneFlag(theZone.defendMe, theZone.factoryTriggerMethod, "lastDefendMeValue") then 
+			if theZone.verbose or factoryZone.verbose then 
+				trigger.action.outText("+++factZ: setting factory <" .. theZone.name .. "> to shocked/produce defender mode", 30)
+			end 
+			theZone.state = "shocked"
+			theZone.timeStamp = timer.getTime()
+			theZone.lastDefenders = 0
+			theZone.defenders = nil -- nil, but no delete!
+		end
+		
 		-- do production for this zone 
 		factoryZone.updateZoneProduction(theZone)
 	end -- iterating all zones 
@@ -677,6 +791,9 @@ function factoryZone.readConfigZone(theZone)
 	factoryZone.verbose = theZone.verbose
 	factoryZone.defendingTime = theZone:getNumberFromZoneProperty( "defendingTime", 100)
 	factoryZone.attackingTime = theZone:getNumberFromZoneProperty( "attackingTime", 300)
+	if theZone:hasProperty("productionTime") then 
+		factoryZone.attackingTime = theZone:getNumberFromZoneProperty( "productionTime", 300)
+	end 
 	factoryZone.shockTime = theZone:getNumberFromZoneProperty("shockTime", 200)
 	factoryZone.repairTime = theZone:getNumberFromZoneProperty( "repairTime", 200)
 	factoryZone.targetZones = "OWNED"

@@ -1,70 +1,9 @@
 csarManager = {}
-csarManager.version = "2.3.2"
-csarManager.verbose = false 
+csarManager.version = "3.0.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
- - 1.0.0 initial version 
- - 1.0.1 - smoke optional 
-	     - airframeCrashed method for airframe manager 
-		 - removed '(downed )' when re-picked up 
-		 - fixed oclock
- - 1.0.2 - hover retrieval 
- - 1.0.3 - corrected a bug in oclock during hovering 
- - 1.0.4 - now correctly allocates pilot to coalition via dcscommon.coalition2county
- - 1.1.0 - pilot adds weight to unit 
-         - module check 
- - 2.0.0 - weight managed via cargoSuper
- - 2.0.1 - getCSARBaseforZone()
-         - check if zone landed in has owner attribute 
-		   to provide compatibility with owned zones, 
-		   FARPZones etc that keep zone.owner up to date 
- - 2.0.2 - use parametric csarManager.hoverAlt
-		 - use hoverDuration
- - 2.0.3 - corrected bug in hoverDuration
- - 2.0.4 - guard in createCSARMission for cfxCommander 
- - 2.1.0 - startCSAR?
-		 - deferrable missions 
-		 - verbose 
-		 - ups 
-		 - useSmoke
-		 - smokeColor 
-		 - reworked smoking the loc
-		 - config zone 
-		 - csarRedDelivered
-		 - csarBlueDelivered
-		 - finally fixed smoke performance bug 
-		 - csarManager.vectoring optional 
- - 2.1.1 - zone-local verbosity
- - 2.1.2 - 'downed' machinations (paranthese)S
-         - verbosity 
- - 2.1.3 - theMassObject now local 
-		 - winch pickup now also adds weight so they can be returned 
-		 - made some improvements to performance by making vars local 
- - 2.2.0 - interface for autoCSAR 
-			createDownedPilot() - added existingUnit option 
-			createCSARMissionData() - added existinUnit option
-		 - when no config zone, runs through empty zone 
-		 - actionSound 
-		 - integration with playerScore 
-		 - score global and per-mission 
-		 - isCSARTarget API 
- - 2.2.1 - added troopCarriers attribute to config
-		 - passes own troop carriers to dcsCommon.isTroopCarrier()
- - 2.2.2 - enable CSAR missions in water 
-         - csar name defaults to zone name 
-		 - better randomization of pilot's point in csar mission, 
-		   supports quad zone 
- - 2.2.3 - better support for red/blue 
-		 - allow neutral pick-up 
-		 - directions to closest safe zone 
-		 - CSARBASE attribute now carries coalition
-		 - deprecated coalition attribute 
- - 2.2.4 - CSAR attribute value defaults name 
-		 - start? attribute for CSAR as startCSAR? synonym
- - 2.2.5 - manual freq for CSAR was off by a factor of 10 - Corrected
- - 2.2.6 - useFlare, now also launches a flare in addition to smoke 
-		 - zone testing uses getPoint for zones, supports moving csar zones
+
  - 2.3.0 - dmlZones 
 		 - onRoad attribute for CSAR mission Zones
 		 - rndLoc support 
@@ -74,32 +13,27 @@ csarManager.ups = 1
 		 - offset zone on randomized soldier 
 		 - smokeDist 
  - 2.3.2 - DCS 2.9 getCategory() fix 
+ - 3.0.0 - moved mission creation out of update loop into own 
+		 - removed cfxPlayer dependency
+		 - new event manager 
+		 - no longer single-proccing pilots 
+		 - can also handle aircraft - isTroopCarrier 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
+	INTEGRATES WITH LIMITE AIRFRAMES IF INSTALLED 
 		 
 --]]--
 -- modules that need to be loaded BEFORE I run 
 csarManager.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	"cfxZones", -- zones management for CSAR and CSAR Mission zones
-	"cfxPlayer", -- player monitoring and group monitoring 
 	"nameStats", -- generic data module for weight 
 	"cargoSuper",
---	"cfxCommander", -- needed only if you want to hand-create CSAR missions
 }
-
-
---
--- OPTIONS
---
-csarManager.useSmoke = true  
-csarManager.smokeColor = 4 -- when using smoke
-
 
 -- unitConfigs contain the config data for any helicopter
 -- currently in the game. The Array is indexed by unit name 
 csarManager.unitConfigs = {}
-csarManager.myEvents = {3, 4, 5} -- 3 = take off, 4 = land, 5 = crash
 
 --
 -- CASR MISSION
@@ -156,16 +90,11 @@ function csarManager.createDownedPilot(theMission, existingUnit)
 								aLocation.x, 
 								aLocation.z, 
 								-aHeading + 1.5) -- + 1.5 to turn inwards
-		
-		-- WARNING:
-		-- coalition.addGroup takes the COUNTRY of the group, and derives the 
-		-- coalition from that. So if mission.sie is 0, we use UN, if it is 1 (red) it
-		-- is joint red, if 2 it is joint blue 
-		local theSideCJTF = dcsCommon.coalition2county(theMission.side) -- get the correct county CJTF 
+
+		local theSideCJTF = dcsCommon.getACountryForCoalition(theMission.side)
 		theMission.group = coalition.addGroup(theSideCJTF, 
 											  Group.Category.GROUND, 
 											  theBoyGroup)
-		
 		if theBoyGroup then 
 
 		else 
@@ -176,10 +105,10 @@ function csarManager.createDownedPilot(theMission, existingUnit)
 	end
 	
 	-- we now use commands to send radio transmissions
-	local ADF = 20 + math.random(90)
+	local ADF = 20 + math.random(150) -- create a random number between 20 and 110 --> 200'000 .. 1'700'000 KHz = 200KHz .. 1'700 KHz 
 	if theMission.freq then ADF = theMission.freq else theMission.freq = ADF end 
 	local theCommands = cfxCommander.createCommandDataTableFor(theMission.group)
-	local cmd = cfxCommander.createSetFrequencyCommand(ADF) -- freq in 10000 Hz
+	local cmd = cfxCommander.createSetFrequencyCommand(ADF) -- freq in 10'000 Hz
 	cfxCommander.addCommand(theCommands, cmd)
 	cmd = cfxCommander.createTransmissionCommand(csarManager.beaconSound)
 	cfxCommander.addCommand(theCommands, cmd)
@@ -259,7 +188,7 @@ end
 -- UNIT CONFIG 
 --
 function csarManager.resetConfig(conf)
-	-- reset only ovberwrites mission-relevant data
+	-- reset only overwrites mission-relevant data
 	conf.troopsOnBoard = {} -- number of rescued missions
 	local myName = conf.name
 	cargoSuper.removeAllMassForCargo(myName, "Evacuees") -- will allocate new empty table 
@@ -309,47 +238,17 @@ end
 --
 -- E V E N T   H A N D L I N G 
 -- 
-function csarManager.isInteresting(eventID) 
-	-- return true if we are interested in this event, false else 
-	for key, evType in pairs(csarManager.myEvents) do 
-		if evType == eventID then return true end
-	end
-	return false 
-end
-
-function csarManager.preProcessor(event)
+function csarManager:onEvent(event)
 	-- make sure it has an initiator
-	if not event.initiator then return false end -- no initiator 
+	if not event.initiator then return end  
 	local theUnit = event.initiator 
-	if not theUnit.getDesc then return fase end -- not a unit 
-	local cat = theUnit:getDesc().category --theUnit:getCategory()
-	if cat ~= 1 then -- Unit.Category.HELICOPTER 
-		return false 
-	end
-	
-	--trigger.action.outText("+++csar: event " .. event.id .. " for cat = " .. cat .. " (helicopter?)  unit " .. theUnit:getName(), 30)
-	
-	if not cfxPlayer.isPlayerUnit(theUnit) then 
-		--trigger.action.outText("+++csar: rejected event: " .. theUnit:getName() .. " not a player helo", 30)
-		return false 
-	end -- not a player unit
-	return csarManager.isInteresting(event.id) 
-end
+		
+	if not dcsCommon.isPlayerUnit(theUnit) then return end -- not a player unit
 
-function csarManager.postProcessor(event)
-	-- don't do anything for now
-end
+	-- only proceed if troop carrier (no more helo checks, all troop carriers, so osprey and harrier can be used if so desired)
+	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end 
 
-function csarManager.somethingHappened(event)
-	-- when this is invoked, the preprocessor guarantees that
-	-- it's an interesting event
-	-- unit is valid and player 
-	-- airframe category is helicopter 
-	local theUnit = event.initiator
 	local ID = event.id
-	
-	local myType = theUnit:getTypeName()
-	
 	if ID == 4 then  -- landed
 		csarManager.heloLanded(theUnit)
 	end
@@ -360,17 +259,18 @@ function csarManager.somethingHappened(event)
 	
 	if ID == 5 then -- crash 
 		csarManager.heloCrashed(theUnit)
+	end	
+	
+	if ID == 15 then -- player helicopter birth 
+		-- we need to set up comms for this unit 
+		csarManager.setCommsMenu(theUnit)
 	end
 	
-	csarManager.setCommsMenu(theUnit)
 end
 
 --
---
 -- CSAR LANDED
 --
---
-
 function csarManager.successMission(who, where, theMission)
 	-- who is 
 	-- where is 
@@ -397,7 +297,6 @@ function csarManager.successMission(who, where, theMission)
 	
 	-- now call callback for coalition side 
 	-- callback has format callback(coalition, success true/false, numberSaved, descriptionText)
-	
 	csarManager.invokeCallbacks(theMission.side, true, 1, "success")
 
 	trigger.action.outSoundForCoalition(theMission.side, csarManager.actionSound) -- "Quest Snare 3.wav")
@@ -491,13 +390,11 @@ function csarManager.heloLanded(theUnit)
 					conf.troopsOnBoard = {} -- empty out troops on board 
 					-- we do *not* return so we can pick up troops on 
 					-- a CSARBASE if they were dropped there
-				
 				else
 					if csarManager.verbose or base.zone.verbose then 
 						trigger.action.outText("+++csar: touchdown of <" .. myName .. "> occured outside of csar zone <" .. base.zone.name .. ">", 30)
 					end
 				end
-				
 			else -- not on my side 
 				if csarManager.verbose or base.zone.verbose then 
 					trigger.action.outText("+++csar: base <" .. base.zone.name .. "> is on side <" .. currentBaseSide .. ">, which is not on my side <" .. mySide .. ">.", 30)
@@ -930,46 +827,6 @@ function csarManager.directions(args)
 	trigger.action.outTextForGroup(conf.id, report, 30)
 	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)	
 end
---
--- Player event callbacks
---
-function csarManager.playerChangeEvent(evType, description, player, data)
-	if evType == "newGroup" then 
-		local theUnit = data.primeUnit
-		if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end 
-		
-		csarManager.setCommsMenu(theUnit) -- allocates new config
---		trigger.action.outText("+++csar: added " .. theUnit:getName() .. " to comms menu", 30)
-		return 
-	end
-	
-	if evType == "removeGroup" then 
---		trigger.action.outText("+++csar: a group disappeared", 30)
-		local conf = csarManager.getConfigForUnitNamed(data.primeUnitName)
-		if conf then 
-			csarManager.removeCommsFromConfig(conf)
-		end
-		return
-	end
-	
-	if evType == "leave" then 
-		local conf = csarManager.getConfigForUnitNamed(player.unitName)
-		if conf then 
-			csarManager.resetConfig(conf)
-		end
-	end
-	
-	if evType == "unit" then 
-		-- player changed units. almost never in MP, but possible in solo
-		-- because of 1 seconds timing loop 
-		-- will result in a new group appearing and a group disappearing, so we are good,
-		-- except we need to reset the conf so no troops are carried any longer
-		local conf = csarManager.getConfigForUnitNamed(data.oldUnitName) 
-		if conf then 
-			csarManager.resetConfig(conf)
-		end
-	end
-end
 
 --
 -- CSAR Bases
@@ -1056,6 +913,10 @@ function csarManager.launchFlare(args)
 	trigger.action.signalFlare(loc, color, 0)
 end
 
+
+-- WE ASSUME MISSIONS AREN'T TOO CLOSE TOGETHER TO 
+-- MESS UP MESSAGING OR PICKUP 
+-- if they are less than 2d apart, they can crosstalk each other 
 function csarManager.update() -- every second
 	-- schedule next invocation
 	timer.scheduleFunction(csarManager.update, {}, timer.getTime() + 1/csarManager.ups)
@@ -1065,147 +926,161 @@ function csarManager.update() -- every second
 
 	-- now scan through all helo groups and see if they are close to a 
 	-- CSAR zone and initiate the help sequence 
-	local allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
-	-- contains per group a player record, use prime unit to access player's unit 
-	for gname, pgroup in pairs(allPlayerGroups) do 
-		local aUnit = pgroup.primeUnit --		get prime unit of that group
-		if aUnit:isExist() and aUnit:inAir() then -- exists and is flying 
+--	local allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
+	local allPlayerUnits = dcsCommon.getAllExistingPlayersAndUnits() -- indexed by player name
+--old	-- contains per group a player record, use prime unit to access player's unit 
+	for pname, aUnit in pairs(allPlayerUnits) do 
+		if --aUnit:isExist() and 
+		  aUnit:inAir() and 
+		  dcsCommon.isTroopCarrier(aUnit, csarManager.troopCarriers)
+		  then -- troop carrier and is flying 
 			local uPoint = aUnit:getPoint()
 			local uName = aUnit:getName()
 			local uGroup = aUnit:getGroup()
 			local uID = uGroup:getID()
 			local uSide = aUnit:getCoalition()
 			local agl = dcsCommon.getUnitAGL(aUnit)
-			if dcsCommon.isTroopCarrier(aUnit, csarManager.troopCarriers) then 
-				-- scan through all available csar missions to see if we are close 
-				-- enough to trigger comms 
-				for idx, csarMission in pairs (csarManager.openMissions) do
-					-- check if we are inside trigger range on the same side
-					local mp = cfxZones.getPoint(csarMission.zone, true)
-					local d = dcsCommon.distFlat(uPoint, mp)
-					if ((uSide == csarMission.side) or (csarMission.side == 0) )
-					and (d < csarManager.rescueTriggerRange) then 
-						-- we are in trigger distance. if we did not notify before
-						-- do it now 
-						if not dcsCommon.arrayContainsString(csarMission.messagedUnits, uName) then 
-							-- radio this unit with oclock and tell it they are in 2k range 
-							-- also note if LZ is hot 
-							local ownHeading = dcsCommon.getUnitHeadingDegrees(aUnit)
-							local oclock = dcsCommon.clockPositionOfARelativeToB(csarMission.zone.point, uPoint, ownHeading) .. " o'clock"
-							local msg = "\n" .. uName ..", " .. csarMission.name .. ". We can hear you, check your " .. oclock 
-							if csarManager.useSmoke then msg = msg .. " - popping smoke" end
-							if csarManager.useFlare then 
-								if csarManager.useSmoke then 
-									msg = msg .. " and will launch flare in a few seconds"
-								else 
-									msg = msg .. " - preparing flare"
-								end
-								-- schedule flare launch in 5-10 seconds
-								local args = {}
-								args.loc = mp 
-								args.color = csarManager.flareColor
-								args.uID = uID
-								timer.scheduleFunction(csarManager.launchFlare, args, timer.getTime() + math.random(5))
-							end
-							msg = msg .. "."
-
-							if csarMission.isHot then 
-								msg = msg .. " Be advised: LZ is hot."
-							end
-							msg = msg .. "\n"
-							trigger.action.outTextForGroup(uID, msg, 30)
-							trigger.action.outSoundForGroup(uID, csarManager.actionSound) -- "Quest Snare 3.wav")
-							table.insert(csarMission.messagedUnits, uName) -- remember that we messaged them so we don't do again
-						end
-						-- also pop smoke if not popped already, or more than 5 minutes ago
-						if csarManager.useSmoke and  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
-							local smokePoint = dcsCommon.randomPointOnPerimeter(
-								csarManager.smokeDist, csarMission.zone.point.x, csarMission.zone.point.z) --cfxZones.createHeightCorrectedPoint(csarMission.zone.point)
-							-- trigger.action.smoke(smokePoint, 4 )
-							dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor)
-							csarMission.lastSmokeTime = timer.getTime()
-						end
-						
-						-- now check if we are inside hover range and alt 
-						-- in order to simultate winch ops 
-						-- WARNING: WE ALWAYS ONLY CHECK A SINGLE UNIT - the first alive
-						local evacuee = csarMission.group:getUnit(1)
-						if evacuee then 
-							local ep = evacuee:getPoint()
-							d = dcsCommon.distFlat(uPoint, ep)
-							d = math.floor(d * 10) / 10
-							if d < csarManager.rescueTriggerRange * 0.5 then --csarManager.hoverRadius * 2 then
-								local ownHeading = dcsCommon.getUnitHeadingDegrees(aUnit)
-								local oclock = dcsCommon.clockPositionOfARelativeToB(ep, uPoint, ownHeading) .. " o'clock"
-								-- log distance 
-								local hoverMsg = "Closing on " .. csarMission.name .. ", " .. d * 1 .. "m on your " .. oclock .. " o'clock"
-
-								if d < csarManager.hoverRadius then 
-									if (agl <= csarManager.hoverAlt) and (agl > 3) then 
-										local hoverTime = csarMission.hoveringUnits[uName]
-										if not hoverTime then 
-											-- create new entry
-											hoverTime = timer.getTime()
-											csarMission.hoveringUnits[uName] = timer.getTime() 
-										end
-										hoverTime = timer.getTime() - hoverTime -- calculate number of seconds 
-										local remainder = math.floor(csarManager.hoverDuration - hoverTime)
-										if remainder < 1 then remainder = 1 end 
-										hoverMsg = "Steady... " .. d * 1 .. "m to your " .. oclock .. " o'clock, winching... (" .. remainder .. ")" 
-										if hoverTime > csarManager.hoverDuration then 
-											-- we rescued the guy!
-											hoverMsg = "We have " .. csarMission.name .. " safely on board!"
-											local conf = csarManager.getUnitConfig(aUnit)
-											csarManager.removeMission(csarMission)
-											table.insert(conf.troopsOnBoard, csarMission)
-											csarMission.group:destroy() -- will shut up radio as well
-											csarMission.group = nil
-											
-											-- now handle weight using cargoSuper 
-											local theMassObject = cargoSuper.createMassObject(
-												csarManager.pilotWeight, 
-												csarMission.name, 
-												csarMission)
-											cargoSuper.addMassObjectTo(
-												uName, 
-												"Evacuees", 
-												theMassObject)
-											local totalMass = cargoSuper.calculateTotalMassFor(uName)
-											trigger.action.setUnitInternalCargo(uName, totalMass)
-											
-											if csarManager.verbose then 
-												local allEvacuees = cargoSuper.getManifestFor(myName, "Evacuees") -- returns unlinked array 
-												trigger.action.outText("+++csar: <" .. uName .. "> now has <" .. #allEvacuees .. "> groups of evacuees on board, totalling " .. totalMass .. "kg", 30)
-											end
-											
-											trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
-											trigger.action.outSoundForGroup(uID, csarManager.actionSound) --"Quest Snare 3.wav")
-
-											return -- we only ever rescue one 
-										end -- hovered long enough 
-										trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
-										return -- only ever one winch op
-									else -- too high for hover 
-										hoverMsg = "Evacuee " .. d * 1 .. "m on your " .. oclock .. " o'clock; land or descend to between 10 and 90 AGL for winching"
-										csarMission.hoveringUnits[uName] = nil -- reset timer 
-									end
-								else -- not inside hover dist
-									-- remove the hover indicator for this 
-									csarMission.hoveringUnits[uName] = nil 
-								end 
-								trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
-								return -- only ever one winch op
+			local needsGC = false 
+--			local hasMessaged = false 
+			for idx, csarMission in pairs (csarManager.openMissions) do
+				-- check if we are inside trigger range on the same side
+				local mp = cfxZones.getPoint(csarMission.zone, true)
+				local d = dcsCommon.distFlat(uPoint, mp)
+				if ((uSide == csarMission.side) or (csarMission.side == 0) )
+				and (d < csarManager.rescueTriggerRange) then 
+					-- we are in trigger distance. if we did not notify before
+					-- do it now, we ever only do this once for a unit for any mission 
+					if not dcsCommon.arrayContainsString(csarMission.messagedUnits, uName) then 
+						-- radio this unit with oclock and tell it they are in 2k range 
+						-- also note if LZ is hot 
+						local ownHeading = dcsCommon.getUnitHeadingDegrees(aUnit)
+						local oclock = dcsCommon.clockPositionOfARelativeToB(csarMission.zone.point, uPoint, ownHeading) .. " o'clock"
+						local msg = "\n" .. uName ..", " .. csarMission.name .. ". We can hear you, check your " .. oclock 
+						if csarManager.useSmoke then msg = msg .. " - popping smoke" end
+						if csarManager.useFlare then 
+							if csarManager.useSmoke then 
+								msg = msg .. " and will launch flare in a few seconds"
 							else 
-								-- remove the hover indicator for this unit
-								csarMission.hoveringUnits[uName] = nil
-							end -- inside 2 * hover dist?
-							
-						end -- has evacuee 
-					end -- if in range
-				end -- for all missions 
-			end -- if troop carrier 
-		end -- if exists 
-	end -- for all players 
+								msg = msg .. " - preparing flare"
+							end
+							-- schedule flare launch in 5-10 seconds
+							local args = {}
+							args.loc = mp 
+							args.color = csarManager.flareColor
+							args.uID = uID
+							timer.scheduleFunction(csarManager.launchFlare, args, timer.getTime() + math.random(5))
+						end
+						msg = msg .. "."
+
+						if csarMission.isHot then 
+							msg = msg .. " Be advised: LZ is hot."
+						end
+						msg = msg .. "\n"
+						trigger.action.outTextForGroup(uID, msg, 30)
+						trigger.action.outSoundForGroup(uID, csarManager.actionSound) -- "Quest Snare 3.wav")
+						table.insert(csarMission.messagedUnits, uName) -- remember that we messaged them so we don't do again
+					end
+					
+					-- also pop smoke if not popped already, or more than 5 minutes ago
+					if csarManager.useSmoke and  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
+						local smokePoint = dcsCommon.randomPointOnPerimeter(
+							csarManager.smokeDist, csarMission.zone.point.x, csarMission.zone.point.z) 
+						dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor)
+						csarMission.lastSmokeTime = timer.getTime()
+					end
+					
+					-- now check if we are inside hover range and alt 
+					-- in order to simultate winch ops 
+					-- if competition picked up, we skip this loop 
+					local evacuee = nil 
+					if csarMission.group then evacuee = csarMission.group:getUnit(1) end 
+					if evacuee then 
+						local ep = evacuee:getPoint()
+						d = dcsCommon.distFlat(uPoint, ep)
+						d = math.floor(d * 10) / 10
+						if d < csarManager.rescueTriggerRange * 0.5 then 
+							local ownHeading = dcsCommon.getUnitHeadingDegrees(aUnit)
+							local oclock = dcsCommon.clockPositionOfARelativeToB(ep, uPoint, ownHeading) .. " o'clock"
+							-- log distance 
+							local hoverMsg = "Closing on " .. csarMission.name .. ", " .. d * 1 .. "m on your " .. oclock .. " o'clock"
+
+							if d < csarManager.hoverRadius then 
+								if (agl <= csarManager.hoverAlt) and (agl > 3) then 
+									local hoverTime = csarMission.hoveringUnits[uName]
+									if not hoverTime then 
+										-- create new entry
+										hoverTime = timer.getTime()
+										csarMission.hoveringUnits[uName] = timer.getTime() 
+									end
+									hoverTime = timer.getTime() - hoverTime -- calculate number of seconds 
+									local remainder = math.floor(csarManager.hoverDuration - hoverTime)
+									if remainder < 1 then remainder = 1 end 
+									hoverMsg = "Steady... " .. d * 1 .. "m to your " .. oclock .. " o'clock, winching... (" .. remainder .. ")" 
+									if hoverTime > csarManager.hoverDuration then 
+										-- we rescued the guy!
+										hoverMsg = "We have " .. csarMission.name .. " safely on board!"
+										local conf = csarManager.getUnitConfig(aUnit)
+										-- mission now GC's after iteration csarManager.removeMission(csarMission)
+										table.insert(conf.troopsOnBoard, csarMission)
+										csarMission.group:destroy() -- will shut up radio as well
+										csarMission.group = nil -- no more evacuees 
+										needsGC = true -- need filtering missions 
+										
+										-- now handle weight using cargoSuper 
+										local theMassObject = cargoSuper.createMassObject(
+											csarManager.pilotWeight, 
+											csarMission.name, 
+											csarMission)
+										cargoSuper.addMassObjectTo(
+											uName, 
+											"Evacuees", 
+											theMassObject)
+										local totalMass = cargoSuper.calculateTotalMassFor(uName)
+										trigger.action.setUnitInternalCargo(uName, totalMass)
+										
+										if csarManager.verbose then 
+											local allEvacuees = cargoSuper.getManifestFor(myName, "Evacuees") -- returns unlinked array 
+											trigger.action.outText("+++csar: <" .. uName .. "> now has <" .. #allEvacuees .. "> groups of evacuees on board, totalling " .. totalMass .. "kg", 30)
+										end
+										
+										--trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
+										trigger.action.outSoundForGroup(uID, csarManager.actionSound) 
+
+										--return -- we only ever rescue one 
+									end -- hovered long enough 
+									--trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
+									-- return -- only ever one winch op
+								else -- too high for hover 
+									hoverMsg = "Evacuee " .. d * 1 .. "m on your " .. oclock .. " o'clock; land or descend to between 10 and 90 AGL for winching"
+									csarMission.hoveringUnits[uName] = nil -- reset timer 
+								end
+							else -- not inside hover dist
+								-- remove the hover indicator for this 
+								csarMission.hoveringUnits[uName] = nil 
+							end 
+							trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
+							--return -- only ever one winch op
+						else 
+							-- remove the hover indicator for this unit
+							csarMission.hoveringUnits[uName] = nil
+						end -- inside 2 * hover dist?
+					else 
+						-- somebody snatched the evacuee 
+					end -- if has evacuee 
+				end -- if in range
+			end -- for all missions 
+			-- now GC all missions if we lifted a pilot up (we no longer return after first succesful)
+			if needsGC then 
+				local filtered = {}
+				for idx, csarMission in pairs(csarManager.openMissions) do 
+					if csarMission.group then 
+						table.insert(filtered, csarMission)
+					end
+				end
+				csarManager.openMissions = filtered 
+			end 
+		end -- if in Air 
+	end -- for all player units  
 	
 	-- now see and check if we need to spawn from a csar zone
 	-- that has been told to spawn 
@@ -1216,30 +1091,35 @@ function csarManager.update() -- every second
 --			local currVal = theZone:getFlagValue(theZone.startCSAR)
 --			if currVal ~= theZone.lastCSARVal then 
 			if theZone:testZoneFlag(theZone.startCSAR, theZone.triggerMethod, "lastCSARVal") then 
-				-- set up random point in zone 
-				local mPoint = theZone:getPoint()
-				if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end 
-				if theZone.onRoad then 
-					mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
-				end 
-				local theMission = csarManager.createCSARMissionData(
-						mPoint, 
-						theZone.csarSide, -- theSide
-						theZone.csarFreq, -- freq
-						theZone.csarName, -- name 
-						theZone.numCrew, -- numCrew
-						theZone.timeLimit, -- timeLimit
-						theZone.csarMapMarker, -- mapMarker
-						0.1, --theZone.radius) -- radius
-						nil) -- parashoo unit 
+				local theMission = csarManager.createCSARMissionFromZone(theZone)
 				csarManager.addMission(theMission)
 				--theZone.lastCSARVal = currVal
-				if csarManager.verbose then 
-					trigger.action.outText("+++csar: started CSAR mission " .. theZone.csarName, 30)
+				if csarManager.verbose or theZone.verbose then 
+					trigger.action.outText("+++csar: started CSAR mission for <" .. theZone.csarName .. ">", 30)
 				end
 			end
 		end
 	end
+end
+
+function csarManager.createCSARMissionFromZone(theZone)
+	-- set up random point in zone 
+	local mPoint = theZone:getPoint()
+	if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end 
+	if theZone.onRoad then 
+		mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
+	end 
+	local theMission = csarManager.createCSARMissionData(
+			mPoint, 
+			theZone.csarSide, -- theSide
+			theZone.csarFreq, -- freq
+			theZone.csarName, -- name 
+			theZone.numCrew, -- numCrew
+			theZone.timeLimit, -- timeLimit
+			theZone.csarMapMarker, -- mapMarker
+			0.1, --theZone.radius) -- radius
+			nil) -- parashoo unit 
+	return theMission
 end
 
 --
@@ -1412,9 +1292,6 @@ function csarManager.readConfigZone()
 	csarManager.name = "csarManagerConfig" -- compat with cfxZones
 	local theZone = cfxZones.getZoneByName("csarManagerConfig") 
 	if not theZone then 
-		if csarManager.verbose then 
-			trigger.action.outText("+++csar: NO config zone!", 30)
-		end 
 		theZone = cfxZones.createSimpleZone("csarManagerConfig") 
 	end 
 	csarManager.configZone = theZone -- save for flag banging compatibility 
@@ -1487,38 +1364,34 @@ function csarManager.start()
 	-- read config
 	csarManager.readConfigZone()
 
-	-- install callbacks for helo-relevant events
-	dcsCommon.addEventHandler(csarManager.somethingHappened, csarManager.preProcessor, csarManager.postProcessor)
-
-	-- now iterate through all player groups and install the CSAR Menu
-	
-	local allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
-	-- contains per group a player record, use prime unit to access player's unit 
-	for gname, pgroup in pairs(allPlayerGroups) do 
-		local aUnit = pgroup.primeUnit -- get prime unit of that group
-		csarManager.setCommsMenu(aUnit)
-	end
-	-- now install the new group notifier for new groups so we can remove and add CSAR menus 
-	cfxPlayer.addMonitor(csarManager.playerChangeEvent)
-
 	-- now scan all zones that are CSAR drop-off for quick access
 	csarManager.processCSARBASE()
 	
 	-- now scan all zones to create ME-placed CSAR missions
 	-- and populate the available mission.
 	csarManager.processCSARZones()
+
+	-- install callbacks for helo-relevant events
+	--dcsCommon.addEventHandler(csarManager.somethingHappened, csarManager.preProcessor, csarManager.postProcessor)
+	world.addEventHandler(csarManager)
+
+	-- now iterate through all player groups and install the CSAR Menu
+	local allPlayerUnits = dcsCommon.getAllExistingPlayerUnitsRaw() 
+	for pName, aUnit in pairs(allPlayerUnits) do 
+		csarManager.setCommsMenu(aUnit)
+	end
 	
-	-- now call update so we can monitor progress of all helos, and alert them
-	-- when they are close to a CSAR
+	-- start updating and track all helicopters in the air against missions
 	csarManager.update()
 
 	-- say hi!
-	trigger.action.outText("cf/x CSAR v" .. csarManager.version .. " started", 30)
+	trigger.action.outText("cf/x CSAR Manager v" .. csarManager.version .. " started", 30)
 	return true 
 end
 
 -- let's get rolling
 if not csarManager.start() then 
+	trigger.action.outText("cf/x CSAR Manager v" .. csarManager.version .. " FAILED to run", 30)
 	csarManager = nil
 end
 
@@ -1539,6 +1412,7 @@ end
 	- when unloading one by menu, update weight!!!
 		
 	-- allow any airfied to be csarsafe by default, no longer *requires* csarbase
+
+	-- minFreq, maxFreq settings for config and mission-individual
 	
-	-- remove cfxPlayer dependency
 --]]--

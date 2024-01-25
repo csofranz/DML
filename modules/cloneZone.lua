@@ -259,6 +259,14 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 				trigger.action.outText("+++clnZ: masterOwner for <" .. theZone.name .. "> set successfully to to itself, currently owned by faction <" .. theZone.owner .. ">", 30)
 			end
 		end
+		if theZone.verbose or cloneZones.verbose then 
+			trigger.action.outText("+++clnZ: ownership of <" .. theZone.name .. "> tied to zone <" .. theZone.masterOwner .. ">", 30)
+		end
+		-- check that the zone exists in DCS 
+		local theMaster = cfxZones.getZoneByName(theZone.masterOwner)
+		if not theMaster then 
+			trigger.action.outText("clnZ: WARNING: cloner's <" .. theZone.name .. "> master owner named <" .. theZone.masterOwner .. "> does not exist!", 30)
+		end
 	end
 	
 	theZone.turn = theZone:getNumberFromZoneProperty("turn", 0)

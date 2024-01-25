@@ -1,5 +1,5 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "2.0.0" 
+cfxObjectDestructDetector.version = "2.0.2" 
 cfxObjectDestructDetector.verbose = false 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
@@ -18,6 +18,10 @@ cfxObjectDestructDetector.requiredLibs = {
 		 ID changes (happens with map updates)
 		 fail addZone when name property is missing 
    2.0.1 check that the object is within the zone onEvent 
+   2.0.2 redScore and bluescore attributes 
+         API for PlayerScore to pass back redScore/blueScore 
+		 if objects was killed by player 
+		 verbosity bug fixed after kill (ref to old ID)
 --]]--
 
 cfxObjectDestructDetector.objectZones = {}
@@ -78,8 +82,59 @@ function cfxObjectDestructDetector.processObjectDestructZone(aZone)
 	elseif aZone:hasProperty("objectDestroyed!") then 
 		aZone.outDestroyFlag = aZone:getStringFromZoneProperty( "objectDestroyed!", "*none")
 	end
+	
+	--PlayerScore interface (data)
+	if aZone:hasProperty("redScore") then 
+		aZone.redScore = aZone:getNumberFromZoneProperty("redScore", 0)
+--		if aZone.verbose then 
+--			trigger.action.outText("")
+--		end
+	end 
+	
+	if aZone:hasProperty("blueScore") then 
+		aZone.blueScore = aZone:getNumberFromZoneProperty("blueScore", 0)
+	end 
+	
 	return true 
 end
+
+--
+-- Interface with PlayerScore
+-- ==========================
+-- PlayerScore invokes us when it finds a scenery object was killed
+-- we check if it is one of ours, and if so, if a score is attached 
+-- for that side
+function cfxObjectDestructDetector.playerScoreForKill(theObject, killSide)
+	if not theObject then return nil end 
+	if not killSide then return nil end 
+	local pos = theObject:getPoint() 
+	local desc = theObject:getDesc()
+	if not desc then return nil end 
+	desc = desc.typeName -- deref type name to match zone objName 
+	if not desc then return end 
+	for idx, theZone in pairs (cfxObjectDestructDetector.objectZones) do 
+		-- see if we can find a matching ODD 
+		if (not theZone.isDestroyed) -- make sure it's not a dupe
+		    and theZone.objName == desc 
+			and theZone:pointInZone(pos) 
+		then 
+			-- yes, ODD tracks this object 
+			if cfxObjectDestructDetector.verbose or theZone.verbose then 
+				trigger.action.outText("OOD: score invocation for hit scenery object <" .. desc .. ">, tracked with <" .. theZone.name .. ">", 30)				
+			end
+			if killSide == 1 then return theZone.redScore end -- can be nil!
+			if killSide == 2 then return theZone.blueScore end 
+			-- if we get here, the object is tracked, but has no 
+			-- playerScore attached. simply exist with nil
+				if cfxObjectDestructDetector.verbose or theZone.verbose then 
+					trigger.action.outText("OOD: scenery object <" .. desc .. ">, tracked but no player score defined for coa <" .. killSide .. ">.", 30)				
+				end			
+			return nil 
+		end
+	end
+	return nil 
+end
+
 --
 -- ON EVENT
 --
@@ -106,7 +161,7 @@ function cfxObjectDestructDetector:onEvent(event)
 				-- invoke callbacks 
 				cfxObjectDestructDetector.invokeCallbacksFor(aZone)
 				if aZone.verbose or cfxObjectDestructDetector.verbose then 
-					trigger.action.outText("OBJECT KILL: " .. id, 30)
+					trigger.action.outText("OBJECT KILL: " .. matchMe .. " for odd <" .. aZone.name .. ">", 30)
 				end
 				-- save state for persistence
 				aZone.isDestroyed = true 				
