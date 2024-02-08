@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.1"
+dcsCommon.version = "3.0.2"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -8,7 +8,9 @@ dcsCommon.version = "3.0.1"
 	   - new pointInDirectionOfPointXYY()
 	   - createGroundGroupWithUnits now supports liveries
 	   - new getAllExistingPlayersAndUnits()
-3.0.1  - clone: better handling of string type 
+3.0.1  - clone: better handling of string type
+3.0.2  - new getPlayerUnit() 
+3.0.3  - createStaticObjectForCoalitionInRandomRing() returns x and z 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1934,7 +1936,7 @@ dcsCommon.version = "3.0.1"
 	function dcsCommon.createStaticObjectForCoalitionAtLocation(theCoalition, loc, name, objType, heading, dead) 
 		if not heading then heading = math.random(360) * 3.1415 / 180 end
 		local theData = dcsCommon.createStaticObjectDataAt(loc, name, objType, heading, dead)
-		local theStatic = coalition.addStaticObject(theCoalition, theData)
+		local theStatic = coalition.addStaticObject(theCoalition, theData) -- warning! coalition is not country!
 		return theStatic
 	end
 	
@@ -1947,8 +1949,8 @@ dcsCommon.version = "3.0.1"
 		theData.x = p.x
 		theData.y = p.z 
 		
-		local theStatic = coalition.addStaticObject(theCoalition, theData)
-		return theStatic
+		local theStatic = coalition.addStaticObject(theCoalition, theData) -- warning! coalition is not country 
+		return theStatic, p.x, p.z 
 	end
 	
 	
@@ -2703,6 +2705,19 @@ function dcsCommon.isTroopCarrier(theUnit, carriers)
 	return dcsCommon.isTroopCarrierType(uType, carriers) 
 end
 
+function dcsCommon.getPlayerUnit(playerName) 
+	if not playerName then return nil end 
+	for idx, theSide in pairs(dcsCommon.coalitionSides) do
+		local thePlayers = coalition.getPlayers(theSide) 
+		for idy, theUnit in pairs (thePlayers) do 
+			if theUnit and theUnit:isExist() and theUnit.getPlayerName 
+			and theUnit:getPlayerName() == playerName then 
+				return theUnit
+			end
+		end
+	end
+	return nil
+end 
 
 function dcsCommon.getAllExistingPlayerUnitsRaw()
 	local apu = {}

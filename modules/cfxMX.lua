@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.0.0"
+cfxMX.version = "2.0.1"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -11,6 +11,8 @@ cfxMX.verbose = false
 		 - train carve-outs for vehicles
    2.0.0 - clean-up 
          - harmonized with cfxGroups 
+   2.0.1 - groupHotByName
+   
    
 --]]--
 cfxMX.groupNamesByID = {}
@@ -19,6 +21,7 @@ cfxMX.unitIDbyName = {}
 cfxMX.groupDataByName = {}
 cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
 cfxMX.groupCoalitionByName = {}
+cfxMX.groupHotByName = {}
 cfxMX.countryByName ={} -- county of group named 
 cfxMX.linkByName = {}
 cfxMX.allFixedByName = {}
@@ -205,10 +208,17 @@ function cfxMX.createCrossReferences()
 										local aID = group_data.groupId
 										-- get linkUnit info if it exists
 										local linkUnit = nil 
+										local isHot = false 
 										if group_data and group_data.route and group_data.route and group_data.route.points[1] then 
 											linkUnit = group_data.route.points[1].linkUnit
 											cfxMX.linkByName[aName] = linkUnit
+											local action = group_data.route.points[1].action
+											if action then 
+												isHot = dcsCommon.stringEndsWith(action, "Hot")
+											end 
 										end 
+										
+										cfxMX.groupHotByName[aName] = isHot
 										if group_data.units[1] and group_data.units[1].type == "Train" then 
 											category = "train" 
 											obj_type_name = "train"

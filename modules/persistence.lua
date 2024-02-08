@@ -30,7 +30,6 @@ persistence.requiredLibs = {
 persistence.flagsToSave = {} -- simple table 
 persistence.callbacks = {} -- cbblocks, dictionary by name
 
-
 --
 -- modules register here
 --
@@ -76,7 +75,6 @@ function persistence.getSavedDataForModule(name)
 	return persistence.missionData[name] -- simply get the modules data block
 end
 
-
 --
 -- Shared Data API 
 --
@@ -112,7 +110,6 @@ function persistence.isDir(path) -- check if path is a directory
 	end
 	return success
 end
-
 
 --
 -- Main save meths
@@ -189,7 +186,6 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	return true 
 end
 
-
 function persistence.loadText(fileName) -- load file as text
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
@@ -217,8 +213,6 @@ function persistence.loadTable(fileName) -- load file as table
 
 	return tab
 end
-
-
 
 --
 -- Data Load on Start
@@ -401,7 +395,6 @@ end
 --
 -- config & start 
 --
-
 function persistence.collectFlagsFromZone(theZone)
 	local theFlags = theZone:getStringFromZoneProperty("saveFlags", "*dummy")
 	persistence.registerFlagsToSave(theFlags, theZone)
@@ -409,7 +402,7 @@ end
 
 function persistence.readConfigZone()
 	if not _G["lfs"] then 
-		trigger.action.outText("+++persistence: DCS correctly not 'desanitized'. Persistence disabled", 30)
+		trigger.action.outText("+++persistence: DCS currently not 'desanitized'. Persistence disabled", 30)
 		return 
 	end
 	

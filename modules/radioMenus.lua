@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.2.0"
+radioMenu.version = "2.2.1"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -18,6 +18,7 @@ radioMenu.menus = {}
 			full wildcard support for ack and cooldown 
 	2.1.1 - outMessage now works correctly 
 	2.2.0 - clean-up
+	2.2.1 - corrected ackD 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -299,7 +300,7 @@ function radioMenu.createRadioMenuWithZone(theZone)
 		theZone.outValD = theZone:getStringFromZoneProperty("valD", 1)
 	end	
 	if theZone:hasProperty("ackD") then 
-		theZone.ackC = theZone:getStringFromZoneProperty("ackD", "Acknowledged: D")
+		theZone.ackD = theZone:getStringFromZoneProperty("ackD", "Acknowledged: D")
 	end
 	
 	if theZone:hasProperty("removeMenu?") then 

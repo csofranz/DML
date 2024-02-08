@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.0.0"
+cfxHeloTroops.version = "3.0.2"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -37,6 +37,8 @@ cfxHeloTroops.requestRange = 500 -- meters
 	   - harmonized spawning invocations across cloners and spawners 
 	   - dmlZones 
 	   - requestRange attribute
+ 3.0.1 - fixed a bug with legalTroops attribute
+ 3.0.2 - fixed a typo in in-air menu 
  
 --]]--
 --
@@ -337,7 +339,7 @@ function cfxHeloTroops.addAirborneMenu(conf)
 	-- let's begin by assuming no troops aboard
 	local commandTxt = "(To load troops, land in proximity to them)"
 	if conf.troopsOnBoardNum > 0 then 
-		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Assault Troops. Land to deploy them"
+		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Assault Troops. Land to deploy them)"
 	end
 	local theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
@@ -887,7 +889,7 @@ function cfxHeloTroops.readConfigZone()
 	
 	if theZone:hasProperty("legalTroops") then 
 		local theTypesString = theZone:getStringFromZoneProperty("legalTroops", "")
-		local unitTypes = dcsCommon.splitString(aSpawner.types, ",")
+		local unitTypes = dcsCommon.splitString(theTypesString, ",")
 		if #unitTypes < 1 then 
 			unitTypes = {"Soldier AK", "Infantry AK", "Infantry AK ver2", "Infantry AK ver3", "Infantry AK Ins", "Soldier M249", "Soldier M4 GRG", "Soldier M4", "Soldier RPG", "Paratrooper AKS-74", "Paratrooper RPG-16", "Stinger comm dsr", "Stinger comm", "Soldier stinger", "SA-18 Igla-S comm", "SA-18 Igla-S manpad", "Igla manpad INS", "SA-18 Igla comm", "SA-18 Igla manpad",} -- default 
 		else

@@ -136,7 +136,7 @@ end
 function ownAll.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
-		trigger.action.outText("cfx ownAlll requires dcsCommon", 30)
+		trigger.action.outText("cfx ownAll requires dcsCommon", 30)
 		return false 
 	end 
 	if not dcsCommon.libCheck("cfx ownAll", ownAll.requiredLibs) then

@@ -18,7 +18,8 @@ VERSION HISTORY
 		interpolate hits on dead when looking at kills and projectile does 
 		not exist
 		also sampling kill events 
-		
+1.1.1 - fixed reading smoke color for zone 
+	    minor clean-up 	
 --]]--
 bombRange.bombs = {} -- live tracking
 bombRange.collector = {} -- post-impact collections for 0.5 secs
@@ -63,6 +64,7 @@ function bombRange.createRange(theZone) -- has bombRange attribte to mark it
 	theZone.reportName = theZone:getBoolFromZoneProperty("reportName", false)
 	theZone.smokeHits = theZone:getBoolFromZoneProperty("smokeHits", false)
 	theZone.smokeColor = theZone:getSmokeColorStringFromZoneProperty("smokeColor", "blue")
+	theZone.smokeColor = dcsCommon.smokeColor2Num(theZone.smokeColor)
 	theZone.flagHits = theZone:getBoolFromZoneProperty("flagHits", false)
 	theZone.flagType = theZone:getStringFromZoneProperty("flagType", "Red_Flag")
 	theZone.clipDist = theZone:getNumberFromZoneProperty("clipDist", 2000) -- when further way, the drop will be disregarded
@@ -99,7 +101,6 @@ function bombRange.getPlayerData(name)
 		theData.totalHits = 0
 		theData.totalPercentage = 0 -- sum, must be divided by drops 
 		bombRange.playerData[name] = theData
---		trigger.action.outText("created new player data for " .. name, 30)
 	end
 	return theData
 end
@@ -173,13 +174,12 @@ function bombRange.showStatsForPlayer(pName, gID, unitName)
 		end
 	end 
 	trigger.action.outTextForGroup(gID, msg, 30)
-	
-	
+		
 end
+
 --
 -- unit UI
 --
-
 function bombRange.initCommsForUnit(theUnit)
 	local uName = theUnit:getName() 
 	local pName = theUnit:getPlayerName()
@@ -261,7 +261,7 @@ function bombRange.suspectedHit(weapon, target)
 
 	local theDesc = target:getDesc()
 	local theType = theDesc.typeName -- getTypeName gets display name
--- filter statics that we want to ignore 
+	-- filter statics that we want to ignore 
 	for idx, aType in pairs(bombRange.filterTypes) do 
 		if theType == aType then 
 			return	
@@ -285,7 +285,6 @@ function bombRange.suspectedHit(weapon, target)
 			bombRange.impacted(b, target) -- use this for impact
 			theID = b.ID 
 			hasfound = true 
---			trigger.action.outText("susHit: filtering COLLECTED b <" .. b.name .. ">", 30)
 		end
 	end
 	if hasfound then 
@@ -305,8 +304,6 @@ function bombRange.suspectedHit(weapon, target)
 			b.pos = weapon:getPoint()
 			b.v = weapon:getVelocity()
 			bombRange.impacted(b, target)
-			
---			trigger.action.outText("susHit: filtering live b <" .. b.name .. ">", 30)
 		else 
 			table.insert(filtered, b)
 		end
@@ -363,7 +360,6 @@ function bombRange.suspectedKill(target)
 	end
 	bombRange.bombs = filtered 
 	if hasfound then 
---		trigger.action.outText("protocol: removed LIVING weapon from roster  after impacted() invocation for non-nil target in suspectedKill", 30)
 		return 
 	end 
 
@@ -383,7 +379,6 @@ function bombRange.suspectedKill(target)
 	end
 	if hasfound then -- remove from collector, hit attributed 
 		bombRange.collector[theID] = nil -- remove from collector
---		trigger.action.outText("protocol: removed COLL weapon from roster  after impacted() invocation for non-nil target in suspectedKill", 30)
 		return
 	end
 end
@@ -478,14 +473,8 @@ function bombRange.impacted(weapon, target, finalPass)
 		if not targetName then targetName = target:getTypeName() end
 	end 
 	
---	local s = "Entering impacted() with weapon = <" .. weapon.name .. ">"
---	if target then 
---		s = s .. " AND target = <" .. targetName .. ">"
---	end 
-	
 -- when we enter, weapon has ipacted target - if target is non-nil 
--- what we need to determine is if that target is inside a zone 
-	
+-- what we need to determine is if that target is inside a zone 	
 	local ipos = weapon.pos -- default to weapon location 
 	if target then
 		ipos = target:getPoint() -- we make the target loc the impact point
@@ -542,32 +531,7 @@ function bombRange.impacted(weapon, target, finalPass)
 	end
 	
 	local impactInside = theRange:pointInZone(ipos)
---[[--
-	if target and (not impactInside) then 
-		trigger.action.outText("Hit on target <" .. targetName .. "> outside of zone <" .. theRange.name .. ">. should exit unless final impact", 30)
-		-- find closest range to object that was hit 
-		local closest = nil 
-		local shortest = math.huge 
-		local tp = target:getPoint()
-		for idx, aRange in pairs(bombRange.ranges) do 
-			local zp = aRange:getPoint()
-			local zDist = dcsCommon.distFlat(zp, tp)
-			if zDist < shortest then 
-				shortest = zDist 
-				closest = aRange 
-			end	
-		end 
-		
-		trigger.action.outText("re-check: closest range to target now is <" .. closest.name ..">", 30)
-		if closest:pointInZone(tp) then 
-			trigger.action.outText("target <" .. targetName .. "> is INSIDE this range, d = <" .. math.floor(shortest) .. ">", 30)
-		else 
-			trigger.action.outText("targed indeed outside, d = <" .. math.floor(shortest) .. ">", 30)
-		end
-		
-		if finalPass then trigger.action.outText("IS final pass.", 30) end 
-	end
---]]--	
+
 	if theRange.reporter and theRange.details then 
 		local ipc = weapon.impacted
 		if not ipc then ipc = timer.getTime() end
@@ -604,8 +568,7 @@ function bombRange.impacted(weapon, target, finalPass)
 
 		bombRange.addImpactForWeapon(weapon, true, percentage)		
 	else 
-		msg = "Outside target area"
---		if target then msg = msg .. " (EVEN THOUGH TGT = " .. target:getName() .. ")" end 
+		msg = "Outside target area" 
 		if theRange.reportName then msg = msg .. " " .. theRange.name end
 		if theRange.details then msg = msg .. " (off-center by " .. math.floor(minDist *10)/10 .. " m)" end 
 		msg = msg .. ", no hit."
@@ -623,7 +586,6 @@ function bombRange.uncollect(theID)
 	if b then 
 		bombRange.collector[theID] = nil 
 		bombRange.impacted(b, nil, true) -- final pass
---		trigger.action.outText("(final impact)", 30)
 	end
 end
 
@@ -640,7 +602,6 @@ function bombRange.updateBombs()
 		else 
 			-- put on collector to time out in 1 seconds to allow
 			-- asynch hits to still register for this weapon in MP 
---			bombRange.impacted(theWeapon)
 			theWeapon.impacted = timer.getTime()
 			bombRange.collector[theWeapon.ID] = theWeapon --
 			timer.scheduleFunction(bombRange.uncollect, theWeapon.ID, timer.getTime() + 1)
@@ -766,6 +727,6 @@ if not bombRange.start() then
 	bombRange = nil 
 end
 
---
+-- To Do:
 -- add persistence 
 --

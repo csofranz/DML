@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "3.0.0"
+messenger.version = "3.1.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -11,6 +11,8 @@ messenger.messengers = {}
 	2.3.0 - cfxZones OOP switch
 	2.3.1 - triggering message AFTER the on/off switches are tested
 	3.0.0 - removed messenger, in?, f? attributes, harmonized on messenger?
+	3.1.0 - msgGroup supports multiple groups, separated by comma 
+		  - msgUnit supports multiple units, separated by comma
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -166,18 +168,12 @@ end
 -- reat attributes
 --
 function messenger.createMessengerWithZone(theZone)
-	-- start val - a range
-	
 	local aMessage = theZone:getStringFromZoneProperty("message", "") 
-	theZone.message = aMessage -- refactoring: messenger.preProcMessage(aMessage, theZone) removed 
-
+	theZone.message = aMessage  
 	theZone.spaceBefore = theZone:getBoolFromZoneProperty("spaceBefore", false)
 	theZone.spaceAfter = theZone:getBoolFromZoneProperty("spaceAfter", false)
-
 	theZone.soundFile = theZone:getStringFromZoneProperty("soundFile", "<none>") 
-
 	theZone.clearScreen = theZone:getBoolFromZoneProperty("clearScreen", false)
-	
 	theZone.duration = theZone:getNumberFromZoneProperty("duration", 30)
 	if theZone:hasProperty("messageDuration") then 
 		theZone.duration = theZone:getNumberFromZoneProperty( "messageDuration", 30)
@@ -188,28 +184,8 @@ function messenger.createMessengerWithZone(theZone)
 	if theZone:hasProperty("msgTriggerMethod") then 
 		theZone.msgTriggerMethod = theZone:getStringFromZoneProperty("msgTriggerMethod", "change")
 	end 
-		
-	if theZone:hasProperty("f?") then 
-		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("f?", "none")	
-	end 	
-	-- can also use in? for counting. we always use triggerMessagerFlag 
-	if theZone:hasProperty("in?") then 
-		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("in?", "none")
-	end
---[[--	
-	if theZone:hasProperty("messageOut?") then 
-		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty("messageOut?", "none")
-	end
---]]--	
-	-- try default only if no other is set 
-	if not theZone.triggerMessagerFlag then 
-		if not theZone:hasProperty("messenger?") then 
-			trigger.action.outText("*** Note: messenger in <" .. theZone.name .. "> can't be triggered", 30)
-		end
-		theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty( "messenger?", "none")
-	end 
-
-	theZone.lastMessageTriggerValue = theZone:getFlagValue(theZone.triggerMessagerFlag)-- save last value	
+	theZone.triggerMessagerFlag = theZone:getStringFromZoneProperty( "messenger?", "none")
+	theZone.lastMessageTriggerValue = theZone:getFlagValue(theZone.triggerMessagerFlag) -- save last value	
 
 	theZone.messageOff = theZone:getBoolFromZoneProperty("mute", false) --false 
 	if theZone:hasProperty("messageMute") then
@@ -235,15 +211,42 @@ function messenger.createMessengerWithZone(theZone)
 	end 
 	
 	if theZone:hasProperty("group") then 
-		theZone.msgGroup = theZone:getStringFromZoneProperty("group", "<none>")
+		-- now supporting multiple groups 
+		local theGroups = {}
+		local rawGroups = theZone:getStringFromZoneProperty("group", "<none>")
+		if dcsCommon.containsString(rawGroups, ",") then 
+			theGroups = dcsCommon.splitString(rawGroups, ",")
+			theGroups = dcsCommon.trimArray(theGroups)
+			theZone.msgGroup = theGroups
+		else 
+			theZone.msgGroup = {rawGroups}
+		end 
+		
 	elseif theZone:hasProperty("msgGroup") then 
-		theZone.msgGroup = theZone:getStringFromZoneProperty("msgGroup", "<none>")
+		local rawGroups = theZone:getStringFromZoneProperty("msgGroup", "<none>")
+		if dcsCommon.containsString(rawGroups, ",") then 
+			theGroups = dcsCommon.splitString(rawGroups, ",")
+			theGroups = dcsCommon.trimArray(theGroups)
+			theZone.msgGroup = theGroups
+		else 
+			theZone.msgGroup = {rawGroups,}
+		end 
 	end
 	
-	if theZone:hasProperty("unit") then 
-		theZone.msgUnit = theZone:getStringFromZoneProperty("unit", "<none>")
-	elseif theZone:hasProperty("msgUnit") then 
-		theZone.msgUnit = theZone:getStringFromZoneProperty("msgUnit", "<none>")
+	if theZone:hasProperty("unit") or theZone:hasProperty("msgUnit") then
+		local rawUnits = "err"
+		if theZone:hasProperty("unit") then 
+			rawUnits = theZone:getStringFromZoneProperty("unit", "<none>")
+		else 
+			rawUnits = theZone:getStringFromZoneProperty("msgUnit", "<none>")
+		end 
+		if dcsCommon.containsString(rawUnits, ",") then 
+			local theUnits = dcsCommon.splitString(rawUnits, ",")
+			theUnits = dcsCommon.trimArray(theUnits)
+			theZone.msgUnit = theUnits
+		else 
+			theZone.msgUnit = {rawUnits,}
+		end 
 	end
 	
 	if (theZone.msgGroup and theZone.msgUnit) or 
@@ -337,24 +340,28 @@ function messenger.isTriggered(theZone)
 		end
 		trigger.action.outSoundForCoalition(theZone.msgCoalition, fileName)
 	elseif theZone.msgGroup then 
-		local theGroup = Group.getByName(theZone.msgGroup)
-		if theGroup and Group.isExist(theGroup) then 
-			local ID = theGroup:getID()
-			msg = messenger.dynamicGroupProcessing(msg, theZone, theGroup)
-			if #msg > 0 or theZone.clearScreen then 
-				trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
+		for idx, aGroupName in pairs(theZone.msgGroup) do 
+			local theGroup = Group.getByName(aGroupName)
+			if theGroup and Group.isExist(theGroup) then 
+				local ID = theGroup:getID()
+				msg = messenger.dynamicGroupProcessing(msg, theZone, theGroup)
+				if #msg > 0 or theZone.clearScreen then 
+					trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
+				end
+				trigger.action.outSoundForGroup(ID, fileName)
 			end
-			trigger.action.outSoundForGroup(ID, fileName)
 		end
 	elseif theZone.msgUnit then 
-		local theUnit = Unit.getByName(theZone.msgUnit)
-		if theUnit and Unit.isExist(theUnit) then 
-			local ID = theUnit:getID()
-			msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
-			if #msg > 0 or theZone.clearScreen then 
-				trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
-			end
-			trigger.action.outSoundForUnit(ID, fileName)
+		for idx, aUnitName in pairs (theZone.msgUnit) do 
+			local theUnit = Unit.getByName(aUnitName)
+			if theUnit and Unit.isExist(theUnit) then 
+				local ID = theUnit:getID()
+				msg = messenger.dynamicUnitProcessing(msg, theZone, theUnit)
+				if #msg > 0 or theZone.clearScreen then 
+					trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
+				end
+				trigger.action.outSoundForUnit(ID, fileName)
+			end 
 		end
 	elseif theZone:getLinkedUnit() then 
 		-- this only works if the zone is linked to a unit 
