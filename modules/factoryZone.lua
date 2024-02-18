@@ -181,8 +181,8 @@ function factoryZone.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation)
 	local spawnPoint = {x = aZone.point.x, y = aZone.point.y, z = aZone.point.z} -- copy struct 
 	
 	local rads = aZone.attackPhi * 0.01745
-	spawnPoint.x = spawnPoint.x + math.cos(aZone.attackPhi) * aZone.attackDelta
-	spawnPoint.y = spawnPoint.y + math.sin(aZone.attackPhi) * aZone.attackDelta 
+	spawnPoint.x = spawnPoint.x + math.cos(rads) * aZone.attackDelta
+	spawnPoint.z = spawnPoint.z + math.sin(rads) * aZone.attackDelta 
 	
 	local spawnZone = cfxZones.createSimpleZone("attkSpawnZone", spawnPoint, aZone.attackRadius)
 	
@@ -252,14 +252,14 @@ function factoryZone.sendOutAttackers(aZone)
 	-- bang on xxxP!
 	if aZone.owner == 1 and aZone.redP then 
 		if aZone.verbose or factoryZone.verbose then
-			trigger.action.outText("+++factZ: polling redP! <" .. aZone.redP .. "> for factrory <" .. aZone.name .. ">")
+			trigger.action.outText("+++factZ: polling redP! <" .. aZone.redP .. "> for factrory <" .. aZone.name .. ">", 30)
 		end 
 		aZone:pollFlag(aZone.redP, aZone.factoryMethod)
 	end
 
 	if aZone.owner == 2 and aZone.blueP then 
 		if aZone.verbose or factoryZone.verbose then
-			trigger.action.outText("+++factZ: polling blueP! <" .. aZone.blueP .. "> for factrory <" .. aZone.name .. ">")
+			trigger.action.outText("+++factZ: polling blueP! <" .. aZone.blueP .. "> for factrory <" .. aZone.name .. ">", 30)
 		end 
 		aZone:pollFlag(aZone.blueP, aZone.factoryMethod)
 	end
