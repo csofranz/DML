@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "3.1.0"
+csarManager.version = "3.2.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -28,9 +28,14 @@ csarManager.ups = 1
 		 - inflight status reflects time limit but will not time out 
 		 - pickupSound option 
 		 - lostSound option 
+- 3.1.1  - birth clears troopsOnBoard
+- 3.2.0  - inPopulated csar option 
+		 - clearance csar attribute 
+		 - maxTries csar attribute 
 
-	INTEGRATES AUTOMATICALLY WITH playerScore IF INSTALLED
-	INTEGRATES WITH LIMITED AIRFRAMES IF INSTALLED 
+	INTEGRATES AUTOMATICALLY WITH playerScore 
+	INTEGRATES WITH LIMITED AIRFRAMES 
+	INTEGRATES AUTOMATICALLY WITH SCRIBE 
 		 
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -297,17 +302,26 @@ function csarManager:onEvent(event)
 		csarManager.heloLanded(theUnit)
 	end
 	
-	if ID == 3 then -- take off
+	if ID == 3 or ID == 55 then -- take off, postponed take-off 
 		csarManager.heloDeparted(theUnit)
 	end
 	
 	if ID == 5 then -- crash 
 		csarManager.heloCrashed(theUnit)
+		-- note: maybe not called in network missions.
+		-- correction: is called in 2.9
 	end	
 	
 	if ID == 15 then -- player helicopter birth 
 		-- we need to set up comms for this unit 
 		csarManager.setCommsMenu(theUnit)
+		-- we also need to make sure that there are no 
+		-- more troopsOnBoard
+
+		local conf = csarManager.getUnitConfig(theUnit)
+		conf.unit = theUnit
+		conf.troopsOnBoard = {}
+
 	end
 	
 end
@@ -421,7 +435,7 @@ function csarManager.heloLanded(theUnit)
 					end 
 					
 					for idx, msn in pairs(conf.troopsOnBoard) do 
-						-- each troopsOnboard is actually the 
+						-- each troopsOnBoard is actually the 
 						-- csar mission that I picked up 
 						csarManager.successMission(myName, base.name, msn)
 					end
@@ -792,7 +806,7 @@ function csarManager.doStatusCarrying(args)
 			local evacMission = conf.troopsOnBoard[i]
 			report = report .. "\n".. i .. ") " .. evacMission.name 
 			if evacMission.expires then 
-				delta = math.floor ((mission.expires - now) / 60)
+				delta = math.floor ((evacMission.expires - now) / 60)
 				if delta > 20 then
 					report = report .. " is hurt but stable"
 				elseif delta > 10 then
@@ -1207,6 +1221,9 @@ function csarManager.createCSARMissionFromZone(theZone)
 	if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end 
 	if theZone.onRoad then 
 		mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
+	elseif theZone.inPopulated then 
+			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance, theZone.maxTries)
+			mPoint = aPoint -- safety in case we need to mod aPoint 
 	end 
 	local theMission = csarManager.createCSARMissionData(
 			mPoint, 
@@ -1218,6 +1235,7 @@ function csarManager.createCSARMissionFromZone(theZone)
 			theZone.csarMapMarker, -- mapMarker
 			0.1, --theZone.radius) -- radius
 			nil) -- parashoo unit 
+	theMission.inPopulated = theZone.inPopulated -- transfer for csarFX
 	return theMission
 end
 
@@ -1338,12 +1356,22 @@ function csarManager.readCSARZone(theZone)
 	theZone.triggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
 	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", true)
 	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
+	theZone.inPopulated = theZone:getBoolFromZoneProperty("inPopulated", false)
+	theZone.clearance = theZone:getNumberFromZoneProperty("clearance", 10)
+	theZone.maxTries = theZone:getNumberFromZoneProperty("maxTries", 20)
+	
+	if theZone.onRoad and theZone.inPopulated then 
+		trigger.action.outText("warning: competing 'onRoad' and 'inPopulated' attributes in zone <" .. theZone.name .. ">. Using 'onRoad'.", 30)
+	end 
 
 	if (not deferred) then 
 		local mPoint = theZone:getPoint()
 		if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end
 		if theZone.onRoad then 
 			mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
+		elseif theZone.inPopulated then 
+			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance, theZone.maxTries)
+			mPoint = aPoint -- safety in case we need to mod aPoint 
 		end 
 		local theMission = csarManager.createCSARMissionData(
 			mPoint, 

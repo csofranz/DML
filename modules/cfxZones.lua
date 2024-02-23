@@ -1,11 +1,11 @@
 cfxZones = {}
-cfxZones.version = "4.1.2"
+cfxZones.version = "4.2.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
 -- by scripting.
 --
--- Copyright (c) 2021 - 2023 by Christian Franz and cf/x AG
+-- Copyright (c) 2021 - 2024 by Christian Franz and cf/x AG
 --
 
 --[[-- VERSION HISTORY
@@ -44,6 +44,7 @@ cfxZones.version = "4.1.2"
 - 4.1.0   - getBoolFromZoneProperty 'on/off' support for dml variant as well 
 - 4.1.1   - evalRemainder() updates 
 - 4.1.2   - hash property missing warning 
+- 4.2.0   - new createRandomPointInPopulatedZone()
 
 --]]--
 
@@ -424,6 +425,95 @@ function dmlZone:createRandomPointInPolyZone(onEdge)
 	local p, dx, dz = cfxZones.createRandomPointInPolyZone(self, onEdge)
 	return p, dx, dz 
 end 
+
+function dmlZone:createRandomPointInPopulatedZone(radius, maxTries)
+	if not maxTries then maxTries = 20 end 
+	if not radius then radius = 10 end -- meters 
+	local cnt = 0
+	local p, dx, dz
+	repeat
+		p, dx, dz = self:createRandomPointInZone() -- p is x, 0, z 
+		local hits, collector = cfxZones.objectsInRange(p, radius) 
+		if hits < 1 then return p, dx, dz end
+		if hits == 1 then 
+			local o = collector[1]
+			local op = o:getPoint()
+			d = dcsCommon.distFlat(op, p)
+--			trigger.action.outText("singleDist = " .. d, 30)
+			if d > radius/2 then 
+--				trigger.action.outText("good enough, will use", 30)
+				return p, dx, dz 
+			end 
+		end 
+		cnt = cnt + 1
+--		trigger.action.outText(hits .. "hits --> failed try " .. cnt, 30)
+	until cnt > maxTries
+	return p, dx, dz
+end
+
+function cfxZones.createRandomPointInPopulatedZone(theZone, radius, maxTries)
+	if not theZone then return nil, nil, nil end 
+	local p, dx, dz = theZone:createRandomPointInPopulatedZone(radius, maxTries)
+	return p, dx, dz
+end
+
+--[[--
+function dmlZone:createRandomPointInPopulatedZone(radius, maxTries)
+	if not maxTries then maxTries = 20 end 
+	local cnt = 0
+	local p, dx, dz
+	p, dx, dz = self:createRandomPointInZone() -- p is x, 0, z 
+	repeat
+		local hits = cfxZones.objectsInRange(p, radius) 
+		if hits < 1 then return p, dx, dz end 
+		-- move to the right by radius
+		p.z = p.z + radius
+		dz = dz + radius 
+		cnt = cnt + 1
+		trigger.action.outText("failed try " .. cnt, 30)
+	until cnt > maxTries
+	return p, dx, dz
+end
+--]]--
+function cfxZones.objectHandler(theObject, theCollector) -- for world.search
+	table.insert(theCollector, theObject)
+	return true 
+end
+
+function cfxZones.objectsInRange(pt, range) 
+	if not range then range = 100 end -- meters
+	local allCats = {1, 2, 3, 4, 5, 6} -- all cats 
+	local lp = {x = pt.x, y = pt.z}
+    pt.y = land.getHeight(lp)
+	local collector = {}    
+	-- now build the search argument 
+	local args = {
+			id = world.VolumeType.SPHERE,
+			params = {
+				point = pt,
+				radius = range -- range
+			}
+		}
+	-- now call search
+	world.searchObjects(allCats, args, cfxZones.objectHandler, collector)
+	-- now filter for distance because search finds too many 
+	local filtered = {}
+	for idx, anObject in pairs(collector) do 
+		-- calc dist and filter 
+		local op = anObject:getPoint()
+		local dist = dcsCommon.dist(pt, op)
+		if dist < range then 
+--			local e = {
+--					dist = dist,
+--					o = anObject
+--				}
+--			table.insert(filtered, e)
+			table.insert(filtered, anObject)
+		end
+	end 
+	
+	return #filtered, filtered  
+end
 
 function cfxZones.addZoneToManagedZones(theZone)
 	local upperName = string.upper(theZone.name) -- newZone.name:upper()

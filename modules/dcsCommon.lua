@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.2"
+dcsCommon.version = "3.0.3"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -11,6 +11,8 @@ dcsCommon.version = "3.0.2"
 3.0.1  - clone: better handling of string type
 3.0.2  - new getPlayerUnit() 
 3.0.3  - createStaticObjectForCoalitionInRandomRing() returns x and z 
+       - isTroopCarrier() also supports 'helo' keyword
+ 	   - new createTakeOffFromGroundRoutePointData()
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -1285,6 +1287,25 @@ dcsCommon.version = "3.0.2"
 		return route
 	end
 
+	function dcsCommon.createTakeOffFromGroundRoutePointData(pt, isHot) -- vec 3!
+		if not pt then return nil end 
+			
+		local rp = {}	
+		rp.x = pt.x
+		rp.y = pt.z
+		rp.alt = pt.y 
+		if isHot then 
+			rp.action = "From Ground Area Hot"
+			rp.type = "TakeOffGroundHot" 
+		else
+			rp.action = "From Ground Area" -- add " Hot" if hot
+			rp.type = "TakeOffGround" -- add "Hot" (NO blank) if hot
+		end
+		rp.speed = 10 --  that's 36 km/h 
+		rp.alt_type = "BARO"
+		return rp
+	end
+	
 	function dcsCommon.createTakeOffFromParkingRoutePointData(aerodrome)
 		if not aerodrome then return nil end 
 			
@@ -2700,7 +2721,16 @@ end
 
 function dcsCommon.isTroopCarrier(theUnit, carriers)
 	-- return true if conf can carry troups
-	if not theUnit then return false end 
+	if not theUnit then return false end
+
+	-- see if carriers contains "helo" and theUnit is a helo 
+	if dcsCommon.arrayContainsString(carriers, "helo") or dcsCommon.arrayContainsString(carriers, "helos")then
+		local grp = theUnit:getGroup() 
+		if grp:getCategory() == 1 then -- NOT category bug prone, is a group check 
+			return true 
+		end
+	end	
+	
 	local uType = theUnit:getTypeName()
 	return dcsCommon.isTroopCarrierType(uType, carriers) 
 end

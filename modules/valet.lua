@@ -1,5 +1,5 @@
 valet = {}
-valet.version = "1.0.2"
+valet.version = "1.0.3"
 valet.verbose = false 
 valet.requiredLibs = {
 	"dcsCommon", -- always
@@ -12,6 +12,7 @@ valet.valets = {}
 	1.0.0 - initial version 
 	1.0.1 - typos in verbosity corrected
 	1.0.2 - also scan birth events 
+	1.0.3 - outSoundFile now working correctly 
 	
 --]]--
 
@@ -41,7 +42,7 @@ function valet.createValetWithZone(theZone)
 		theZone.firstInSoundFile = cfxZones.getStringFromZoneProperty(theZone, "firstInSoundFile", "<none>")
 	end 
 	
-	theZone.outSoundFile = cfxZones.getStringFromZoneProperty(theZone, "outSoundFile", "<none>")
+	theZone.outSoundFile = cfxZones.getStringFromZoneProperty(theZone, "outSoundFile", theZone.inSoundFile)
 
 	-- greeting/first greeting, handle if "" = no text out 
 	if cfxZones.hasProperty(theZone, "firstGreeting") then 
@@ -195,7 +196,7 @@ function valet.sendOffPlayer(playerName, aPlayerUnit, theZone, theDesc)
 	-- player has left the area
 	local msg = theZone.goodbye or ""
 	local dur = theZone.duration
-	local fileName = "l10n/DEFAULT/" .. theZone.inSoundFile
+	local fileName = "l10n/DEFAULT/" .. theZone.outSoundFile
 	local ID = aPlayerUnit:getID()
 	
 	if msg == "<none>" then msg = "" end

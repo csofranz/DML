@@ -303,7 +303,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if theZone:hasProperty("wholeGroups") then 
 		theZone.centerOnly = theZone:getBoolFromZoneProperty( "wholeGroups", false)
 	end
-	
+	if theZone:hasProperty("inBuiltup") then 
+		theZone.inBuiltup = theZone:getNumberFromZoneProperty("inBuiltup", 10) -- 10 meter radius must be free -- small houses
+	end 
 	theZone.rndHeading = theZone:getBoolFromZoneProperty("rndHeading", false)
 	
 	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
@@ -1063,6 +1065,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			local loc, dx, dy 
 			if spawnZone.onPerimeter then 
 				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
+			elseif spawnZone.inBuiltup then 
+				loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 			else 
 				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
 			end 
@@ -1072,6 +1076,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 					-- *every unit's displacement is randomized
 					if spawnZone.onPerimeter then 
 						loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
+					elseif spawnZone.inBuiltup then 
+						loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 					else	
 						loc, dx, dy = spawnZone:createRandomPointInZone()
 					end 
@@ -1322,6 +1328,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			local loc, dx, dy 
 			if spawnZone.onPerimeter then 
 				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
+			elseif spawnZone.inBuiltup then 
+				loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 			else 
 				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
 			end

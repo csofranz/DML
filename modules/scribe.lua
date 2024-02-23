@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "1.0.0"
+scribe.version = "1.0.1"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -9,7 +9,8 @@ scribe.requiredLibs = {
 --[[--
 Player statistics package
 VERSION HISTORY 
-	1.0.0	Initial Version 
+	1.0.0 Initial Version 
+	1.0.1 postponed land, postponed takeoff, unit_lost 
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
@@ -234,8 +235,9 @@ function scribe.playerEjected(playerName)
 end
 
 function scribe.playerDied(playerName)
---	trigger.action.outText("+++scb: player <" .. playerName .. "> DEAD event, handing off to crashS", 30)
-	-- counts as a crash 
+	if scribe.verbose then 
+		trigger.action.outText("+++scb: player <" .. playerName .. "> DEAD event, handing off to crashS", 30)
+	end -- counts as a crash 
 	local theEntry = scribe.getPlayerNamed(playerName) 
 	if not theEntry.isActive then 
 		if scribe.verbose then 
@@ -365,7 +367,9 @@ function scribe:onEvent(theEvent)
 		scribe.playerUnits[uName] = playerName -- for crash helo detection 
 	end 
 	
-	if theEvent.id == 8 or theEvent.id == 9 then -- dead, pilot_dead 
+	if theEvent.id == 8 or 
+	   theEvent.id == 9 or 
+	   theEvent.id == 30 then -- dead, pilot_dead, unit_lost 
 		scribe.playerDied(playerName)
 	end 
 	
@@ -373,15 +377,17 @@ function scribe:onEvent(theEvent)
 		scribe.playerEjected(playerName)
 	end
 	
-	if theEvent.id == 5 then -- crash 
+	if theEvent.id == 5 then -- crash, maybe not called in MP 
 		scribe.playerCrashed(playerName)
 	end 
 	
-	if theEvent.id == 4 then -- landed 
+	if theEvent.id == 4 or -- landed 
+	   theEvent.id == 56 then 
 		scribe.playerLanded(playerName)
 	end 
 	
-	if theEvent.id == 3 then -- take-off
+	if theEvent.id == 3 or -- take-off
+	   theEvent.id == 55 then -- postponed take-off
 		scribe.playerDeparted(playerName)
 --		trigger.action.outText("departure detected", 30)
 	end 
