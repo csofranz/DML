@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.1.0"
+cfxOwnedZones.version = "2.2.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -29,6 +29,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - method support for individual owned zones 
 	  - method support for global (config) output 
 	  - moved drawZone to cfxZones
+2.2.0 - excludedTypes option in config 
 
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -317,13 +318,43 @@ function cfxOwnedZones.update()
 					-- we only check first unit that is alive
 					local theUnit = dcsCommon.getGroupUnit(aGroup)
 					if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
-						theZone.numRed = theZone.numRed + aGroup:getSize()
+						if cfxOwnedZones.excludedTypes then
+							-- special carve-out for exclduding some 
+							-- unit types to prevent them from capping
+							local uType = theUnit:getTypeName()
+							local forbidden = false 
+							for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+								if uType == aType then 
+									forbidden = true 
+								else 
+								end
+							end
+							if not forbidden then 
+								theZone.numRed = theZone.numRed + aGroup:getSize()
+							end
+						else 
+							theZone.numRed = theZone.numRed + aGroup:getSize()
+						end
 					end
-				else 
+				else -- full eval
 					local allUnits = aGroup:getUnits() 
 					for idy, theUnit in pairs(allUnits) do 
 						if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then 
-							theZone.numRed = theZone.numRed + 1
+--							theZone.numRed = theZone.numRed + 1
+							if cfxOwnedZones.excludedTypes then
+								-- special carve-out for exclduding some 
+								-- unit types to prevent them from capping
+								local uType = theUnit:getTypeName()
+								local forbidden = false 
+								for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+									if uType == aType then forbidden = true end
+								end
+								if not forbidden then 
+									theZone.numRed = theZone.numRed + aGroup:getSize()
+								end
+							else 
+								theZone.numRed = theZone.numRed + aGroup:getSize()
+							end
 						end
 					end
 				end
@@ -337,13 +368,43 @@ function cfxOwnedZones.update()
 					-- we only check first unit that is alive
 					local theUnit = dcsCommon.getGroupUnit(aGroup)
 					if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
-						theZone.numBlue = theZone.numBlue + aGroup:getSize()
+						if cfxOwnedZones.excludedTypes then
+							-- special carve-out for exclduding some 
+							-- unit types to prevent them from capping
+							local uType = theUnit:getTypeName()
+							local forbidden = false 
+							for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+								if uType == aType then 
+									forbidden = true 
+								else 
+								end
+							end
+							if not forbidden then 
+								theZone.numBlue = theZone.numBlue + aGroup:getSize()
+							end
+						else 
+							theZone.numBlue = theZone.numBlue + aGroup:getSize()
+						end
 					end
 				else 
 					local allUnits = aGroup:getUnits() 
 					for idy, theUnit in pairs(allUnits) do 
 						if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
-							theZone.numBlue = theZone.numBlue + 1
+--							theZone.numBlue = theZone.numBlue + 1
+							if cfxOwnedZones.excludedTypes then
+								-- special carve-out for exclduding some 
+								-- unit types to prevent them from capping
+								local uType = theUnit:getTypeName()
+								local forbidden = false 
+								for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+									if uType == aType then forbidden = true end
+								end
+								if not forbidden then 
+									theZone.numBlue = theZone.numBlue + aGroup:getSize()
+								end
+							else 
+								theZone.numBlue = theZone.numBlue + aGroup:getSize()
+							end
 						end
 					end
 				end
@@ -798,6 +859,13 @@ function cfxOwnedZones.readConfigZone(theZone)
 	cfxOwnedZones.blueFill = theZone:getRGBAVectorFromZoneProperty("blueFill", {0.0, 0, 1.0, 0.2})
 	cfxOwnedZones.neutralLine = theZone:getRGBAVectorFromZoneProperty("neutralLine", {0.8, 0.8, 0.8, 1.0})
 	cfxOwnedZones.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", {0.8, 0.8, 0.8, 0.2})
+	
+	if theZone:hasProperty("excludedTypes") then 
+		local theTypes = theZone:getStringFromZoneProperty("excludedTypes", "none")
+		local typeArray = dcsCommon.splitString(theTypes, ",")
+		typeArray = dcsCommon.trimArray(typeArray)
+		cfxOwnedZones.excludedTypes = typeArray
+	end 
 	
 	cfxOwnedZones.method = theZone:getStringFromZoneProperty("method", "inc")
 end

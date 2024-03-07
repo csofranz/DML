@@ -93,16 +93,13 @@ function nameStats.addString(name, aString, path, rootNode)
 	if not name then return nil end 
 	if not aString then return nil end 
 	local theLeaf = nameStats.getLeaf(name, path, rootNode)
-	--table.insert(theLeaf.strings, aString)
 	theLeaf.strings = theLeaf.strings .. aString
---	return aString
 end
 
 -- reset the log
 function nameStats.removeAllString(name, path, rootNode)
 	if not name then return nil end 
 	local theLeaf = nameStats.getLeaf(name, path, rootNode)
---	theLeaf.strings = {}
 	theLeaf.strings = ""
 end
 
@@ -151,7 +148,7 @@ function nameStats.reset(name, path, rootNode)
 	if not name then return nil end 
 	if not rootNode then rootNode = nameStats.stats end 
 	local theEntry = rootNode[name]
-	if not theEntry then 
+	if not theEntry then
 		-- does not yet exist, create a root entry
 		theEntry = nameStats.createRoot(name)
 		rootNode[name] = theEntry
@@ -166,7 +163,7 @@ function nameStats.reset(name, path, rootNode)
 	-- create new leaf and replace existing
 	theLeaf = nameStats.createLeaf()
 	theEntry.data[path] = theLeaf
-		
+	rootNode[name] = theEntry 
 end
 
 --

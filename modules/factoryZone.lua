@@ -17,6 +17,7 @@ factoryZone.name = "factoryZone"
 	  - productionTime config synonyme
 	  - defendMe? attribute 
 	  - triggered 'shocked' mode via defendMe 
+3.1.1 - fixed a big with persistence 
 
 --]]--
 factoryZone.requiredLibs = {
@@ -734,7 +735,7 @@ function factoryZone.loadData()
 	local allZoneData = theData.zoneData 
 	for zName, zData in pairs(allZoneData) do 
 		-- access zone 
-		local theZone = factoryZone.getOwnedZoneByName(zName)
+		local theZone = factoryZone.getFactoryZoneByName(zName)-- was: factoryZone.getOwnedZoneByName(zName)
 		if theZone then 
 			if zData.defenderData then 
 				if theZone.defenders and theZone.defenders:isExist() then

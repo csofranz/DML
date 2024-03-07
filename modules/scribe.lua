@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "1.0.1"
+scribe.version = "1.1.0"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -11,6 +11,7 @@ Player statistics package
 VERSION HISTORY 
 	1.0.0 Initial Version 
 	1.0.1 postponed land, postponed takeoff, unit_lost 
+	1.1.0 supports persistence's SHARED ability to share data across missions
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
@@ -538,6 +539,11 @@ function scribe.readConfigZone()
 	scribe.lTime = theZone:getStringFromZoneProperty("lTime", "time:")
 	scribe.landingCD = theZone:getNumberFromZoneProperty("landingCD", 60) -- seconds between stake-off, landings, or either
 	
+	-- shared data persistence interface 
+	if theZone:hasProperty("sharedData") then 
+		scribe.sharedData = theZone:getStringFromZoneProperty("sharedData", "cfxNameMissing")
+	end 
+	
 end
 
 --
@@ -555,12 +561,13 @@ function scribe.saveData()
 	local theLog = dcsCommon.clone(scribe.db)
 	theData.theLog = theLog
 
-	return theData
+	return theData, scribe.sharedData -- second val only if shared 
 end
 
 function scribe.loadData()
 	if not persistence then return end 
-	local theData = persistence.getSavedDataForModule("scribe")
+	local theData = persistence.getSavedDataForModule("scribe", scribe.sharedData)
+ 
 	if not theData then 
 		if scribe.verbose then 
 			trigger.action.outText("+++scb: no save date received, skipping.", 30)

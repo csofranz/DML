@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "2.0.0"
+persistence.version = "3.0.0"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -17,6 +17,7 @@ persistence.requiredLibs = {
 	Version History 
 	2.0.0 - dml zones, OOP
 			cleanup
+	3.0.0 - shared data 
 	
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
@@ -67,11 +68,34 @@ end
 --
 -- registered modules call this to get their data 
 --
-function persistence.getSavedDataForModule(name)
+function persistence.getSavedDataForModule(name, sharedDataName)
 	if not persistence.active then return nil end 
 	if not persistence.hasData then return nil end 
 	if not persistence.missionData then return end 
+	if not sharedDataName then sharedDataName = nil end 
 	
+	if sharedDataName then 
+		-- we read from shared data and only revert to 
+		-- common if we find nothing
+		local shFile =  persistence.sharedDir .. sharedDataName .. ".txt"
+		if persistence.verbose then 
+			trigger.action.outText("persistence: will try to load shared data from <" .. shFile .. ">", 30)
+		end 
+		local theData = persistence.loadTable(shFile, true)
+		if theData then 
+			if theData[name] then 
+				return theData[name]
+			end 
+			if persistence.verbose then 
+				trigger.action.outText("persistence: shared data file <" .. sharedDataName .. "> exists but currently holds no data for <" .. name .. ">, reverting to main", 30)
+			end 
+		else 
+			if persistence.verbose then 
+				trigger.action.outText("persistence: shared data file <" .. sharedDataName
+				.. "> does not yet exist, reverting to main", 30)
+			end 
+		end
+	end
 	return persistence.missionData[name] -- simply get the modules data block
 end
 
@@ -162,9 +186,8 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	
 	local path = persistence.missionDir .. fileName
 	if shared then 
-		-- we would now change the path
-		trigger.action.outText("+++persistence: NYI: shared", 30)
-		return 
+		-- we change the path to shared 
+		path = persistence.sharedDir .. fileName .. ".txt" 
 	end
 	
 	local theFile = nil 
@@ -186,11 +209,21 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	return true 
 end
 
-function persistence.loadText(fileName) -- load file as text
+function persistence.loadText(fileName, hasPath) -- load file as text
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
 	
-	local path = persistence.missionDir .. fileName
+	local path 
+	if hasPath then 
+		path = fileName 
+	else 
+		path = persistence.missionDir .. fileName
+	end 
+	
+	if persistence.verbose then 
+		trigger.action.outText("persistence: will load text file <" .. path .. ">", 30)
+	end 
+	
 	local theFile = io.open(path, "r") 
 	if not theFile then return nil end
 	
@@ -201,11 +234,12 @@ function persistence.loadText(fileName) -- load file as text
 	return t
 end
 
-function persistence.loadTable(fileName) -- load file as table 
+function persistence.loadTable(fileName, hasPath) -- load file as table 
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
+	if not hasPath then hasPath = false end 
 
-	local t = persistence.loadText(fileName)
+	local t = persistence.loadText(fileName, hasPath)
 	
 	if not t then return nil end 
 	
@@ -241,6 +275,12 @@ function persistence.initFlagsFromData(theFlags)
 	
 end
 
+function persistence.freshStart()
+	persistence.missionData = {}
+	persistence.hasData = true 
+	trigger.action.setUserFlag("cfxPersistenceHasData", 1)
+end
+
 function persistence.missionStartDataLoad()
 	-- check one: see if we have mission data 
 	local theData = persistence.loadTable(persistence.saveFileName)
@@ -249,6 +289,7 @@ function persistence.missionStartDataLoad()
 		if persistence.verbose then 
 			trigger.action.outText("+++persistence: no saved data, fresh start.", 30)
 		end
+		persistence.freshStart()
 		return 
 	end -- there was no data to load
 	
@@ -256,6 +297,7 @@ function persistence.missionStartDataLoad()
 		if persistence.verbose then 
 			trigger.action.outText("+++persistence: detected fresh start.", 30)
 		end
+		persistence.freshStart()
 		return 
 	end
 	
@@ -308,9 +350,14 @@ function persistence.collectFlagData()
 	return flagData
 end
 
+function persistence.saveSharedData()
+	trigger.action.outText("WARNING: Persistence's saveSharedData invoked!", 30)
+end
+
 function persistence.saveMissionData()
 	local myData = {}
-
+	local allSharedData = {} -- organized by 'shared' name returned  
+	
 	-- first, handle versionID and freshMaker
 	if persistence.freshMaker then 
 		myData["freshMaker"] = true 
@@ -325,8 +372,15 @@ function persistence.saveMissionData()
 	
 	-- now handle all other modules 
 	for moduleName, callbacks in pairs(persistence.callbacks) do
-		local moduleData = callbacks.persistData()
+		local moduleData, sharedName = callbacks.persistData()
 		if moduleData then 
+			if sharedName then -- save into shared bucket
+				-- allshared[specificShared[moduleName]]
+				local specificShared = allSharedData[sharedName]
+				if not specificShared then specificShared = {} end
+				specificShared[moduleName] = moduleData
+				allSharedData[sharedName] = specificShared -- write back 
+			end
 			myData[moduleName] = moduleData
 			if persistence.verbose then 
 				trigger.action.outText("+++persistence: gathered data from <" .. moduleName .. ">", 30)
@@ -340,6 +394,23 @@ function persistence.saveMissionData()
 	
 	-- now save data to file 
 	persistence.saveTable(myData, persistence.saveFileName)
+	
+	-- now save all shared name data as separate files 
+	for shareName, data in pairs (allSharedData) do 
+		-- save into shared folder, by name that was returned from callback
+		-- read what was saved, and replace changed key/values from data
+		local shFile =  persistence.sharedDir .. shareName .. ".txt"
+		local theData = persistence.loadTable(shFile, true) -- hasPath
+		if theData then 
+			for k, v in pairs(data) do 
+				theData[k] = v
+			end 
+		else 
+			theData = data 
+		end
+		
+		persistence.saveTable(theData, shareName, true) -- true --> shared
+	end 
 end
 
 --
@@ -433,6 +504,7 @@ function persistence.readConfigZone()
 	end
 	
 	persistence.serverDir = theZone:getStringFromZoneProperty("serverDir", "Missions\\")
+	persistence.sharedDir = "DML-Shared-Data\\" -- hard-wired!
 
 	if hasConfig then 
 		if theZone:hasProperty("saveDir") then 
@@ -513,10 +585,12 @@ function persistence.start()
 		return false
 	end
 	
-	local mainDir = persistence.root .. persistence.serverDir 
+	local mainDir = persistence.root .. persistence.serverDir -- usually DCS/Missions	
 	if not dcsCommon.stringEndsWith(mainDir, "\\") then 
 		mainDir = mainDir .. "\\"
 	end
+	local sharedDir = mainDir .. persistence.sharedDir -- ends on \\, hardwired 
+	persistence.sharedDir = sharedDir	
 
 	-- lets see if we can access the server's mission directory and 
 	-- save directory 	
@@ -531,11 +605,11 @@ function persistence.start()
 		return false 
 	end	
 	persistence.mainDir = mainDir
-
 	local missionDir = mainDir .. persistence.saveDir
 	if not dcsCommon.stringEndsWith(missionDir, "\\") then 
 		missionDir = missionDir .. "\\"
 	end
+
 	
 	-- check if mission dir exists already 
 	local success, mode = persistence.hasFile(missionDir)
@@ -563,6 +637,35 @@ function persistence.start()
 		end
 		if persistence.verbose then 
 			trigger.action.outText("+++persistence: created <" .. missionDir .. "> successfully, will save mission data here", 30)
+		end 
+	end
+
+	-- make sure that SHARED dir exists, create if not 
+	local success, mode = persistence.hasFile(sharedDir)
+	if success and mode == "directory" then 
+		-- has been allocated, and is dir
+		if persistence.verbose then 
+			trigger.action.outText("+++persistence: saving SHARED data to <" .. sharedDir .. ">", 30)
+		end
+	elseif success then 
+		if persistence.verbose then 
+			trigger.action.outText("+++persistence: <" .. sharedDir .. "> is not a directory", 30)
+		end
+		return false 
+	else 
+		-- does not exist, try to allocate it
+		if persistence.verbose then 
+			trigger.action.outText("+++persistence: will now create <" .. sharedDir .. ">", 30)
+		end		
+		local ok, mkErr = lfs.mkdir(sharedDir)
+		if not ok then 
+			if persistence.verbose then 
+				trigger.action.outText("+++persistence: unable to create <" .. sharedDir .. ">: <" .. mkErr .. ">", 30)
+			end
+			return false
+		end
+		if persistence.verbose then 
+			trigger.action.outText("+++persistence: created <" .. sharedDir .. "> successfully, will save SHARED data here", 30)
 		end 
 	end
 	

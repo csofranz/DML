@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "2.0.0"
+cfxObjectSpawnZones.version = "2.1.0"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -14,6 +14,7 @@ cfxObjectSpawnZones.verbose = false
 
  version history
    2.0.0 - dmlZones 
+   2.1.0 - autoTurn attribute 
    
 --]]--
  
@@ -87,6 +88,8 @@ function cfxObjectSpawnZones.createSpawner(inZone)
 	theSpawner.autoLink = inZone:getBoolFromZoneProperty("autoLink", true)
 
 	theSpawner.heading = inZone:getNumberFromZoneProperty("heading", 0)
+	-- note: currently expects rads. maybe change to degrees?
+	theSpawner.autoTurn = inZone:getBoolFromZoneProperty("autoTurn", false)
 	theSpawner.weight = inZone:getNumberFromZoneProperty("weight", 0)
 	if theSpawner.weight < 0 then theSpawner.weight = 0 end 
 	
@@ -265,8 +268,8 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 	end 
 	
 	local numObjects = n 
-	local degrees = 3.14157 / 180
-	local degreeIncrement = (360 / numObjects) * degrees
+	local degrees = 3.14157 / 180 -- rads!
+	local degreeIncrement = (360 / numObjects) * degrees -- rads!
 	local currDegree = 0
 	local missionObjects = {}
 	for i=1, numObjects do 
@@ -274,11 +277,14 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 		local ry = math.sin(currDegree) * aZone.radius
 		local ox = center.x + rx 
 		local oy = center.z + ry -- note: z!
-		
+		local hdg = aSpawner.heading -- heading is in rads!
+		if aSpawner.autoTurn then 
+			hdg = hdg + currDegree -- currDegree is in rads!
+		end 
 		local theStaticData = dcsCommon.createStaticObjectData(
 			aSpawner.baseName .. "-" .. aSpawner.count, 
 			theType,
-			aSpawner.heading,
+			hdg ,--aSpawner.heading,
 			false, -- dead?
 			aSpawner.isCargo,
 			aSpawner.weight)

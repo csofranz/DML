@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.0.10"
+stopGap.version = "1.1.0"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -7,7 +7,7 @@ stopGap.spIgnore = "-sp" -- only single-player ignored
 stopGap.isMP = false 
 stopGap.running = true 
 stopGap.refreshInterval = -1 -- seconds to refresh all statics. -1 = never, 3600 = once every hour 
-
+stopGap.kickTheDead = true -- kick players to spectators on death to prevent re-entry issues
 
 stopGap.requiredLibs = {
 	"dcsCommon",
@@ -49,6 +49,7 @@ stopGap.requiredLibs = {
 		  - refresh attribute config zone 
 	1.0.9 - in line with standalone (optimization not required for DML)
 	1.0.10 - some more verbosity for spIgnore and sgIgnore zones (DML only)
+	1.1.0 - kickTheDead option 
 	
 --]]--
 
@@ -233,11 +234,11 @@ function stopGap:onEvent(event)
 	if not event.id then return end 
 	if not event.initiator then return end 
 	local theUnit = event.initiator 
-
-	if event.id == 15 then 
-		if (not theUnit.getPlayerName) or (not theUnit:getPlayerName()) then 
-			return 
-		end -- no player unit.
+	if (not theUnit.getPlayerName) or (not theUnit:getPlayerName()) then 
+		return 
+	end -- no player unit.
+	local id = event.id 
+	if id == 15 then 
 		local uName = theUnit:getName()
 		local theGroup = theUnit:getGroup() 
 		local gName = theGroup:getName()
@@ -248,11 +249,31 @@ function stopGap:onEvent(event)
 			if stopGap.standInGroups[gName] then 
 				stopGap.removeStaticGapGroupNamed(gName)
 			end
-		end
-		
+		end		
 		-- erase stopGapGUI flag, no longer required, unit 
 		-- is now slotted into 
 		trigger.action.setUserFlag("SG"..gName, 0)
+	end
+	if 	(id == 9) or (id == 30) or (id == 5) then -- dead, lost, crash 
+		local pName = theUnit:getPlayerName()
+		timer.scheduleFunction(stopGap.kickplayer, pName, timer.getTime() + 1)
+	end
+	
+end
+
+stopGap.kicks = {}
+function stopGap.kickplayer(args)
+	if not stopGap.kickTheDead then return end 
+	local pName = args 
+	for i,slot in pairs(net.get_player_list()) do
+		local nn = net.get_name(slot)
+		if nn == pName then
+			if stopGap.kicks[nn] then 
+				if timer.getTime() < stopGap.kicks[nn] then return end 
+			end 
+			net.force_player_slot(slot, 0, '')
+			stopGap.kicks[nn] = timer.getTime() + 5 -- avoid too many kicks in 5 seconds
+		end
 	end
 end
 
@@ -403,6 +424,7 @@ function stopGap.readConfigZone(theZone)
 	end
 	
 	stopGap.refreshInterval = theZone:getNumberFromZoneProperty("refresh", -1) -- default: no refresh
+	stopGap.kickTheDead = theZone:getBoolFromZoneProperty("kickDead", true)
 end
 
 --

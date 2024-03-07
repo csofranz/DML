@@ -1,5 +1,5 @@
 bombRange = {}
-bombRange.version = "1.1.0"
+bombRange.version = "1.1.1"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {

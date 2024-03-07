@@ -1,5 +1,5 @@
 cargoSuper = {}
-cargoSuper.version = "1.1.1"
+cargoSuper.version = "1.1.2"
 --[[--
 version history
 	1.0.0 - initial version
@@ -14,7 +14,9 @@ version history
 		  - getManifestForCategory alias for getManifestFor
 		  - removeAllMassFor()
 	1.1.1 - deleteMassObject corrected index bug 
-	
+	1.1.2 - removed a typo that did not reset mass correctly 
+			in removeAllMassForCargo 
+			
 CargoSuper manages weigth for a logical named unit. Weight can be added 
 to arbitrary categories like 'passengers', 'cargo' or "whatever". In order 
 to add weight to a unit, first create a massObject through createMassObject
@@ -102,14 +104,14 @@ function cargoSuper.removeMassObjectFrom(name, category, theMassObject, forget)
 end
 
 -- DO NOT PUBLISH. Provided only for backwards compatibility
-function cargoSuper.removeAllMassForCargo(name, catergory)
+function cargoSuper.removeAllMassForCargo(name, category)
 	if not category then category = "cSup!DefCat" end 
 	nameStats.reset(name, category, cargoSuper.cargos)
 end
 
 -- alias for removeAllMassForCargo
-function cargoSuper.removeAllMassForCategory(name, catergory)
-	cargoSuper.removeAllMassForCargo(name, catergory)
+function cargoSuper.removeAllMassForCategory(name, category)
+	cargoSuper.removeAllMassForCargo(name, category)
 end
 
 function cargoSuper.removeAllMassFor(name)
