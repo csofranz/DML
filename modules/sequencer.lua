@@ -1,5 +1,5 @@
 sequencer = {}
-sequencer.version = "1.0.0"
+sequencer.version = "2.0.0"
 sequencer.verbose = false 
 sequencer.requiredLibs = {
 	"dcsCommon", -- always
@@ -8,7 +8,11 @@ sequencer.requiredLibs = {
 --[[--
 	Sequencer: pull flags in a sequence with oodles of features
 	
-	Copyright (c) 2022 by Christian Franz
+	Copyright (c) 2022-24 by Christian Franz
+
+Version History
+	1.0.0 - initial version 
+	2.0.0 - dmlZones 
 --]]--
 
 sequencer.sequencers = {}
@@ -31,12 +35,12 @@ end
 --
 
 function sequencer.createSequenceWithZone(theZone)
-	local seqRaw = cfxZones.getStringFromZoneProperty(theZone, "sequence!", "none")
+	local seqRaw = theZone:getStringFromZoneProperty("sequence!", "none")
 	local theFlags = dcsCommon.flagArrayFromString(seqRaw)
 	theZone.sequence = theFlags
-	local interRaw = cfxZones.getStringFromZoneProperty(theZone, "intervals", "86400")
-	if cfxZones.hasProperty(theZone, "interval") then 
-		interRaw = cfxZones.getStringFromZoneProperty(theZone, "interval", "86400") -- = 24 * 3600 = 24 hours default interval 
+	local interRaw = theZone:getStringFromZoneProperty("intervals", "86400")
+	if theZone:hasProperty("interval") then 
+		interRaw = theZone:getStringFromZoneProperty("interval", "86400") -- = 24 * 3600 = 24 hours default interval 
 	end
 	
 	local theIntervals = dcsCommon.rangeArrayFromString(interRaw, false)
@@ -45,53 +49,52 @@ function sequencer.createSequenceWithZone(theZone)
 	theZone.seqIndex = 1 -- we start at one 
 	theZone.intervalIndex = 1 -- here too
 	
-	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false)
-	theZone.zeroSequence = cfxZones.getBoolFromZoneProperty(theZone, "zeroSequence", true)
+	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
+	theZone.zeroSequence = theZone:getBoolFromZoneProperty("zeroSequence", true)
 	
-	theZone.seqLoop = cfxZones.getBoolFromZoneProperty(theZone, "loop", false)
+	theZone.seqLoop = theZone:getBoolFromZoneProperty("loop", false)
 	
 	theZone.seqRunning = false 
 	theZone.seqComplete = false 
 	theZone.seqStarted = false 
 	
 	theZone.timeLimit = 0 -- will be set to when we expire 
-	if cfxZones.hasProperty(theZone, "done!") then 
-		theZone.seqDone = cfxZones.getStringFromZoneProperty(theZone, "done!", "<none>")
-	elseif cfxZones.hasProperty(theZone, "seqDone!") then 
-		theZone.seqDone = cfxZones.getStringFromZoneProperty(theZone, "seqDone!", "<none>")
+	if theZone:hasProperty("done!") then 
+		theZone.seqDone = theZone:getStringFromZoneProperty("done!", "<none>")
+	elseif theZone:hasProperty("seqDone!") then 
+		theZone.seqDone = theZone:getStringFromZoneProperty("seqDone!", "<none>")
 	end
 	
-	if cfxZones.hasProperty(theZone, "next?") then 
-		theZone.nextSeq = cfxZones.getStringFromZoneProperty(theZone, "next?", "<none>")
-		theZone.lastNextSeq = cfxZones.getFlagValue(theZone.nextSeq, theZone)
+	if theZone:hasProperty("next?") then 
+		theZone.nextSeq = theZone:getStringFromZoneProperty("next?", "<none>")
+		theZone.lastNextSeq = theZone:getFlagValue(theZone.nextSeq)
 	end
 	
-	if cfxZones.hasProperty(theZone, "startSeq?") then 
-		theZone.startSeq = cfxZones.getStringFromZoneProperty(theZone, "startSeq?", "<none>")
-		theZone.lastStartSeq = cfxZones.getFlagValue(theZone.startSeq, theZone)
-		--trigger.action.outText("read as " .. theZone.startSeq, 30)
+	if theZone:hasProperty("startSeq?") then 
+		theZone.startSeq = theZone:getStringFromZoneProperty("startSeq?", "<none>")
+		theZone.lastStartSeq = theZone:getFlagValue(theZone.startSeq)
 	end
 	
-	if cfxZones.hasProperty(theZone, "stopSeq?") then 
-		theZone.stopSeq = cfxZones.getStringFromZoneProperty(theZone, "stopSeq?", "<none>")
-		theZone.lastStopSeq = cfxZones.getFlagValue(theZone.stopSeq, theZone)
+	if theZone:hasProperty("stopSeq?") then 
+		theZone.stopSeq = theZone:getStringFromZoneProperty("stopSeq?", "<none>")
+		theZone.lastStopSeq = theZone:getFlagValue(theZone.stopSeq)
 	end
 	
-	if cfxZones.hasProperty(theZone, "resetSeq?") then 
-		theZone.resetSeq = cfxZones.getStringFromZoneProperty(theZone, "resetSeq?", "<none>")
-		theZone.lastResetSeq = cfxZones.getFlagValue(theZone.resetSeq, theZone)
+	if theZone:hasProperty("resetSeq?") then 
+		theZone.resetSeq = theZone:getStringFromZoneProperty("resetSeq?", "<none>")
+		theZone.lastResetSeq = theZone:getFlagValue(theZone.resetSeq)
 	end
 	
 	
 	-- methods
-	theZone.seqMethod = cfxZones.getStringFromZoneProperty(theZone, "method", "inc")
-	if cfxZones.hasProperty(theZone, "seqMethod") then 
-		theZone.seqMethod = cfxZones.getStringFromZoneProperty(theZone, "seqMethod", "inc")
+	theZone.seqMethod = theZone:getStringFromZoneProperty("method", "inc")
+	if theZone:hasProperty("seqMethod") then 
+		theZone.seqMethod = theZone:getStringFromZoneProperty("seqMethod", "inc")
 	end
 	
-	theZone.seqTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	if cfxZones.hasProperty(theZone, "seqTriggerMethod") then 
-		theZone.seqTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "seqTriggerMethod", "change")
+	theZone.seqTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
+	if theZone:hasProperty("seqTriggerMethod") then 
+		theZone.seqTriggerMethod = theZone:getStringFromZoneProperty("seqTriggerMethod", "change")
 	end
 	
 	if (not theZone.onStart) and not (theZone.startSeq) then 
@@ -103,7 +106,7 @@ function sequencer.fire(theZone)
 	-- time's up. poll flag at index
 	local theFlag = theZone.sequence[theZone.seqIndex]
 	if theFlag then 
-		cfxZones.pollFlag(theFlag, theZone.seqMethod, theZone)
+		theZone:pollFlag(theFlag, theZone.seqMethod)
 		if theZone.verbose or sequencer.verbose then 
 			trigger.action.outText("+++seq: triggering flag <" .. theFlag .. "> for index <" .. theZone.seqIndex .. "> in sequence <" .. theZone.name .. ">", 30)
 		end
@@ -160,7 +163,7 @@ function sequencer.continue(theZone)
 	-- reset any lingering 'next' flags so they don't 
 	-- trigger a newly started sequence 
 	if theZone.nextSeq then 
-		theZone.lastNextSeq = cfxZones.getFlagValue(theZone.nextSeq, theZone)
+		theZone.lastNextSeq = theZone:getFlagValue(theZone.nextSeq)
 	end 
 	
 	if not theZone.seqStarted then 
@@ -204,14 +207,13 @@ function sequencer.update()
 	
 	for idx, theZone in pairs(sequencer.sequencers) do
 		-- see if reset was pulled
-		if theZone.resetSeq and cfxZones.testZoneFlag(theZone, theZone.resetSeq, theZone.seqTriggerMethod, "lastResetSeq") then
+		if theZone.resetSeq and theZone:testZoneFlag(theZone.resetSeq, theZone.seqTriggerMethod, "lastResetSeq") then
 			sequencer.reset(theZone)
 		end
 		
-		--trigger.action.outText("have as " .. theZone.startSeq, 30)
 		-- first, check if we need to pause or continue
 		if (not theZone.seqRunning) and theZone.startSeq and
-		cfxZones.testZoneFlag(theZone, theZone.startSeq, theZone.seqTriggerMethod, "lastStartSeq") then 
+		theZone:testZoneFlag(theZone.startSeq, theZone.seqTriggerMethod, "lastStartSeq") then 
 			sequencer.continue(theZone)
 			if theZone.verbose or sequencer.verbose then
 				trigger.action.outText("+++seq: continuing sequencer <" .. theZone.name .. ">", 30)
@@ -220,19 +222,19 @@ function sequencer.update()
 			-- synch the start flag so we don't immediately trigger 
 			-- when it starts
 			if theZone.startSeq then 
-				theZone.lastStartSeq = cfxZones.getFlagValue(theZone.startSeq, theZone)
+				theZone.lastStartSeq = theZone:getFlagValue(theZone.startSeq)
 			end
 		end
 	
 		if theZone.seqRunning and theZone.stopSeq and
-		cfxZones.testZoneFlag(theZone, theZone.stopSeq, theZone.seqTriggerMethod, "lastStopSeq") then 
+		theZone:testZoneFlag(theZone.stopSeq, theZone.seqTriggerMethod, "lastStopSeq") then 
 			sequencer.pause(theZone)
 			if theZone.verbose or sequencer.verbose then
 				trigger.action.outText("+++seq: pausing sequencer <" .. theZone.name .. ">", 30)
 			end
 		else 
 			if theZone.stopSeq then 
-				theZone.lastStopSeq = cfxZones.getFlagValue(theZone.stopSeq, theZone)
+				theZone.lastStopSeq = theZone:getFlagValue(theZone.stopSeq)
 			end
 		end
 	
@@ -241,7 +243,7 @@ function sequencer.update()
 			-- check if we have received a 'next' signal 
 			local doNext = false 
 			if theZone.nextSeq then 
-				doNext = cfxZones.testZoneFlag(theZone, theZone.nextSeq, theZone.seqTriggerMethod, "lastNextSeq") 
+				doNext = theZone:testZoneFlag(theZone.nextSeq, theZone.seqTriggerMethod, "lastNextSeq") 
 				if doNext and (sequencer.verbose or theZone.verbose) then 
 					trigger.action.outText("+++seq: 'next' command received for sequencer <" .. theZone.name .. "> on <" .. theZone.nextSeq .. ">", 30)
 				end
@@ -251,7 +253,7 @@ function sequencer.update()
 			if doNext or (theZone.timeLimit < now) then 
 				-- we are timed out or triggered!
 				if theZone.nextSeq then
-					theZone.lastNextSeq = cfxZones.getFlagValue(theZone.nextSeq, theZone)
+					theZone.lastNextSeq = theZone:getFlagValue(theZone.nextSeq)
 				end 
 				sequencer.fire(theZone)
 				sequencer.advanceInterval(theZone)
@@ -260,7 +262,7 @@ function sequencer.update()
 					sequencer.startWaitCycle(theZone)
 				else 
 					if theZone.seqDone then 
-						cfxZones.pollFlag(theZone.seqDone, theZone.seqMethod, theZone)
+						theZone:pollFlag(theZone.seqDone, theZone.seqMethod)
 						if theZone.verbose or sequencer.verbose then 
 							trigger.action.outText("+++seq: banging done! flag <" .. theZone.seqDone .. "> for sequence <" .. theZone.name .. ">", 30)
 						end
@@ -364,13 +366,10 @@ function sequencer.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("sequencerConfig") 
 	if not theZone then 
-		theZone = cfxZones.createSimpleZone("sequencerConfig")
-		if sequencer.verbose then 
-			trigger.action.outText("***RND: NO config zone!", 30)
-		end 
+		theZone = cfxZones.createSimpleZone("sequencerConfig") 
 	end 
 	
-	sequencer.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	sequencer.verbose = theZone.verbose
 	
 	if sequencer.verbose then 
 		trigger.action.outText("***RND: read config", 30)

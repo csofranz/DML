@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "3.0.1"
+cfxPlayerScore.version = "3.1.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -13,6 +13,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - DCS 2.9 safe 
 	3.0.1 - cleanup
 	3.0.2 - interface with ObjectDestructDetector for scoring scenery objects
+	3.1.0 - shared data for persistence
 	
 --]]--
 
@@ -1198,6 +1199,9 @@ function cfxPlayerScore.readConfigZone(theZone)
 		theZone:setFlagValue(cfxPlayerScore.blueScoreOut, cfxPlayerScore.coalitionScore[2])
 	end
 	
+	if theZone:hasProperty("sharedData") then 
+		cfxPlayerScore.sharedData = theZone:getStringFromZoneProperty("sharedData", "cfxNameMissing")
+	end 
 end
 
 --
@@ -1218,15 +1222,15 @@ function cfxPlayerScore.saveData()
 		featZones[theZone.name] = theFeat
 	end
 	theData.featData = featZones 
-	return theData
+	return theData, cfxPlayerScore.sharedData
 end
 
 function cfxPlayerScore.loadData()
 	if not persistence then return end 
-	local theData = persistence.getSavedDataForModule("cfxPlayerScore")
+	local theData = persistence.getSavedDataForModule("cfxPlayerScore", cfxPlayerScore.sharedData)
 	if not theData then 
 		if cfxPlayerScore.verbose then 
-			trigger.action.outText("+++playerscore: no save date received, skipping.", 30)
+			trigger.action.outText("+++playerscore: no save data received, skipping.", 30)
 		end
 		return
 	end

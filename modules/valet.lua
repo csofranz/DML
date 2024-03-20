@@ -1,5 +1,5 @@
 valet = {}
-valet.version = "1.0.3"
+valet.version = "1.1.0"
 valet.verbose = false 
 valet.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,7 +13,7 @@ valet.valets = {}
 	1.0.1 - typos in verbosity corrected
 	1.0.2 - also scan birth events 
 	1.0.3 - outSoundFile now working correctly 
-	
+	1.1.0 - hysteresis is now time-based (10 seconds)
 --]]--
 
 function valet.addValet(theZone)
@@ -236,6 +236,8 @@ function valet.checkZoneAgainstPlayers(theZone, allPlayers)
 	p.y = 0 -- sanity first
 	local maxRad = theZone.maxRadius
 	-- set up hysteresis 
+	-- new hysteresis: 10 seconds outside time
+	local now = timer.getTime()
 	local outside = maxRad * 1.2 
 	for playerName, aPlayerUnit in pairs (allPlayers) do 
 		local unitName = aPlayerUnit:getName()
@@ -269,6 +271,7 @@ function valet.checkZoneAgainstPlayers(theZone, allPlayers)
 				if not theDesc then 
 					theDesc = {}
 					theDesc.currentlyIn = false 
+					theDesc.lastTimeIn = 99999999
 					theDesc.greets = 0 
 					theDesc.byes = 0 
 					theDesc.unitName = unitName
@@ -278,6 +281,7 @@ function valet.checkZoneAgainstPlayers(theZone, allPlayers)
 					else
 						-- ha!!! player changed planes!
 						theDesc.currentlyIn = false 
+						theDesc.lastTimeIn = 99999999
 						theDesc.greets = 0 
 						theDesc.byes = 0 
 						theDesc.unitName = unitName
@@ -289,11 +293,14 @@ function valet.checkZoneAgainstPlayers(theZone, allPlayers)
 					valet.greetPlayer(playerName, aPlayerUnit, theZone, theDesc)
 				end
 				
-			elseif (dist > outside) and theDesc then 
+				theDesc.lastTimeIn = now 
+				
+			elseif theDesc and now > theDesc.lastTimeIn + 10 then --(dist > outside) and theDesc then 
 				if theDesc.unitName == unitName then 
 				else
 					-- ha!!! player changed planes!
 					theDesc.currentlyIn = false 
+					theDesc.lastTimeIn = 99999999
 					theDesc.greets = 0 
 					theDesc.byes = 0 
 					theDesc.unitName = unitName
@@ -306,6 +313,7 @@ function valet.checkZoneAgainstPlayers(theZone, allPlayers)
 				else 
 					-- was outside before
 				end 
+				theDesc.lastTimeIn = 99999999
 			else 
 				-- we are in the twilight zone (hysteresis). Do nothing.
 			end 

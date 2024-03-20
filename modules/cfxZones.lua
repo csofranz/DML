@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.2.0"
+cfxZones.version = "4.3.0"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -45,6 +45,7 @@ cfxZones.version = "4.2.0"
 - 4.1.1   - evalRemainder() updates 
 - 4.1.2   - hash property missing warning 
 - 4.2.0   - new createRandomPointInPopulatedZone()
+- 4.3.0   - boolean supports maybe, random, rnd, ?
 
 --]]--
 
@@ -1618,6 +1619,7 @@ function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
 end
 
 function cfxZones.pollFlag(theFlag, method, theZone) 
+	--trigger.action.outText("enter pollflag for flag <" .. theFlag .. "> of zone <" .. theZone.name .. ">", 30)
 	local allFlags = {}
 	if dcsCommon.containsString(theFlag, ",") then 
 		if cfxZones.verbose then 
@@ -2429,6 +2431,11 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 		return theBool
 	end
 	
+	-- special: return a random value if p == "rnd" or "?" or "maybe"
+	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
+		return (math.random(1000) < 500) -- 50:50
+	end 	
+	
 	local theBool = true 
 	-- only go false if exactly no or false or "0"
 	theBool = (p ~= 'false') and (p ~= 'no') and (p ~= "0") and (p~="off")
@@ -2454,6 +2461,11 @@ function dmlZone:getBoolFromZoneProperty(theProperty, defaultVal)
 		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p=="on")
 		return theBool
 	end
+	
+	-- special: return a random value if p == "rnd" or "?" or "maybe"
+	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
+		return (math.random(1000) < 500) -- 50:50
+	end 	
 	
 	local theBool = true 
 	-- only go false if exactly no or false or "0"

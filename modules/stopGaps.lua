@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.1.0"
+stopGap.version = "1.1.1"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -50,6 +50,7 @@ stopGap.requiredLibs = {
 	1.0.9 - in line with standalone (optimization not required for DML)
 	1.0.10 - some more verbosity for spIgnore and sgIgnore zones (DML only)
 	1.1.0 - kickTheDead option 
+	1.1.1 - filter "from runway" clients 
 	
 --]]--
 
@@ -90,6 +91,7 @@ function stopGap.isGroundStart(theGroup)
 	if action == "Fly Over Point" then return false end 
 	if action == "Turning Point" then return false end 	
 	if action == "Landing" then return false end 	
+	if action == "From Runway" then return false end 
 	-- looks like aircraft is on the ground
 	-- but is it in water (carrier)? 
 	local u1 = theGroup.units[1]

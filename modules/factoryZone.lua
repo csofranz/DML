@@ -1,5 +1,5 @@
 factoryZone = {}
-factoryZone.version = "3.1.0"
+factoryZone.version = "3.1.1"
 factoryZone.verbose = false 
 factoryZone.name = "factoryZone" 
 

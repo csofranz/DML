@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "3.2.2"
+csarManager.version = "3.2.5"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -37,6 +37,9 @@ csarManager.ups = 1
   3.2.2  - reset helicopter weight on birth 
          - cleanup 
   3.2.3  - hardening against *accidental* multi-unit player groups. 
+  3.2.4  - pass theZone with missionCreateCB when created from zone 
+  3.2.5  - smoke callbacks 
+		 - useRanks option 
 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
@@ -79,6 +82,7 @@ csarManager.csarCompleteCB = {}
 csarManager.csarCreatedCB = {}
 csarManager.csarRemoveCB = {}
 csarManager.csarPickupCB = {}
+csarManager.csarSmokeCB = {}
 --
 -- CREATING A CSAR 
 --
@@ -168,6 +172,13 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 			trigger.action.outText("+++csar: 'downed' procced for <" .. name .. ">", 30)
 		end
 	end
+	
+	if csarManager.useRanks then 
+--		local ranks = csarManager.ranks -- {"Lt", "Lt", "Lt", "Col", "Cpt", "WO", "WO"}
+		local myRank = dcsCommon.pickRandom(csarManager.ranks)
+		name = myRank .. " " .. name 
+	end 
+	
 	if not inRadius then inRadius = csarManager.rescueRadius end 
 	newMission.name = name .. " (ID#" .. csarManager.missionID .. ")" -- make it uuid-capable
 	if csarManager.addPrefix then 
@@ -199,9 +210,9 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 	return newMission
 end
 
-function csarManager.addMission(theMission)
+function csarManager.addMission(theMission, theZone)
 	table.insert(csarManager.openMissions, theMission)
-	csarManager.invokeNewMissionCallbacks(theMission)
+	csarManager.invokeNewMissionCallbacks(theMission, theZone)
 end
 
 function csarManager.removeMission(theMission, pickup)
@@ -1134,6 +1145,13 @@ function csarManager.update() -- every second
 					
 					-- also pop smoke if not popped already, or more than 5 minutes ago
 					if csarManager.useSmoke and  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
+						if csarMission.lastSmokeTime < 0 then 
+							-- this is the first time that this mission pops smoke
+--							trigger.action.outText("***will invoke smoke cb", 30)
+							csarManager.invokeSmokeCallbacks(csarMission, uName)
+						else 
+							--trigger.action.outText("nope smoke's a dope", 30)
+						end 
 						local smokePoint = dcsCommon.randomPointOnPerimeter(
 							csarManager.smokeDist, csarMission.zone.point.x, csarMission.zone.point.z) 
 						dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor)
@@ -1242,7 +1260,7 @@ function csarManager.update() -- every second
 --			if currVal ~= theZone.lastCSARVal then 
 			if theZone:testZoneFlag(theZone.startCSAR, theZone.triggerMethod, "lastCSARVal") then 
 				local theMission = csarManager.createCSARMissionFromZone(theZone)
-				csarManager.addMission(theMission)
+				csarManager.addMission(theMission, theZone)
 				--theZone.lastCSARVal = currVal
 				if csarManager.verbose or theZone.verbose then 
 					trigger.action.outText("+++csar: started CSAR mission for <" .. theZone.csarName .. ">", 30)
@@ -1399,7 +1417,13 @@ function csarManager.readCSARZone(theZone)
 		trigger.action.outText("warning: competing 'onRoad' and 'inPopulated' attributes in zone <" .. theZone.name .. ">. Using 'onRoad'.", 30)
 	end 
 
+	-- add to list of startable csar
+	if theZone.startCSAR then 
+		csarManager.addCSARZone(theZone)
+	end 
+
 	if (not deferred) then 
+	--[[--
 		local mPoint = theZone:getPoint()
 		if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end
 		if theZone.onRoad then 
@@ -1418,13 +1442,12 @@ function csarManager.readCSARZone(theZone)
 			theZone.csarMapMarker,
 			0.1, -- theZone.radius,
 			nil) -- parashoo unit 
-		csarManager.addMission(theMission)
+		csarManager.addMission(theMission, theZone)
+--]]--
+		local theMission = csarManager.createCSARMissionFromZone(theZone)
+		csarManager.addMission(theMission, theZone)
 	end
 
-	-- add to list of startable csar
-	if theZone.startCSAR then 
-		csarManager.addCSARZone(theZone)
-	end 
 	
 	if deferred and not theZone.startCSAR then 
 		trigger.action.outText("+++csar: warning - CSAR Mission in Zone <" .. theZone.name .. "> can't be started", 30)
@@ -1449,16 +1472,19 @@ function csarManager.invokeCallbacks(theCoalition, success, numRescued, notes, t
 	-- invoke anyone who wants to know that a group 
 	-- of people was rescued.
 	for idx, cb in pairs(csarManager.csarCompleteCB) do 
+		-- notes = 
+		--   "KIA" when evacuee is killed (success = false)
+		--   "success" when mission done (success = true)
+		--   "lost" when evacuee timed out  (success = false) 
 		cb(theCoalition, success, numRescued, notes, theMission)
 	end
 end
 
 -- mission created cb(theMission)
-function csarManager.invokeNewMissionCallbacks(theMission)
---trigger.action.outText("enter invoke new mission cb", 30)
+function csarManager.invokeNewMissionCallbacks(theMission, theZone)
 	-- invoke anyone who wants to know that a new mission was created
 	for idx, cb in pairs(csarManager.csarCreatedCB) do 
-		cb(theMission)
+		cb(theMission, theZone)
 	end
 end
 
@@ -1468,6 +1494,12 @@ function csarManager.invokePickUpCallbacks(theMission)
 	for idx, cb in pairs(csarManager.csarPickupCB) do 
 		cb(theMission)
 	end
+end
+
+function csarManager.invokeSmokeCallbacks(theMission, uName)
+	for idx, cb in pairs(csarManager.csarSmokeCB) do 
+		cb(theMission, uName)
+	end 
 end
 
 function csarManager.installCallback(theCB)
@@ -1481,6 +1513,10 @@ end
 function csarManager.installPickupCallback(theCB)
 	table.insert(csarManager.csarPickupCB, theCB)
 end
+
+function csarManager.installSmokeCallback(theCB)
+	table.insert(csarManager.csarSmokeCB, theCB)
+end 
 
 function csarManager.readConfigZone()
 	csarManager.name = "csarManagerConfig" -- compat with cfxZones
@@ -1545,6 +1581,11 @@ function csarManager.readConfigZone()
 	end
 	
 	csarManager.addPrefix = theZone:getBoolFromZoneProperty("addPrefix", true)
+	csarManager.useRanks = theZone:getBoolFromZoneProperty("useRanks", false)
+	local lRanks= theZone:getStringFromZoneProperty("ranks", "Lt, Lt, Lt, Col, Cpt, WO, WO")
+	local typeArray = dcsCommon.splitString(lRanks, ",")
+	typeArray = dcsCommon.trimArray(typeArray)
+	csarManager.ranks = typeArray 
 
 	csarManager.maxMissions = theZone:getNumberFromZoneProperty("maxMissions", 15)
 	

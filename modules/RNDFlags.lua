@@ -1,5 +1,5 @@
 rndFlags = {}
-rndFlags.version = "2.0.0"
+rndFlags.version = "2.0.1"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,7 +14,8 @@ rndFlags.requiredLibs = {
 	Version History
 
 	2.0.0 - dmlZones, OOP
-
+	2.0.1 - a little less verbosity 
+	
 --]]
 
 rndFlags.rndGen = {}
@@ -164,7 +165,9 @@ function rndFlags.fire(theZone)
 	for i=1, pollSize do 
 		-- check there are still flags left 
 		if #availableFlags < 1 then 
-			trigger.action.outText("+++RND: no flags left in " .. theZone.name .. " in index " .. i, 30)
+			if rndFlags.verbose or theZone.verbose then 
+				trigger.action.outText("+++RND: no flags left in <" .. theZone.name .. "> in index " .. i, 30)
+			end 
 			theZone.myFlags = {} 
 			if theZone.reshuffle then 
 				rndFlags.reshuffle(theZone)
@@ -180,7 +183,7 @@ function rndFlags.fire(theZone)
 		
 		--rndFlags.pollFlag(theFlag, theZone.rndMethod)
 		if rndFlags.verbose or theZone.verbose then 
-			trigger.action.outText("+++RND: polling " .. theFlag .. " with " .. theZone.rndMethod, 30)
+			trigger.action.outText("+++RND: polling <" .. theFlag .. "> with " .. theZone.rndMethod, 30)
 		end
 		
 		theZone:pollFlag(theFlag, theZone.rndMethod) 

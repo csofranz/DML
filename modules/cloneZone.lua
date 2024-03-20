@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.0.1"
+cloneZones.version = "2.1.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -20,8 +20,10 @@ cloneZones.uniqueCounter = 9200000 -- we start group numbering here
 cloneZones.lclUniqueCounter = 1 -- zone-local init value, can be config'dHeading
 cloneZones.globalCounter = 1 -- module-global count 
 
-cloneZones.allClones = {} -- all clones spawned, regularly GC'd 
+cloneZones.allClones = {} -- all clones spawned, regularly GC'd
+                          -- contains DATA blocks! 
 cloneZones.allCObjects = {} -- all clones objects
+cloneZones.despawnPlan = {} -- used with despawnIn 
 
 cloneZones.respawnOnGroupID = true 
 
@@ -40,6 +42,8 @@ cloneZones.respawnOnGroupID = true
 	2.0.0 - clean-up 
 	2.0.1 - improved empty! logic to account for deferred spawn 
 		    when pre-wipe is active 
+	2.1.0 - despawnIn option 
+		  - inBuiltup option for rndLoc 
 --]]--
 
 --
@@ -332,6 +336,10 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end
 	
 	theZone.useAI = theZone:getBoolFromZoneProperty("useAI", true)
+	
+	if theZone:hasProperty("despawnIn") then 
+		theZone.despawnInMin, theZone.despawnInMax = theZone:getPositiveRangeFromZoneProperty("despawnIn", 2,2)
+	end 
 	-- we end with clear plate 
 end
 
@@ -1214,6 +1222,20 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- SPAWN NOW!!!!
 		theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
+		
+		-- see if this is an auto-despawner 
+		if spawnZone.despawnInMin then 
+			local now = timer.getTime()
+			local timeLimit = dcsCommon.randomBetween(spawnZone.despawnInMin, spawnZone.despawnInMax)
+			local info = {}
+			info.theGroup = theGroup 
+			info.name = theData.name
+			info.isObject = false 
+			info.timeLimit = now + timeLimit
+			info.cloneZone = spawnZone
+			table.insert(cloneZones.despawnPlan, info)
+--			trigger.action.outText("+++clne: scheduled auto-despawn for <" .. info.name .. "> in <" .. timeLimit .. "> secs", 30)
+		end 
 				
 		-- turn off AI if disabled 
 		if not rawData.useAI then 
@@ -1393,6 +1415,18 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local theStatic = coalition.addStaticObject(ctry, rawData)
 		local newStaticID = tonumber(theStatic:getID()) 
 		table.insert(spawnedStatics, theStatic)
+		if spawnZone.despawnInMin then 
+			local now = timer.getTime()
+			local timeLimit = dcsCommon.randomBetween(spawnZone.despawnInMin, spawnZone.despawnInMax)
+			local info = {}
+			info.theGroup = theStatic 
+			info.name = theData.name
+			info.isObject = true 
+			info.timeLimit = now + timeLimit
+			info.cloneZone = spawnZone
+			table.insert(cloneZones.despawnPlan, info)
+--			trigger.action.outText("+++clne: scheduled auto-despawn for OBJECT <" .. info.name .. "> in <" .. timeLimit .. "> secs", 30)
+		end 
 		-- we don't mix groups with units, so no lookup tables for 
 		-- statics 
 		if newStaticID == rawData.CZTargetID then 
@@ -1677,7 +1711,7 @@ function cloneZones.update()
 		local willSpawn = false -- init to false.
 		if aZone:testZoneFlag(aZone.spawnFlag, aZone.cloneTriggerMethod, "lastSpawnValue") then
 			if cloneZones.verbose or aZone.verbose then 
-				trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. ">", 30)
+				trigger.action.outText("+++clnZ: spawn triggered for <" .. aZone.name .. "> on flag <" .. aZone.spawnFlag .. ">", 30)
 			end 
 			cloneZones.spawnWithCloner(aZone)
 			willSpawn = true -- in case prewipe, we delay
@@ -1702,6 +1736,30 @@ function cloneZones.update()
 		end
 		
 	end
+	
+	-- now remove all scheduled despawns 
+	local now = timer.getTime()
+	local filtered = {}
+	for idx, theInfo in pairs(cloneZones.despawnPlan) do 
+		if theInfo.timeLimit < now then 
+--			trigger.action.outText("+++clne: auto-despawning <" .. theInfo.name .. ">", 30)
+			if theInfo.isObject then 
+				-- dealloc static object 
+				local theObject = theInfo.theGroup 
+				if theObject and StaticObject.isExist(theObject) then 
+					StaticObject.destroy(theObject)
+				end 
+			else 
+				local theGroup = theInfo.theGroup 
+				if theGroup and Group.isExist(theGroup) then 
+					Group.destroy(theGroup)
+				end
+			end 
+		else 
+			table.insert(filtered, theInfo)
+		end
+	end
+	cloneZones.despawnPlan = filtered
 end
 
 function cloneZones.doOnStart()

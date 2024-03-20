@@ -1,5 +1,5 @@
 groupTracker = {}
-groupTracker.version = "2.0.0"
+groupTracker.version = "2.0.1"
 groupTracker.verbose = false 
 groupTracker.ups = 1 
 groupTracker.requiredLibs = {
@@ -11,6 +11,7 @@ groupTracker.trackers = {}
 --[[--
 	Version History 
 	2.0.0 - dmlZones, OOP, clean-up, legacy support
+	2.0.1 - fix to verbosity, better verbosity 
 	
 --]]--
 
@@ -473,6 +474,9 @@ function groupTracker.update()
 		-- see if we need to bang on empty!
 		local currCount = #theZone.trackedGroups + dcsCommon.getSizeOfTable(theZone.limbo)
 		if theZone.allGoneFlag and currCount == 0 and currCount ~= theZone.lastGroupCount then 
+			if theZone.verbose or groupTracker.verbose then 
+				trigger.action.outText("+++gTrk: all groups for tracker <" .. theZone.name .. "> gone, polling <" .. theZone.allGoneFlag .. ">", 30)
+			end 
 			cfxZones.pollFlag(theZone.allGoneFlag, theZone.trackerMethod, theZone)
 		end 
 		theZone.lastGroupCount = currCount
@@ -558,7 +562,7 @@ function groupTracker.trackGroupsInZone(theZone)
 			for idy, aGroup in pairs(theGroups) do
 				groupTracker.addGroupToTracker(aGroup, theTracker)
 				if groupTracker.verbose or theZone.verbose then 
-					trigger.action.outText("+++gTrk-TW: added " .. theGroup:getName() .. " to tracker " .. theName, 30)
+					trigger.action.outText("+++gTrk-TW: added " .. aGroup:getName() .. " to tracker " .. theName, 30)
 				end
 			end
 		end 

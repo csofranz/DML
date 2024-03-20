@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.1.0 STANDALONE"
+stopGap.version = "1.1.1 STANDALONE"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true 
 stopGap.ignoreMe = "-sg"
@@ -36,7 +36,8 @@ stopGap.kickTheDead = true -- kick players to spectators on death to prevent re-
 	1.0.8 - added refreshInterval option as requested 
 	1.0.9 - optimization when turning on stopgap
 	1.1.0 - kickTheDead option 
-
+	1.1.1 - filter "from runway" clients
+	
 --]]--
 
 stopGap.standInGroups ={}
@@ -131,6 +132,7 @@ function stopGap.isGroundStart(theGroup)
 	if action == "Fly Over Point" then return false end 
 	if action == "Turning Point" then return false end 	
 	if action == "Landing" then return false end 	
+	if action == "From Runway" then return false end 
 	-- looks like aircraft is on the ground
 	-- but is it in water (carrier)? 
 	local u1 = theGroup.units[1]
