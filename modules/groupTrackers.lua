@@ -126,6 +126,7 @@ end
 function groupTracker.addGroupToTrackerNamed(theGroup, trackerName)
 	if not trackerName then 
 		trigger.action.outText("+++gTrk: nil tracker in addGroupToTrackerNamed", 30)
+		return 
 	end 
 	if not theGroup then 
 		trigger.action.outText("+++gTrk: no group in addGroupToTrackerNamed <" .. trackerName .. ">", 30)
@@ -543,6 +544,13 @@ function groupTracker.trackGroupsInZone(theZone)
 	local trackerName = cfxZones.getStringFromZoneProperty(theZone, "addToTracker:", "<none>")
 	
 	local theGroups = cfxZones.allGroupsInZone(theZone, nil)
+--[[--	trigger.action.outText("Groups in zone <" .. theZone.name .. ">:", 30)
+	local msg = "  :: "
+	for idx, aGroup in pairs (theGroups) do 
+		msg = msg .. " <" .. aGroup:getName() .. ">"
+	end 
+	trigger.action.outText(msg, 30)
+--]]--
 	
 	-- now init array processing
 	local trackerNames = {}
@@ -612,6 +620,18 @@ function groupTracker.start()
 	for k, aZone in pairs(attrZones) do 
 		groupTracker.trackGroupsInZone(aZone) -- process attributes
 	end
+	
+	-- verbose debugging:
+	-- show who's tracking who 
+	for idx, theZone in pairs(groupTracker.trackers) do 
+		if groupTracker.verbose or theZone.verbose then 
+			local msg = " - Tracker <" .. theZone.name .. ">: "
+			for idx, theGroup in pairs(theZone.trackedGroups) do 
+				msg = msg .. "<" .. theGroup:getName() .. "> "
+			end
+			trigger.action.outText(msg, 30)
+		end 
+	end 
 	
 	-- update all cloners and spawned clones from file 
 	if persistence then 

@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.0"
+cfxZones.version = "4.3.1"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -46,6 +46,8 @@ cfxZones.version = "4.3.0"
 - 4.1.2   - hash property missing warning 
 - 4.2.0   - new createRandomPointInPopulatedZone()
 - 4.3.0   - boolean supports maybe, random, rnd, ?
+		  - small optimization for randomInRange()
+		  - randomDelayFromPositiveRange also allows 0 
 
 --]]--
 
@@ -977,7 +979,7 @@ function cfxZones.isGroupPartiallyInZone(aGroup, aZone)
 	if not aGroup:isExist() then return false end 
 	local allUnits = aGroup:getUnits()
 	for uk, aUnit in pairs (allUnits) do 
-		if aUnit:isExist() and aUnit:getLife() > 1 then 		
+		if Unit.isExist(aUnit) and aUnit:getLife() > 1 then 		
 			local p = aUnit:getPoint()
 			local inzone, percent, dist = cfxZones.pointInZone(p, aZone)
 			if inzone then		
@@ -2244,8 +2246,9 @@ end
 function cfxZones.randomDelayFromPositiveRange(minVal, maxVal) -- should be moved to dcsCommon 
 	if not maxVal then return minVal end 
 	if not minVal then return maxVal end 
+	if minVal == maxVal then return minVal end 
 	local delay = maxVal
-	if minVal > 0 and minVal < delay then 
+	if minVal >= 0 and minVal < delay then 
 		-- we want a randomized from time from minTime .. delay
 		local varPart = delay - minVal + 1
 		varPart = dcsCommon.smallRandom(varPart) - 1

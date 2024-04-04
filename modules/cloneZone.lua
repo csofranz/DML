@@ -98,8 +98,6 @@ function cloneZones.partOfGroupDataInZone(theZone, theUnits)
 		uP.x = aUnit.x 
 		uP.y = 0
 		uP.z = aUnit.y -- !! y-z
-		--local dist = dcsCommon.dist(uP, zP)
-		--if dist <= theZone.radius then return true  end 
 		if theZone:pointInZone(uP) then return true end 
 	end 
 	return false 
@@ -107,7 +105,6 @@ end
 
 function cloneZones.allGroupsInZoneByData(theZone) 
 	local theGroupsInZone = {}
-	local radius = theZone.radius 
 	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
 		if groupData.units then 
 			if cloneZones.partOfGroupDataInZone(theZone, groupData.units) then 

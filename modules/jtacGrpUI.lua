@@ -1,15 +1,24 @@
 jtacGrpUI = {}
-jtacGrpUI.version = "1.0.2"
+jtacGrpUI.version = "2.0.0"
+jtacGrpUI.requiredLibs = {
+	"dcsCommon", -- always
+	"cfxZones", 
+	"cfxGroundTroops", 
+}
 --[[-- VERSION HISTORY
  - 1.0.2 - also include idling JTACS
          - add positional info when using owned zones 
-		 
+ - 2.0.0 - dmlZones 
+         - sanity checks upon load 
+		 - eliminated cfxPlayer dependence 
+		 - clean-up 
+		 - jtacSound 
 --]]--
 -- find & command cfxGroundTroops-based jtacs
 -- UI installed via OTHER for all groups with players
 -- module based on xxxGrpUI
  
-jtacGrpUI.groupConfig = {} -- all inited group private config data 
+jtacGrpUI.groupConfig = {} -- all inited group private config data, indexed by group name. 
 jtacGrpUI.simpleCommands = true -- if true, f10 other invokes directly
 
 --
@@ -24,6 +33,9 @@ function jtacGrpUI.resetConfig(conf)
 end
 
 function jtacGrpUI.createDefaultConfig(theGroup)
+	if not theGroup then return nil end 
+	if not Group.isExist(theGroup) then return end 
+	
 	local conf = {}
 	conf.theGroup = theGroup
 	conf.name = theGroup:getName()
@@ -32,8 +44,8 @@ function jtacGrpUI.createDefaultConfig(theGroup)
 	
 	jtacGrpUI.resetConfig(conf)
 
-	conf.mainMenu = nil; -- this is where we store the main menu if we branch
-	conf.myCommands = nil; -- this is where we store the commands if we branch 
+	conf.mainMenu = nil; -- root
+	conf.myCommands = nil; -- commands branch 
 	
 	return conf
 end
@@ -41,15 +53,15 @@ end
 -- getConfigFor group will allocate if doesn't exist in DB
 -- and add to it
 function jtacGrpUI.getConfigForGroup(theGroup)
-	if not theGroup then 
+	if not theGroup or (not Group.isExist(theGroup))then 
 		trigger.action.outText("+++WARNING: jtacGrpUI nil group in getConfigForGroup!", 30)
 		return nil 
 	end
 	local theName = theGroup:getName()
-	local c = jtacGrpUI.getConfigByGroupName(theName) -- we use central accessor
+	local c = jtacGrpUI.getConfigByGroupName(theName) 
 	if not c then 
 		c = jtacGrpUI.createDefaultConfig(theGroup)
-		jtacGrpUI.groupConfig[theName] = c -- should use central accessor...
+		jtacGrpUI.groupConfig[theName] = c 
 	end
 	return c 
 end
@@ -66,16 +78,13 @@ function jtacGrpUI.getConfigForUnit(theUnit)
 		trigger.action.outText("+++WARNING: jtacGrpUI nil unit in getConfigForUnit!", 30)
 		return nil 
 	end
-	
 	local theGroup = theUnit:getGroup()
 	return getConfigForGroup(theGroup)
 end
 
 --
---
 -- M E N U   H A N D L I N G 
 -- =========================
---
 --
  function jtacGrpUI.clearCommsSubmenus(conf)
 	if conf.myCommands then 
@@ -95,8 +104,7 @@ function jtacGrpUI.removeCommsFromConfig(conf)
 	end
 end
 
--- this only works in single-unit groups. may want to check if group 
--- has disappeared
+-- this only works in single-unit player groups. 
 function jtacGrpUI.removeCommsForUnit(theUnit)
 	if not theUnit then return end
 	if not theUnit:isExist() then return end 	
@@ -112,11 +120,21 @@ function jtacGrpUI.removeCommsForGroup(theGroup)
 	jtacGrpUI.removeCommsFromConfig(conf)
 end
 
---
--- set main root in F10 Other. All sub menus click into this 
---
 function jtacGrpUI.isEligibleForMenu(theGroup)
-	return true
+	if jtacGrpUI.jtacTypes == "all" or 
+	   jtacGrpUI.jtacTypes == "any" then return true end 
+	if dcsCommon.stringStartsWith(jtacGrpUI.jtacTypes, "hel", true) then 
+		local cat = theGroup:getCategory()
+		return cat == 1
+	end
+	if dcsCommon.stringStartsWith(jtacGrpUI.jtacTypes, "plan", true) then 
+		local cat = theGroup:getCategory()
+		return cat == 0
+	end
+	if jtacGrpUI.verbose then 
+		trigger.action.outText("+++jGUI: unknown jtacTypes <" .. jtacGrpUI.jtacTypes .. "> -- allowing access to group <" .. theGroup:getName() ..">", 30)
+	end 
+	return true -- for later expansion 
 end
 
 function jtacGrpUI.setCommsMenuForUnit(theUnit)
@@ -131,38 +149,25 @@ function jtacGrpUI.setCommsMenuForUnit(theUnit)
 end
 
 function jtacGrpUI.setCommsMenu(theGroup)
-	-- depending on own load state, we set the command structure
-	-- it begins at 10-other, and has 'jtac' as main menu with submenus
-	-- as required 
 	if not theGroup then return end
-	if not theGroup:isExist() then return end 
-	
-	-- we test here if this group qualifies for 
-	-- the menu. if not, exit 
+	if not Group.isExist(theGroup) then return end 
 	if not jtacGrpUI.isEligibleForMenu(theGroup) then return end
 	
 	local conf = jtacGrpUI.getConfigForGroup(theGroup) 
-	conf.id = theGroup:getID(); -- we do this ALWAYS so it is current even after a crash 
---	trigger.action.outText("+++ setting group <".. conf.theGroup:getName() .. "> jtac command", 30)
+	conf.id = theGroup:getID(); -- we always do this ALWAYS
 	
 	if jtacGrpUI.simpleCommands then 
 		-- we install directly in F-10 other 
 		if not conf.myMainMenu then 
 			local commandTxt = "jtac Lasing Report"
 			local theCommand =  missionCommands.addCommandForGroup(
-				conf.id, 
-				commandTxt,
-				nil,
-				jtacGrpUI.redirectCommandX, 
-				{conf, "lasing report"}
-				)
+				conf.id, commandTxt, nil, jtacGrpUI.redirectCommandX, {conf, "lasing report"})
 			conf.myMainMenu = theCommand
 		end
 		
 		return 
 	end
-	
-	
+		
 	-- ok, first, if we don't have an F-10 menu, create one 
 	if not (conf.myMainMenu) then 
 		conf.myMainMenu = missionCommands.addSubMenuForGroup(conf.id, 'jtac') 
@@ -178,12 +183,6 @@ function jtacGrpUI.setCommsMenu(theGroup)
 end
 
 function jtacGrpUI.addSubMenus(conf)
-	-- add menu items to choose from after 
-	-- user clickedf on MAIN MENU. In this implementation
-	-- they all result invoked methods
-	
-	
-	
 	local commandTxt = "jtac Lasing Report"
 	local theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
@@ -193,23 +192,7 @@ function jtacGrpUI.addSubMenus(conf)
 				{conf, "lasing report"}
 				)
 	table.insert(conf.myCommands, theCommand)
---[[--
-	commandTxt = "This is another important command"
-	theCommand =  missionCommands.addCommandForGroup(
-				conf.id, 
-				commandTxt,
-				conf.myMainMenu,
-				jtacGrpUI.redirectCommandX, 
-				{conf, "Sub2"}
-				)
-	table.insert(conf.myCommands, theCommand)
---]]--
 end
-
---
--- each menu item has a redirect and timed invoke to divorce from the
--- no-debug zone in the menu invocation. Delay is .1 seconds
---
 
 function jtacGrpUI.redirectCommandX(args)
 	timer.scheduleFunction(jtacGrpUI.doCommandX, args, timer.getTime() + 0.1)
@@ -219,25 +202,25 @@ function jtacGrpUI.doCommandX(args)
 	local conf = args[1] -- < conf in here
 	local what = args[2] -- < second argument in here
 	local theGroup = conf.theGroup
---	trigger.action.outTextForGroup(conf.id, "+++ groupUI: processing comms menu for <" .. what .. ">", 30)
 	local targetList = jtacGrpUI.collectJTACtargets(conf, true)
 	-- iterate the list
 	if #targetList < 1 then 
 		trigger.action.outTextForGroup(conf.id, "No targets are currently being lased", 30)
+		trigger.action.outSoundForGroup(conf.id, jtacGrpUI.jtacSound)
 		return 
 	end
 	
 	local desc = "JTAC Target Report:\n"
---	trigger.action.outTextForGroup(conf.id, "Target Report:", 30)
 	for i=1, #targetList do 
 		local aTarget = targetList[i]
 		if aTarget.idle then 
 			desc = desc .. "\n" .. aTarget.jtacName .. aTarget.posInfo ..": no target"
 		else 
-			desc = desc .. "\n" .. aTarget.jtacName .. aTarget.posInfo .." lasing " .. aTarget.lazeTargetType .. " [" .. aTarget.range .. "nm at " .. aTarget.bearing .. "°]"
+			desc = desc .. "\n" .. aTarget.jtacName .. aTarget.posInfo .." lasing " .. aTarget.lazeTargetType .. " [" .. aTarget.range .. "nm at " .. aTarget.bearing .. "°]," .. " code=" .. cfxGroundTroops.laseCode 
 		end 
 	end
 	trigger.action.outTextForGroup(conf.id, desc .. "\n", 30)
+	trigger.action.outSoundForGroup(conf.id, jtacGrpUI.jtacSound)
 end
 
 function jtacGrpUI.collectJTACtargets(conf, includeIdle)
@@ -249,14 +232,14 @@ function jtacGrpUI.collectJTACtargets(conf, includeIdle)
 	local theJTACS = {}
 	for idx, troop in pairs(cfxGroundTroops.deployedTroops) do 
 		if troop.coalition == conf.coalition
-		 and troop.orders == "laze" 
-		 and troop.lazeTarget 
-		 and troop.lazeTarget:isExist() 
+			and troop.orders == "laze" 
+			and troop.lazeTarget 
+			and troop.lazeTarget:isExist() 
 		then 
 			table.insert(theJTACS, troop)
 		elseif troop.coalition == conf.coalition 
-		 and troop.orders == "laze"
-		 and includeIdle
+			and troop.orders == "laze"
+			and includeIdle
 		then 
 			-- we also include idlers
 			table.insert(theJTACS, troop)
@@ -277,7 +260,7 @@ function jtacGrpUI.collectJTACtargets(conf, includeIdle)
 			local jtacLoc = dcsCommon.getGroupLocation(troop.group)
 			local nearestZone = cfxOwnedZones.getNearestOwnedZoneToPoint(jtacLoc)
 			if nearestZone then 
-				local ozRange = dcsCommon.dist(jtacLoc, nearestZone.point) * 0.000621371
+				local ozRange = dcsCommon.dist(jtacLoc, nearestZone.point) * 0.000621371 -- meters to nm 
 				ozRange = math.floor(ozRange * 10) / 10
 				local relPos = dcsCommon.compassPositionOfARelativeToB(jtacLoc, nearestZone.point)
 				aTarget.posInfo = " (" .. ozRange .. "nm " .. relPos .. " of " .. nearestZone.name .. ")"
@@ -295,7 +278,6 @@ function jtacGrpUI.collectJTACtargets(conf, includeIdle)
 			aTarget.range = aTarget.range * 0.000621371 -- meter to miles 
 			aTarget.range = math.floor(aTarget.range * 10) / 10
 			aTarget.bearing = dcsCommon.bearingInDegreesFromAtoB(here, there)
-			--aTarget.jtacName = troop.name 
 			aTarget.lazeTargetType = troop.lazeTargetType
 		end
 		table.insert(targetList, aTarget)
@@ -309,87 +291,82 @@ function jtacGrpUI.collectJTACtargets(conf, includeIdle)
 end
 
 --
--- G R O U P   M A N A G E M E N T 
+-- event handler - simplified, only for player birth
 --
--- Group Management is required to make sure all groups
--- receive a comms menu and that they receive a clean-up 
--- when required 
---
--- Callbacks are provided by cfxPlayer module to which we
--- subscribe during init 
---
-function jtacGrpUI.playerChangeEvent(evType, description, player, data)
-	--trigger.action.outText("+++ groupUI: received <".. evType .. "> Event", 30)
-	if evType == "newGroup" then 
-		-- initialized attributes are in data as follows
-		--   .group - new group 
-		--   .name - new group's name 
-		--   .primeUnit - the unit that trigggered new group appearing 
-		--   .primeUnitName - name of prime unit 
-		--   .id group ID 
-		--theUnit = data.primeUnit
-		jtacGrpUI.setCommsMenu(data.group)
---		trigger.action.outText("+++ groupUI: added " .. theUnit:getName() .. " to comms menu", 30)
-		return 
-	end
+function jtacGrpUI:onEvent(theEvent)
+	if not theEvent then return end 
+	local theUnit = theEvent.initiator
+	if not theUnit then return end 
+	local uName = theUnit:getName()
+	if not theUnit.getPlayerName then return end 
+	if not theUnit:getPlayerName() then return end 
+	-- we now have a player birth event. 
+	local pName = theUnit:getPlayerName()
+	local theGroup = theUnit:getGroup()
+	if not theGroup then return end 
+	local gName = theGroup:getName()
+	if not gName then return end 
+	if jtacGrpUI.verbose then 
+		trigger.action.outText("+++jGUI: birth player. installing JTAC for <" .. pName .. "> on unit <" .. uName .. ">", 30)
+	end 
+	local conf = jtacGrpUI.getConfigByGroupName(gName)		
+	if conf then 
+		jtacGrpUI.removeCommsFromConfig(conf) -- remove menus 
+		jtacGrpUI.resetConfig(conf) -- re-init this group for when it re-appears
+	end 
 	
-	if evType == "removeGroup" then 
-		-- data is the player record that no longer exists. it consists of
-		--  .name 
-		-- we must remove the comms menu for this group else we try to add another one to this group later
-		local conf = jtacGrpUI.getConfigByGroupName(data.name)
-		
-		if conf then 
-			jtacGrpUI.removeCommsFromConfig(conf) -- remove menus 
-			jtacGrpUI.resetConfig(conf) -- re-init this group for when it re-appears
-		else 
-			trigger.action.outText("+++ jtacUI: can't retrieve group <" .. data.name .. "> config: not found!", 30)
-		end
-		
-		return
-	end
-	
-	if evType == "leave" then
-		-- player unit left. we don't care since we only work on group level
-		-- if they were the only, this is followed up by group disappeared 
-		
-	end
-	
-	if evType == "unit" then 
-		-- player changed units. almost never in MP, but possible in solo
-		-- because of 1 seconds timing loop 
-		-- will result in a new group appearing and a group disappearing, so we are good
-		-- may need some logic to clean up old configs and/or menu items 
-
-	end
-	
+	jtacGrpUI.setCommsMenu(theGroup)
 end
+
 
 --
 -- Start 
 --
+function jtacGrpUI.readConfigZone()
+	local theZone = cfxZones.getZoneByName("jtacGrpUIConfig") 
+	if not theZone then 
+		theZone = cfxZones.createSimpleZone("jtacGrpUIConfig") 
+	end 
+		
+	jtacGrpUI.jtacTypes = theZone:getStringFromZoneProperty("jtacTypes", "all")
+	jtacGrpUI.jtacTypes = string.lower(jtacGrpUI.jtacTypes)
+	
+	jtacGrpUI.jtacSound = theZone:getStringFromZoneProperty("jtacSound", "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+	
+	jtacGrpUI.verbose = theZone.verbose 
+
+end
+
 function jtacGrpUI.start()
-
-	-- iterate existing groups so we have a start situation
-	-- now iterate through all player groups and install the Assault Troop Menu
-	allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
-	-- contains per group player record. Does not resolve on unit level!
-	for gname, pgroup in pairs(allPlayerGroups) do 
-		local theUnit = pgroup.primeUnit -- get any unit of that group
-		jtacGrpUI.setCommsMenuForUnit(theUnit) -- set up
+	if not dcsCommon.libCheck then 
+		trigger.action.outText("cfx jtac GUI requires dcsCommon", 30)
+		return false 
+	end 
+	if not dcsCommon.libCheck("cfx jtac GUI", jtacGrpUI.requiredLibs) then
+		return false 
 	end
-	-- now install the new group notifier to install Assault Troops menu
 	
-	cfxPlayer.addMonitor(jtacGrpUI.playerChangeEvent)
+	jtacGrpUI.readConfigZone()
+	
+	local allPlayerUnits = dcsCommon.getAllExistingPlayerUnitsRaw()
+	for unitName, theUnit in pairs(allPlayerUnits) do 
+		jtacGrpUI.setCommsMenuForUnit(theUnit)
+	end
+	
+	-- now install event handler
+	world.addEventHandler(jtacGrpUI)
 	trigger.action.outText("cf/x jtacGrpUI v" .. jtacGrpUI.version .. " started", 30)
-	
+	return true 
 end
 
---
 -- GO GO GO 
---
-if not cfxGroundTroops then 
-	trigger.action.outText("cf/x jtacGrpUI REQUIRES cfxGroundTroops to work.", 30)
-else 
-	jtacGrpUI.start()
+if not jtacGrpUI.start() then 
+	trigger.action.outText("JTAC GUI failed to start up.", 30)
+	jtacGrpUI = nil 
 end
+
+--[[--
+	TODO:
+		callback into GroundTroops lazing
+		what is 'simpleCommand' really for? remove or refine 
+--]]--

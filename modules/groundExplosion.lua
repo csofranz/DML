@@ -1,5 +1,5 @@
 groundExplosion = {}
-groundExplosion.version = "1.0.0"
+groundExplosion.version = "1.1.0"
 groundExplosion.requiredLibs = {
 	"dcsCommon", 
 	"cfxZones", 
@@ -9,6 +9,8 @@ groundExplosion.zones = {}
 --[[--
 Version History
 	1.0.0 - Initial version 
+	1.0.1 - fixed lib check for objectDestructDetector 
+	1.1.0 - new flares attribute
 	
 --]]--
 
@@ -28,6 +30,9 @@ function groundExplosion.addExplosion(theZone)
 	end 
 	theZone.duration = theZone:getNumberFromZoneProperty("duration", 0)
 	theZone.aglMin, theZone.aglMax = theZone:getPositiveRangeFromZoneProperty("AGL", 1,1)
+	if theZone:hasProperty("flares") then 
+		theZone.flareMin, theZone.flareMax = theZone:getPositiveRangeFromZoneProperty("flares", 0-3)
+	end 
 end
 
 --
@@ -38,6 +43,16 @@ function groundExplosion.doBoom(args)
 	local power = args[2]
 	local theZone = args[3]
 	trigger.action.explosion(loc, power)
+	if theZone.flareMin then 
+		local flareNum = cfxZones.randomInRange(theZone.flareMin, theZone.flareMax)
+		if flareNum > 0 then 
+			for i=1, flareNum do 
+				local azimuth = math.random(360)
+				azimuth = azimuth * 0.0174533 -- in rads
+				trigger.action.signalFlare(loc, 2, azimuth) -- 2 = white
+			end
+		end 
+	end
 end
 
 function groundExplosion.startBoom(theZone)
@@ -82,7 +97,7 @@ end
 
 function groundExplosion.start()
 	if not dcsCommon.libCheck("cfx groundExplosion", 
-		cfxObjectDestructDetector.requiredLibs) then
+		groundExplosion.requiredLibs) then
 		return false 
 	end
 	

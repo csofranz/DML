@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.3"
+dcsCommon.version = "3.0.5"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -13,6 +13,10 @@ dcsCommon.version = "3.0.3"
 3.0.3  - createStaticObjectForCoalitionInRandomRing() returns x and z 
        - isTroopCarrier() also supports 'helo' keyword
  	   - new createTakeOffFromGroundRoutePointData()
+3.0.4  - getGroupLocation() hardened, optional verbose 
+3.0.5  - new getNthItem()
+	   - new getFirstItem()
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -184,6 +188,18 @@ dcsCommon.version = "3.0.3"
 		return choices[rtnVal] -- return indexed
 	end
 	
+	function dcsCommon.getNthItem(theSet, n)
+		local count = 1 
+		for key, value in pairs(theSet) do
+			if count == n then return value end 
+			count = count + 1 
+		end
+		return nil 
+	end
+
+	function dcsCommon.getFirstItem(theSet)
+		return dcsCommon.getNthItem(theSet, 1)
+	end
 
 	function dcsCommon.getSizeOfTable(theTable)
 		local count = 0
@@ -888,7 +904,8 @@ dcsCommon.version = "3.0.3"
 
 	-- get group location: get the group's location by 
 	-- accessing the fist existing, alive member of the group that it finds
-	function dcsCommon.getGroupLocation(group)
+	function dcsCommon.getGroupLocation(group, verbose, gName)
+		if not verbose then verbose = false end 
 		-- nifty trick from mist: make this work with group and group name
 		if type(group) == 'string' then -- group name
 			group = Group.getByName(group)
@@ -896,12 +913,18 @@ dcsCommon.version = "3.0.3"
 		
 		-- get all units
 		local allUnits = group:getUnits()
+		if not allUnits then 
+			if verbose then 
+				trigger.action.outText("++++common: no group location for <" .. gName .. ">, skipping.", 30)
+			end
+			return nil 
+		end 
 
 		-- iterate through all members of group until one is alive and exists
 		for index, theUnit in pairs(allUnits) do 
 			if (theUnit:isExist() and theUnit:getLife() > 0) then 
 				return theUnit:getPosition().p 
-			end;
+			end
 		end
 
 		-- if we get here, there was no live unit 

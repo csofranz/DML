@@ -40,6 +40,8 @@ csarManager.ups = 1
   3.2.4  - pass theZone with missionCreateCB when created from zone 
   3.2.5  - smoke callbacks 
 		 - useRanks option 
+  3.2.6  - inBuiltup analogon to cloner 
+  
 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
@@ -1277,7 +1279,7 @@ function csarManager.createCSARMissionFromZone(theZone)
 	if theZone.onRoad then 
 		mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
 	elseif theZone.inPopulated then 
-			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance, theZone.maxTries)
+			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance) -- no more maxTries: theZone.maxTries)
 			mPoint = aPoint -- safety in case we need to mod aPoint 
 	end 
 	local theMission = csarManager.createCSARMissionData(
@@ -1409,12 +1411,28 @@ function csarManager.readCSARZone(theZone)
 	theZone.triggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
 	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", true)
 	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
-	theZone.inPopulated = theZone:getBoolFromZoneProperty("inPopulated", false)
-	theZone.clearance = theZone:getNumberFromZoneProperty("clearance", 10)
-	theZone.maxTries = theZone:getNumberFromZoneProperty("maxTries", 20)
+	if theZone:hasProperty("onRoads") then 
+		theZone.onRoad = theZone:getBoolFromZoneProperty("onRoads", false)
+	end 
+	
+	-- emulate inBuiltup from clone Zone
+	if theZone:hasProperty("inPopulated") or theZone:hasProperty("clearance") or theZone:hasProperty("inBuiltup")then 
+		if theZone:hasProperty("inPopulated") then 
+			theZone.inPopulated = theZone:getBoolFromZoneProperty("inPopulated", false)
+		else 
+			theZone.inPopulated = true -- presence of clearance forces it to true
+		end 
+		theZone.clearance = theZone:getNumberFromZoneProperty("clearance", 10)
+		if theZone:hasProperty("inBuiltUp") then 
+			theZone.clearance = theZone:getNumberFromZoneProperty("inBuiltup", 10)
+		end 
+	end 
+	-- maxTries is decommed
+--	theZone.maxTries = theZone:getNumberFromZoneProperty("maxTries", 20)
 	
 	if theZone.onRoad and theZone.inPopulated then 
 		trigger.action.outText("warning: competing 'onRoad' and 'inPopulated' attributes in zone <" .. theZone.name .. ">. Using 'onRoad'.", 30)
+		theZone.inPopulated = false 
 	end 
 
 	-- add to list of startable csar
@@ -1423,27 +1441,6 @@ function csarManager.readCSARZone(theZone)
 	end 
 
 	if (not deferred) then 
-	--[[--
-		local mPoint = theZone:getPoint()
-		if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end
-		if theZone.onRoad then 
-			mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
-		elseif theZone.inPopulated then 
-			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance, theZone.maxTries)
-			mPoint = aPoint -- safety in case we need to mod aPoint 
-		end 
-		local theMission = csarManager.createCSARMissionData(
-			mPoint, 
-			theZone.csarSide, 
-			theZone.csarFreq, 
-			theZone.csarName, 
-			theZone.numCrew, 
-			theZone.timeLimit, 
-			theZone.csarMapMarker,
-			0.1, -- theZone.radius,
-			nil) -- parashoo unit 
-		csarManager.addMission(theMission, theZone)
---]]--
 		local theMission = csarManager.createCSARMissionFromZone(theZone)
 		csarManager.addMission(theMission, theZone)
 	end

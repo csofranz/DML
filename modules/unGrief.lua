@@ -1,5 +1,5 @@
 unGrief = {}
-unGrief.version = "1.2.0"
+unGrief.version = "2.0.0"
 unGrief.verbose = false 
 unGrief.ups = 1
 unGrief.requiredLibs = {
@@ -21,6 +21,11 @@ unGrief.disabledFlagValue = unGrief.enabledFlagValue + 100 -- DO NOT CHANGE
 	      - strict rules
 		  - warnings on enter/exit
 		  - warnings optional
+	2.0.0 - dmlZones 
+		  - also trigger on birth event, more wrathful 
+		  - auto-turn on ssb when retaliation is SSB 
+		  - re-open slot after kick in 15 seconds 
+		  
 
 --]]--
 
@@ -55,13 +60,20 @@ function unGrief.createPvpWithZone(theZone)
 		trigger.action.outText("+++uGrf: <" .. theZone.name .. "> is designated as PVP legal", 30)
 	end
 	
-	theZone.strictPVP = cfxZones.getBoolFromZoneProperty(theZone, "strict", false)
+	theZone.strictPVP = theZone:getBoolFromZoneProperty("strict", false)
 	
 end
 
 -- vengeance: if player killed before, they are no longer welcome 
+function unGrief.reconcile(groupName)
+	-- re-open slot after player was kicked 
+	trigger.action.setUserFlag(groupName, unGrief.enabledFlagValue)
+	trigger.action.outText("Group <" .. groupName .. "> now available again after pest control action", 30)
+end
+
 function unGrief.exactVengance(theEvent) 
-	if theEvent.id == 20 then -- S_EVENT_PLAYER_ENTER_UNIT 
+	if theEvent.id == 20 or -- S_EVENT_PLAYER_ENTER_UNIT 
+	   theEvent.id == 15 then -- Birth 
 		if not theEvent.initiator then return end 
 		local theUnit = theEvent.initiator
 		if not theUnit.getPlayerName then return end -- wierd stuff happening here
@@ -94,6 +106,7 @@ function unGrief.exactVengance(theEvent)
 			-- tell ssb to kick now:
 			trigger.action.setUserFlag(groupName, unGrief.disabledFlagValue)
 			trigger.action.outText("Player <" .. playerName .. "> is not welcome here. Shoo! Shoo!", 30)
+			timer.scheduleFunction(unGrief.reconcile, groupName, timer.getTime() + 15)
 			return 
 		end
 		
@@ -200,6 +213,7 @@ function unGrief:onEvent(theEvent)
 		local groupName = theGroup:getName()
 		-- tell ssb to kick now:
 		trigger.action.setUserFlag(groupName, unGrief.disabledFlagValue)
+		timer.scheduleFunction(unGrief.reconcile, groupName, timer.getTime() + 15)
 		return 
 	end
 	-- aaand all your base are belong to us!
@@ -256,23 +270,27 @@ function unGrief.readConfigZone()
 		theZone = cfxZone.createSimpleZone("unGriefConfig")
 	end 
 	
-	unGrief.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	unGrief.verbose = theZone.verbose 
 	
-	unGrief.graceKills = cfxZones.getNumberFromZoneProperty(theZone, "graceKills", 1)
-	unGrief.retaliation = cfxZones.getStringFromZoneProperty(theZone, "retaliation", "boom") -- other possible methods: ssb 
+	unGrief.graceKills = theZone:getNumberFromZoneProperty("graceKills", 1)
+	unGrief.retaliation = theZone:getStringFromZoneProperty("retaliation", "boom") -- other possible methods: ssb 
 	unGrief.retaliation = dcsCommon.trim(unGrief.retaliation:lower())
-	
-	
-	unGrief.wrathful = cfxZones.getBoolFromZoneProperty(theZone, "wrathful", false)
-	
-	unGrief.pve = cfxZones.getBoolFromZoneProperty(theZone, "pve", false)
-	if cfxZones.hasProperty(theZone, "pveOnly") then 
-		unGrief.pve = cfxZones.getBoolFromZoneProperty(theZone, "pveOnly", false)
+	if unGrief.retaliation == "ssb" then 
+		-- now turn on ssb 
+		trigger.action.setUserFlag("SSB",100)
+		trigger.action.outText("unGrief: SSB enabled for retaliation.", 30)
 	end
 	
-	unGrief.ignoreAI = cfxZones.getBoolFromZoneProperty(theZone, "ignoreAI", false)
+	unGrief.wrathful = theZone:getBoolFromZoneProperty("wrathful", false)
 	
-	unGrief.PVPwarnings = cfxZones.getBoolFromZoneProperty(theZone, "warnings", true)
+	unGrief.pve = theZone:getBoolFromZoneProperty("pve", false)
+	if theZone:hasProperty("pveOnly") then 
+		unGrief.pve = theZone:getBoolFromZoneProperty("pveOnly", false)
+	end
+	
+	unGrief.ignoreAI = theZone:getBoolFromZoneProperty("ignoreAI", false)
+	
+	unGrief.PVPwarnings = theZone:getBoolFromZoneProperty("warnings", true)
 	
 	if unGrief.verbose then 
 		trigger.action.outText("+++uGrf: read config", 30)

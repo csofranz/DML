@@ -4,7 +4,7 @@
 -- *** EXTENDS ZONES: 'pathing' attribute 
 --
 cfxCommander = {}
-cfxCommander.version = "1.1.3"
+cfxCommander.version = "1.1.4"
 --[[-- VERSION HISTORY
  - 1.0.5 - createWPListForGroupToPointViaRoads: detect no road found 
  - 1.0.6 - build in more group checks in assign wp list 
@@ -29,6 +29,7 @@ cfxCommander.version = "1.1.3"
 		 - added delay defaulting for most scheduling functions 
  - 1.1.3 - isExist() guard improvements for multiple methods
          - cleaned up comments
+ - 1.1.4 - hardened makeGroupGoThere()
  
 --]]--
 
@@ -337,6 +338,18 @@ function cfxCommander.makeGroupGoThere(group, there, speed, formation, delay)
 	if type(group) == 'string' then -- group name
 		group = Group.getByName(group)
 	end
+
+	if not Group.isExist(group) then 
+		trigger.action.outText("cmdr: makeGroupGoThere() - group does not exist", 30)
+		return 
+	end 
+
+	-- check that we can get a location for the group 
+	local here = dcsCommon.getGroupLocation(group)
+	if not here then 
+		return 
+	end 
+	
 	local wp = cfxCommander.createWPListForGroupToPoint(group, there, speed, formation)
 	
 	cfxCommander.assignWPListToGroup(group, wp, delay)

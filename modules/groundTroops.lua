@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "1.7.8"
+cfxGroundTroops.version = "2.0.0"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -22,52 +22,15 @@ cfxGroundTroops.requiredLibs = {
 -- module 
 
 cfxGroundTroops.deployedTroops = {} -- indexed by group name 
+cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented 
 
 --[[--
  version history
-   1.3.0 - added "wait-" prefix to have toops do nothing 
-         - added lazing 
-   1.3.1 - sound for lazing msg is "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav"
-         - lazing --> lasing in text 
-   1.3.2 - set ups to 2 
-   1.4.0 - queued updates except for lazers 
-   1.4.1 - makeTroopsEngageZone now issues hold before moving on 5 seconds later
-         - getTroopReport
-		   - include size of group 
-   1.4.2 - uses unitIsInfantry from dcsCommon 
-   1.5.0 - new scheduled updates per troop to reduce processor load 
-         - tiebreak code 
-   1.5.1 - small bugfix in scheduled code 
-   1.5.2 - checkSchedule 
-         - speed warning in scheduler
-         - go off road when speed warning too much 
-   1.5.3 - monitor troops 
-         - managed queue for ground troops 
-         - on second switch to offroad now removed from MQ
-   1.5.4 - removed debugging messages
-   1.5.5 - removed bug in troop report reading nil destination 
-   1.6.0 - check modules 
-   1.6.1 - troopsCallback management so you can be informed if a 
-           troop you have added to the pool is dead or has achieved a goal.
-           callback will list reasons "dead" and "arrived"
-           updateAttackers
-   1.6.2 - also accept 'lase' as 'laze', translate directly 
-   1.7.0 - now can use groundTroopsConfig zone
-   1.7.1 - addTroopsDeadCallback() renamed to addTroopsCallback() 
-         - invokeCallbacksFor also accepts and passes on data block
-         - troops is always passed in data block as .troops 
-   1.7.2 - callback when group is neutralized on guard orders
-         - callback when group is being engaged under guard orders 
-   1.7.3 - callbacks for lase:tracking and lase:stop 
-   1.7.4 - verbose flag, warnings suppressed 
-   1.7.5 - some troop.group hardening with isExist()
-   1.7.6 - fixed switchToOffroad 
-   1.7.7 - no longer case sensitive for orders 
-   1.7.7 - updateAttackers() now inspects 'moving' status and invokes makeTroopsEngageZone
-         - makeTroopsEngageZone() sets 'moving' status to true
-         - createGroundTroops() sets moving status to false 
-		 - updateZoneAttackers() uses moving  
-   1.7.8 - better guards before invoking ownedZones
+
+   2.0.0 - dmlZones 
+	     - jtacSound 
+		 - clanup 
+		 - jtacVerbose 
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -113,63 +76,47 @@ cfxGroundTroops.deployedTroops = {} -- indexed by group name
 -- queued will work one every pass (except for lazed), distributing the load much better 
 -- schedueld installs a callback for each group separately and thus distributes the load over time much better 
 
-cfxGroundTroops.queuedUpdates = false -- set to true to process one group per turn. To work this way, scheduledUpdates must be false 
-cfxGroundTroops.scheduledUpdates = true -- set to false to allow queing of standard updates. overrides queuedUpdates 
-cfxGroundTroops.monitorNumbers = false -- set to true to debug managed group size 
+function cfxGroundTroops.invokeCallbacks(ID, jtac, tgt, data)
+	-- IS is aqui, lost, dead, jtac died. jtac is group, tgt is unit, data is rest 
+	for idx, cb in pairs(cfxGroundTroops.jtacCB) do 
+		cb(ID, jtac, tgt, data)
+	end
+end
 
-cfxGroundTroops.standardScheduleInterval = 30 -- 30 seconds between calls
-cfxGroundTroops.guardUpdateInterval = 30 -- every 30 seconds we check up on guards
-cfxGroundTroops.trackingUpdateInterval = 0.5 -- 0.5 seconds for lazer tracking etc 
+function cfxGroundTroops.addJtacCB(theCB)
+	table.insert(cfxGroundTroops.jtacCB, theCB)
+end
 
-cfxGroundTroops.maxManagedTroops = 67 -- -1 is infinite, any positive number turn on cap on managed troops and palces excess troops in queue 
 cfxGroundTroops.troopQueue = {} -- FIFO stack 
 -- return the best tracking interval for this type of orders 
 
---
--- READ CONFIG ZONE TO OVERRIDE SETTING
---
 function cfxGroundTroops.readConfigZone()
-	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("groundTroopsConfig") 
 	if not theZone then 
-		if cfxGroundTroops.verbose then 
-			trigger.action.outText("***gndT: NO config zone!", 30) 
-		end
 		theZone = cfxZones.createSimpleZone("groundTroopsConfig") 
 	end 
 		
-	-- ok, for each property, load it if it exists
-	if cfxZones.hasProperty(theZone, "queuedUpdates")  then 
-		cfxGroundTroops.queuedUpdates = cfxZones.getBoolFromZoneProperty(theZone, "queuedUpdates", false)
-	end
-	
-	if cfxZones.hasProperty(theZone, "scheduledUpdates")  then 
-		cfxGroundTroops.scheduledUpdates = cfxZones.getBoolFromZoneProperty(theZone, "scheduledUpdates", false)
-	end
-	
-	if cfxZones.hasProperty(theZone, "maxManagedTroops")  then 
-		cfxGroundTroops.maxManagedTroops = cfxZones.getNumberFromZoneProperty(theZone, "maxManagedTroops", 65)
-	end
-	
-	if cfxZones.hasProperty(theZone, "monitorNumbers")  then 
-		cfxGroundTroops.monitorNumbers = cfxZones.getBoolFromZoneProperty(theZone, "monitorNumbers", false)
-	end
-	
-	if cfxZones.hasProperty(theZone, "standardScheduleInterval")  then 
-		cfxGroundTroops.standardScheduleInterval = cfxZones.getNumberFromZoneProperty(theZone, "standardScheduleInterval", 30)
-	end
-	
-	if cfxZones.hasProperty(theZone, "guardUpdateInterval")  then 
-		cfxGroundTroops.guardUpdateInterval = cfxZones.getNumberFromZoneProperty(theZone, "guardUpdateInterval", 30)
-	end
-	
-	if cfxZones.hasProperty(theZone, "trackingUpdateInterval")  then 
-		cfxGroundTroops.trackingUpdateInterval = cfxZones.getNumberFromZoneProperty(theZone, "trackingUpdateInterval", 0.5)
-	end
-	
-	if cfxZones.hasProperty(theZone, "verbose")  then 
-		cfxGroundTroops.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	end
+	cfxGroundTroops.queuedUpdates = theZone:getBoolFromZoneProperty("queuedUpdates", false)
+	cfxGroundTroops.scheduledUpdates = theZone:getBoolFromZoneProperty("scheduledUpdates", false)
+	cfxGroundTroops.maxManagedTroops = theZone:getNumberFromZoneProperty("maxManagedTroops", 67)
+	cfxGroundTroops.monitorNumbers = theZone:getBoolFromZoneProperty("monitorNumbers", false)
+	cfxGroundTroops.standardScheduleInterval = theZone:getNumberFromZoneProperty("standardScheduleInterval", 30)	
+	cfxGroundTroops.guardUpdateInterval = theZone:getNumberFromZoneProperty("guardUpdateInterval", 30)
+	cfxGroundTroops.trackingUpdateInterval = theZone:getNumberFromZoneProperty("trackingUpdateInterval", 0.5)
+
+	cfxGroundTroops.jtacSound = theZone:getStringFromZoneProperty("jtacSound", "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+	cfxGroundTroops.jtacVerbose = theZone:getBoolFromZoneProperty("jtacVerbose", true)
+	cfxGroundTroops.laseCode = theZone:getNumberFromZoneProperty("jtacLaserCode", 1688)
+	if theZone:hasProperty("lazeCode") then 
+		cfxGroundTroops.laseCode = theZone:getNumberFromZoneProperty("lazeCode", 1688)
+	end 
+	if theZone:hasProperty("laseCode") then 
+		cfxGroundTroops.laseCode = theZone:getNumberFromZoneProperty("laseCode", 1688)
+	end 
+	if theZone:hasProperty("laserCode") then 
+		cfxGroundTroops.laseCode = theZone:getNumberFromZoneProperty("laserCode", 1688)
+	end 
+	cfxGroundTroops.verbose = theZone.verbose 
 
 	if cfxGroundTroops.verbose then 
 		trigger.action.outText("+++gndT: read config zone!", 30) 
@@ -355,8 +302,7 @@ function cfxGroundTroops.updateAttackers(troop)
 		troop.orders = "guard"
 		return 
 	end
-	
-	
+		
 --	if we get here, we need no change 
 end
 
@@ -437,7 +383,7 @@ function cfxGroundTroops.findLazeTarget(troop)
 	
 	-- iterate through the list until we find the first target 
 	-- that fits the bill and return it
---	trigger.action.outText("+++ looking at " .. #enemyGroups .. " laze groups", 30)
+
 	for i=1, #enemyGroups do	
 		-- get all units for this group 
 		local aGroup = enemyGroups[i].group -- remember, they are in a {dist, group} tuple
@@ -448,12 +394,9 @@ function cfxGroundTroops.findLazeTarget(troop)
 				-- unit lives 
 				-- now, we need to filter infantry. we do this by 
 				-- pre-fetching the typeString
-				--troop.lazeTargetType = aUnit:getTypeName()
 				-- and checking if the name contains some infantry-
 				-- typical strings. Idea taken from JTAC script 
 				local isInfantry =  dcsCommon.unitIsInfantry(theUnit)
-	
-				
 				if not isInfantry then 
 					-- this is a vehicle, is it in line of sight?
 					-- raise the point 2m above ground for both points
@@ -466,16 +409,11 @@ function cfxGroundTroops.findLazeTarget(troop)
 						-- the nearest group to us in range 
 						-- that is visible!
 						return aUnit
-					else 
-						--trigger.action.outText("+++ ".. aUnit:getName() .."cant be seen", 30)
 					end -- if visible
-				else 
-					-- trigger.action.outText("+++ ".. aUnit:getName() .." (".. troop.lazeTargetType .. ") is infantry", 30)
-				end -- if not infantry 
+				end -- if infantry 
 			end -- if alive 
 		end -- for all units
 	end -- for all enemy groups
-	--trigger.action.outText("+++ find nearest laze target did not find anything to laze", 30)
 	return nil -- no unit found 
 end
 
@@ -499,10 +437,12 @@ function cfxGroundTroops.trackLazer(troop)
 	
 	if not troop.lazerPointer then
 		local there = troop.lazeTarget:getPoint()
-		troop.lazerPointer = Spot.createLaser(troop.lazingUnit,{x = 0, y = 2, z = 0}, there, 1688)
+		troop.lazerPointer = Spot.createLaser(troop.lazingUnit,{x = 0, y = 2, z = 0}, there, cfxGroundTroops.laseCode)
 		troop.lazeTargetType = troop.lazeTarget:getTypeName()
-		trigger.action.outTextForCoalition(troop.side, troop.name .. " tally target - lasing " .. troop.lazeTargetType .. "!", 30)
-		 trigger.action.outSoundForCoalition(troop.side, "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+		if cfxGroundTroops.jtacVerbose then 
+			trigger.action.outTextForCoalition(troop.side, troop.name .. " tally target - lasing " .. troop.lazeTargetType .. ", code " .. cfxGroundTroops.laseCode .. "!", 30)
+			trigger.action.outSoundForCoalition(troop.side, cfxGroundTroops.jtacSound) -- "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+		end 
 		troop.lastLazerSpot = there -- remember last spot
 		local data = {}
 		data.enemy = troop.lazeTarget
@@ -510,9 +450,7 @@ function cfxGroundTroops.trackLazer(troop)
 		cfxGroundTroops.invokeCallbacksFor("lase:tracking", troop, data)
 		return
 	end
-	
-	-- if true then return end 
-	
+		
 	-- if we get here, we update the lazerPointer
 	local there = troop.lazeTarget:getPoint()
 	-- we may only want to update the laser spot when dist > trigger
@@ -531,17 +469,17 @@ function cfxGroundTroops.updateLaze(troop)
 		else 
 			cfxGroundTroops.lazerOff(troop)
 			troop.lazeTarget = nil
-			trigger.action.outTextForCoalition(troop.side, troop.name .. " reports lasing " .. troop.lazeTargetType .. " interrupted. Re-acquiring.", 30)
-			trigger.action.outSoundForCoalition(troop.side, "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+			if cfxGroundTroops.jtacVerbose then 
+				trigger.action.outTextForCoalition(troop.side, troop.name .. " reports lasing " .. troop.lazeTargetType .. " interrupted. Re-acquiring.", 30)
+				trigger.action.outSoundForCoalition(troop.side, cfxGroundTroops.jtacSound) -- "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+			end 
 			troop.lazingUnit = nil 
 			cfxGroundTroops.invokeCallbacksFor("lase:stop", troop)
 			return -- we'll re-acquire through a new unit next round
 		end
 	end
 	
-	-- if we get here, a lazing unit 
-	--local here = troop.lazingUnit:getPoint()
-	
+	-- if we get here, a lazing unit 	
 	if troop.lazeTarget then 
 		-- check if that target is alive and in range
 		if troop.lazeTarget:isExist() and troop.lazeTarget:getLife() >= 1 then
@@ -551,8 +489,10 @@ function cfxGroundTroops.updateLaze(troop)
 			local there = troop.lazeTarget:getPoint()
 			if dcsCommon.dist(here, there) > troop.range then 
 				-- troop out of range
-				trigger.action.outTextForCoalition(troop.side, troop.name .. " lost sight of lazed target " .. troop.lazeTargetType, 30)
-				trigger.action.outSoundForCoalition(troop.side, "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+				if cfxGroundTroops.jtacVerbose then 
+					trigger.action.outTextForCoalition(troop.side, troop.name .. " lost sight of lazed target " .. troop.lazeTargetType, 30)
+					trigger.action.outSoundForCoalition(troop.side, cfxGroundTroops.jtacSound) -- "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+				end 
 				troop.lazeTarget = nil
 				cfxGroundTroops.lazerOff(troop)
 				troop.lazingUnit = nil
@@ -565,8 +505,10 @@ function cfxGroundTroops.updateLaze(troop)
 			return
 		else
 			-- target died
-			trigger.action.outTextForCoalition(troop.side, troop.name .. " confirms kill for " .. troop.lazeTargetType, 30)
-			trigger.action.outSoundForCoalition(troop.side, "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+			if cfxGroundTroops.jtacVerbose then 
+				trigger.action.outTextForCoalition(troop.side, troop.name .. " confirms kill for " .. troop.lazeTargetType, 30)
+				trigger.action.outSoundForCoalition(troop.side, cfxGroundTroops.jtacSound) -- "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
+			end 
 			troop.lazeTarget = nil
 			cfxGroundTroops.lazerOff(troop)
 			troop.lazingUnit = nil
@@ -584,8 +526,7 @@ end
 
 
 function cfxGroundTroops.updateWait(troop)
-	-- currently nothing to do
-	
+	-- currently nothing to do	
 end
 
 function cfxGroundTroops.updateTroops(troop)
@@ -615,12 +556,6 @@ function cfxGroundTroops.updateTroops(troop)
 	end
 	
 end
-
---
--- we have to systems to process during update: 
--- once all, and one per turn, with the exception 
--- of lazers, who get updated every turn
--- 
 
 --
 -- all at once 
@@ -754,14 +689,12 @@ function cfxGroundTroops.updateSingleScheduled(params)
 	-- now, check if still alive 
 	if not dcsCommon.isGroupAlive(group) then 
 		-- group dead, no longer updates 
-		--trigger.action.outText("+++groundT NOTE: <".. troops.group:getName() .."> dead, removing", 30)
 		cfxGroundTroops.invokeCallbacksFor("dead", troops) -- notify anyone who is interested that we are no longer proccing these 
 		cfxGroundTroops.removeTroopsFromPool(troops)
 		return -- nothing else to do
 	end
 	
 	-- now, execute the update itself, standard update 
-	--trigger.action.outText("+++groundT: singleU troop <".. troops.group:getName() .."> with orders <" .. troops.orders .. ">", 30)
 	cfxGroundTroops.updateTroops(troops)
 	
 	-- check max speed of group. if < 0.1 then note and increase 
@@ -775,7 +708,6 @@ function cfxGroundTroops.updateSingleScheduled(params)
 	
 	if troops.speedWarning > 5 then -- make me 5
 		lastOrder = timer.getTime() - troops.lastOrderDate 
-		--trigger.action.outText("+++groundT WARNING: <".. troops.group:getName() .."> (S:".. troops.side .. ") to " .. troops.destination.name .. ": stopped for " .. troops.speedWarning .. " iters, orderage=" .. lastOrder, 30)
 		-- this may be a matter of too many waypoints. 
 		-- maybe issue orders to go to their destination directly?
 		-- now force an order to go directly.
@@ -784,17 +716,15 @@ function cfxGroundTroops.updateSingleScheduled(params)
 				-- we already switched to off-road. take me 
 				-- out of the managed queue, I'm not going 
 				-- anywhere
-				-- trigger.action.outText("+++groundT <".. troops.group:getName() .."> is going nowhere. Removed from managed troops", 30)
 				cfxGroundTroops.removeTroopsFromPool(troops)
 			else 
 				cfxGroundTroops.switchToOffroad(troops)
-				-- trigger.action.outText("+++groundT <".. troops.group:getName() .."> SWITCHED TO OFFROAD", 30)
 				troops.isOffroad = true -- so we know that we already did that
 			end
 		end 
 	end
 	
-	-- now reschedule updte for my best time 
+	-- now reschedule update for my best time 
 	local updateTime = cfxGroundTroops.getScheduleInterval(troops.orders)
 	troops.updateID = timer.scheduleFunction(cfxGroundTroops.updateSingleScheduled, params, timer.getTime() + updateTime)
 end
@@ -818,11 +748,9 @@ end
  
 function cfxGroundTroops.checkPileUp()
 	-- schedule my next call 
-	--trigger.action.outText("+++groundT: pileup check", 30)
 	timer.scheduleFunction(cfxGroundTroops.checkPileUp, {}, timer.getTime() + 60)
 	local thePiles = {}
 	if not cfxOwnedZones then 
-		-- trigger.action.outText("+++groundT: pileUp - owned zones not yet ready", 30)
 		return 
 	end
 	
@@ -944,11 +872,6 @@ function cfxGroundTroops.getTroopReport(theSide, ignoreInfantry)
 	report = report .. "\n---END REPORT\n"
 	return report 
 end
-
-
---
--- CREATE / ADD / REMOVE 
---
 
 --
 -- createGroundTroop
@@ -1100,13 +1023,12 @@ function cfxGroundTroops.manageQueues()
 	
 	-- if we here, there are items waiting in the queue
 	while dcsCommon.getSizeOfTable(cfxGroundTroops.deployedTroops) < cfxGroundTroops.maxManagedTroops and #cfxGroundTroops.troopQueue > 0 do 
-		-- trnasfer items from the front to the managed queue 
+		-- transfer items from the front to the managed queue 
 		local theTroops = cfxGroundTroops.troopQueue[1]
 		table.remove(cfxGroundTroops.troopQueue, 1)
 		if theTroops.group:isExist() then 
 			cfxGroundTroops.deployedTroops[theTroops.group:getName()] = theTroops
 		end
-		-- trigger.action.outText("+++gT: dequed and activaed " .. theTroops.group:getName(), 30)
 	end
 end
 
