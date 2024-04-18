@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.0.2"
+cfxHeloTroops.version = "3.0.3"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -39,6 +39,7 @@ cfxHeloTroops.requestRange = 500 -- meters
 	   - requestRange attribute
  3.0.1 - fixed a bug with legalTroops attribute
  3.0.2 - fixed a typo in in-air menu 
+ 3.0.3 - pointInZone check for insertion rather than radius 
  
 --]]--
 --
@@ -585,7 +586,7 @@ function cfxHeloTroops.scoreWhenCapturing(theUnit)
 		local theGroup = theUnit:getGroup()
 		local ID = theGroup:getID()
 		local nearestZone, dist = cfxOwnedZones.getNearestOwnedZoneToPoint(p)
-		if nearestZone and dist < nearestZone.radius then 
+		if nearestZone and nearestZone:pointInZone(p) then -- dist < nearestZone.radius then 
 			-- we are inside an owned zone!
 			if nearestZone.owner ~= coa then 
 				-- yup, combat drop!

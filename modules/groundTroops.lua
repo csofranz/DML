@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "2.0.0"
+cfxGroundTroops.version = "2.0.1"
 cfxGroundTroops.ups = 1
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -31,6 +31,8 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
 	     - jtacSound 
 		 - clanup 
 		 - jtacVerbose 
+   2.0.1 - small fiex ti checkPileUp()
+   
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -755,7 +757,8 @@ function cfxGroundTroops.checkPileUp()
 	end
 	
 	-- create a list of all piles 
-	for idx, oz in pairs(cfxOwnedZones.zones) do 
+--	for idx, oz in pairs(cfxOwnedZones.zones) do 
+	for idx, oz in pairs(cfxOwnedZones.allManagedOwnedZones) do 
 		local newPile = {}
 		newPile[1] = 0 -- no red inZone here 
 		newPile[2] = 0 -- no blue inZone here 

@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "1.2.1"
+FARPZones.version = "2.0.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -15,7 +15,7 @@ FARPZones.verbose = false
         - handles contested state
   1.2.1 - now gracefully handles a FARP Zone that does not 
           contain a FARP, but is placed beside it
-  
+  2.0.0 - dmlZones 
   
 --]]--
 
@@ -120,9 +120,9 @@ function FARPZones.createFARPFromZone(aZone)
 	local theFarp = {}
 	theFarp.zone = aZone 
 	theFarp.name = aZone.name 
-	theFarp.point = cfxZones.getPoint(aZone) -- failsafe 
+	theFarp.point = aZone:getPoint() -- failsafe 
 	-- find the FARPS that belong to this zone
-	local thePoint = cfxZones.getPoint(aZone)
+	local thePoint = aZone:getPoint()
 	local mapFarps = dcsCommon.getAirbasesInRangeOfPoint(
 		thePoint, 
 		aZone.radius, 
@@ -156,10 +156,7 @@ function FARPZones.createFARPFromZone(aZone)
 --	end
 	
 	-- get r and phi for defenders 
-	local rPhi = cfxZones.getVectorFromZoneProperty(
-			aZone, 
-			"rPhiHDef", 
-			3)
+	local rPhi = aZone:getVectorFromZoneProperty("rPhiHDef",3)
 
 	-- get r and phi for facilities
 	-- create a new defenderzone for this 
@@ -167,17 +164,14 @@ function FARPZones.createFARPFromZone(aZone)
 	local phi = rPhi[2] * 0.0174533 -- 1 degree = 0.0174533 rad
 	local dx = aZone.point.x + r * math.cos(phi)
 	local dz = aZone.point.z + r * math.sin(phi)
-	local formRad = cfxZones.getNumberFromZoneProperty(aZone, "rFormation", 100)
+	local formRad = aZone:getNumberFromZoneProperty("rFormation", 100)
 	
 	theFarp.defZone = cfxZones.createSimpleZone(aZone.name .. "-Def", {x=dx, y = 0, z=dz}, formRad)
 	theFarp.defHeading = rPhi[3]
 	
 	rPhi = {}
-	rPhi = cfxZones.getVectorFromZoneProperty(
-			aZone, 
-			"rPhiHRes", 
-			3)  
-	--trigger.action.outText("*** RES rPhi are " .. rPhi[1] .. " and " .. rPhi[2] .. " heading " .. rPhi[3], 30)
+	rPhi = aZone:getVectorFromZoneProperty("rPhiHRes", 3)  
+
 	r = rPhi[1]
 	phi = rPhi[2] * 0.0174533 -- 1 degree = 0.0174533 rad
 	dx = aZone.point.x + r * math.cos(phi)
@@ -187,17 +181,18 @@ function FARPZones.createFARPFromZone(aZone)
 	theFarp.resHeading = rPhi[3]
 	
 	-- get redDefenders - defenders produced when red owned 
-	theFarp.redDefenders = cfxZones.getStringFromZoneProperty(aZone, "redDefenders", "none")
+	theFarp.redDefenders = aZone:getStringFromZoneProperty( "redDefenders", "none")
 	-- get blueDefenders - defenders produced when blue owned
-	theFarp.blueDefenders = cfxZones.getStringFromZoneProperty(aZone, "blueDefenders", "none")	
+	theFarp.blueDefenders = aZone:getStringFromZoneProperty( "blueDefenders", "none")	
 	-- get formation for defenders 
-	theFarp.formation = cfxZones.getStringFromZoneProperty(aZone, "formation", "circle_out")
+	theFarp.formation = aZone:getStringFromZoneProperty("formation", "circle_out")
 	theFarp.count = 0 -- for uniqueness 
-	theFarp.hideRed = cfxZones.getBoolFromZoneProperty(aZone, "hideRed")
-	theFarp.hideBlue = cfxZones.getBoolFromZoneProperty(aZone, "hideBlue")
-	theFarp.hideGrey = cfxZones.getBoolFromZoneProperty(aZone, "hideGrey")
-	theFarp.hidden = cfxZones.getBoolFromZoneProperty(aZone, "hidden")
+	theFarp.hideRed = aZone:getBoolFromZoneProperty("hideRed", false)
+	theFarp.hideBlue = aZone:getBoolFromZoneProperty("hideBlue", false)
+	theFarp.hideGrey = aZone:getBoolFromZoneProperty("hideGrey", false)
+	theFarp.hidden = aZone:getBoolFromZoneProperty("hidden", false)
 	
+	theFarp.neutralProduction = aZone:getBoolFromZoneProperty("neutralProduction", false)
 	return theFarp 
 end
 
@@ -225,7 +220,7 @@ function FARPZones.drawFARPCircleInMap(theFarp)
 	
 	if theFarp.hideGrey and 
   	   theFarp.owner == 0 then 
-		-- hide only when blue 
+		-- hide only when grey  
 		return 
 	end
 	
@@ -258,7 +253,7 @@ function FARPZones.drawFARPCircleInMap(theFarp)
 	aZone.markID = markID 
 	
 end
-
+--[[--
 function FARPZones.drawZoneInMap(aZone, owner)
 	-- owner is 0 = neutral, 1 = red, 2 = blue 
 	-- will save markID in zone's markID
@@ -288,6 +283,7 @@ function FARPZones.drawZoneInMap(aZone, owner)
 	aZone.markID = markID 
 	
 end
+--]]--
 
 function FARPZones.scheduedProduction(args)
 	-- args contain [aFarp, owner]
@@ -311,6 +307,16 @@ function FARPZones.scheduedProduction(args)
 end
 
 function FARPZones.produceVehicles(theFarp)
+	local theZone = theFarp.zone 
+--	trigger.action.outText("entering veh prod run for farp zone <" .. theZone.name .. ">, owner is <" .. theFarp.owner .. ">", 30)
+	--end
+	
+	-- abort production if farp is owned by neutral and 
+	-- neutralproduction is false 
+	if theFarp.owner == 0 and not theFarp.neutralProduction then 
+		return 
+	end 
+	
 	-- first, remove anything that may still be there 
 	if theFarp.defenders and theFarp.defenders:isExist() then 
 		theFarp.defenders:destroy()
@@ -529,20 +535,13 @@ end
 function FARPZones.readConfig()
 	local theZone = cfxZones.getZoneByName("farpZonesConfig") 
 	if not theZone then 
-		if FARPZones.verbose then 
-			trigger.action.outText("***frpZ: NO config zone!", 30) 
-		end
-		return 
+		theZone = cfxZones.createSimpleZone("farpZonesConfig")
 	end 
 	
-	FARPZones.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+	FARPZones.verbose = theZone.verbose 
  	
-	FARPZones.spinUpDelay = cfxZones.getNumberFromZoneProperty(theZone, "spinUpDelay", 30)
+	FARPZones.spinUpDelay = theZone:getNumberFromZoneProperty( "spinUpDelay", 30)
 	
-	
-	if FARPZones.verbose then 
-		trigger.action.outText("***frpZ: read config", 30) 
-	end
 end
 
 
@@ -618,4 +617,5 @@ Improvements:
   
   make farps repair their service vehicles after a time, or simply refresh them every x minutes, to make the algo simpler 
  
+ allow for ownership control via the airfield module?
 --]]--

@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.1.0"
+cloneZones.version = "2.2.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -44,6 +44,12 @@ cloneZones.respawnOnGroupID = true
 		    when pre-wipe is active 
 	2.1.0 - despawnIn option 
 		  - inBuiltup option for rndLoc 
+	2.2.0 - oSize 
+		  - countLiveUnits() performace optimization 
+		  - new countLiveAIUnits() 
+		  - damaged! output 
+		  - health# output 
+		  - persistence: persist oSize and set lastSize 
 --]]--
 
 --
@@ -337,7 +343,16 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if theZone:hasProperty("despawnIn") then 
 		theZone.despawnInMin, theZone.despawnInMax = theZone:getPositiveRangeFromZoneProperty("despawnIn", 2,2)
 	end 
+	
+	-- damaged and health interface 
+	if theZone:hasProperty("damaged!") then 
+		theZone.damaged = theZone:getStringFromZoneProperty("damaged!")
+	end 
+	if theZone:hasProperty("health#") then 
+		theZone.health = theZone:getStringFromZoneProperty("health#")
+	end 
 	-- we end with clear plate 
+	theZone.lastSize = 0 -- no units here 
 end
 
 -- 
@@ -348,6 +363,7 @@ function cloneZones.despawnAll(theZone)
 	if cloneZones.verbose or theZone.verbose then 
 		trigger.action.outText("+++clnZ: despawn all - wiping zone <" .. theZone.name .. ">", 30)
 	end 
+	theZone.oSize = 0 -- original spawn size 
 	for idx, aGroup in pairs(theZone.mySpawns) do 		
 		if aGroup:isExist() then 
 			if theZone.verbose then 
@@ -1017,7 +1033,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
 	end
 	-- theZone is the cloner with the TEMPLATE (source)
-	-- spawnZone is the spawner with SETTINGS and DESTINATION (target location) where the clones are poofed into existence 
+	-- spawnZone is the actual spawner with SETTINGS and DESTINATION (target location) where the clones are poofed into existence 
 	local newCenter = spawnZone:getPoint() -- includes zone following updates
 	local oCenter = theZone:getDCSOrigin() -- get original coords on map for cloning offsets 
 	-- calculate zoneDelta, is added to all vectors 
@@ -1190,6 +1206,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	cloneZones.resolveReferences(theZone, dataToSpawn)
 	
 	-- now spawn all raw data 
+	spawnZone.oSize = 0 -- original size reset 
 	local groupCollector = {} -- to detect cross-group conflicts
 	local unitCollector = {} -- to detect cross-group conflicts 
 	local theGroup = nil -- init to empty, on this level 
@@ -1219,6 +1236,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- SPAWN NOW!!!!
 		theGroup = coalition.addGroup(rawData.CZctry, rawData.CZtheCat, rawData)
 		table.insert(spawnedGroups, theGroup)
+		-- increment oSize by number of spawns 
+		spawnZone.oSize = spawnZone.oSize + theGroup:getSize()
 		
 		-- see if this is an auto-despawner 
 		if spawnZone.despawnInMin then 
@@ -1465,6 +1484,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			end
 		end
 	end	
+	-- reset lastSize to oSize 
+	spawnZone.lastSize = spawnZone.oSize
 	local args = {}
 	args.groups = spawnedGroups
 	args.statics = spawnedStatics
@@ -1593,19 +1614,30 @@ function cloneZones.doClone(args)
 	end
 end 
 
+function cloneZones.countLiveAIUnits(theZone)
+	-- like countLiveUnits, but disregards statics 
+	if not theZone then return 0 end 
+	local count = 0
+	if not theZone.mySpawns then return 0 end 
+	-- count units 
+	if theZone.mySpawns then 
+		for idx, aGroup in pairs(theZone.mySpawns) do 
+			if Group.isExist(aGroup) then 
+				count = count + aGroup:getSize()
+			end
+		end
+	end
+	return count 
+end 
+
 function cloneZones.countLiveUnits(theZone)
 	if not theZone then return 0 end 
 	local count = 0
 	-- count units 
 	if theZone.mySpawns then 
 		for idx, aGroup in pairs(theZone.mySpawns) do 
-			if aGroup:isExist() then 
-				local allUnits = aGroup:getUnits()
-				for idy, aUnit in pairs(allUnits) do 
-					if aUnit:isExist() and aUnit:getLife() >= 1 then 
-						count = count + 1
-					end
-				end
+			if Group.isExist(aGroup) then --aGroup:isExist() then 
+				count = count + aGroup:getSize()
 			end
 		end
 	end
@@ -1714,6 +1746,28 @@ function cloneZones.update()
 			willSpawn = true -- in case prewipe, we delay
 			-- can mess with empty, so we tell empty to skip 
 		end
+		
+		-- handling of damaged! and #health  
+		if aZone.damaged or aZone.health then
+			-- calculate current health 
+			local currSize = cloneZones.countLiveAIUnits(aZone)
+			if aZone.oSize < 1 then 
+				if aZone.verbose or cloneZones.verbose then 
+					trigger.action.outText("+++clnZ: Warning: zero oZize for cloner <" .. aZone.name .. ">, no health info, no damage alert", 30)
+				end 
+			else 
+				local percent = math.floor(currSize * 100 / aZone.oSize)
+				if aZone.health then 
+					aZone:setFlagValue(aZone.health, percent)
+				end 
+				if aZone.lastSize > currSize then 
+					if aZone.damaged then 
+						aZone:pollFlag(aZone.damaged, aZone.cloneMethod)
+					end  
+				end
+			end 
+			aZone.lastSize = currSize
+		end 
 		
 		-- empty handling 
 		local isEmpty = cloneZones.countLiveUnits(aZone) < 1 and aZone.hasClones		
@@ -1885,7 +1939,8 @@ function cloneZones.saveData()
 		local cData = {}
 		local cName = theCloner.name 
 		cData.myUniqueCounter = theCloner.myUniqueCounter
-		
+		cData.oSize = theCloner.oSize 
+		cData.lastSize = theCloner.lastSize 
 		-- mySpawns: all groups i'm curently observing for empty!
 		-- myStatics: dto for objects 
 		local mySpawns = {}
@@ -1980,6 +2035,8 @@ function cloneZones.loadData()
 			if cData.myUniqueCounter then 
 				theCloner.myUniqueCounter = cData.myUniqueCounter
 			end
+			if cData.oSize then theCloner.oSize = cData.oSize end 
+			if cData.lastSize then theCloner.lastSize = cData.lastSize end 
 			
 			local mySpawns = {}
 			for idx, aName in pairs(cData.mySpawns) do 

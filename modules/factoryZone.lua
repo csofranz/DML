@@ -1,5 +1,5 @@
 factoryZone = {}
-factoryZone.version = "3.1.1"
+factoryZone.version = "3.1.2"
 factoryZone.verbose = false 
 factoryZone.name = "factoryZone" 
 
@@ -18,6 +18,7 @@ factoryZone.name = "factoryZone"
 	  - defendMe? attribute 
 	  - triggered 'shocked' mode via defendMe 
 3.1.1 - fixed a big with persistence 
+3.1.2 - fixed a verbosity bug 
 
 --]]--
 factoryZone.requiredLibs = {
@@ -253,14 +254,14 @@ function factoryZone.sendOutAttackers(aZone)
 	-- bang on xxxP!
 	if aZone.owner == 1 and aZone.redP then 
 		if aZone.verbose or factoryZone.verbose then
-			trigger.action.outText("+++factZ: polling redP! <" .. aZone.redP .. "> for factrory <" .. aZone.name .. ">")
+			trigger.action.outText("+++factZ: polling redP! <" .. aZone.redP .. "> for factrory <" .. aZone.name .. ">", 30)
 		end 
 		aZone:pollFlag(aZone.redP, aZone.factoryMethod)
 	end
 
 	if aZone.owner == 2 and aZone.blueP then 
 		if aZone.verbose or factoryZone.verbose then
-			trigger.action.outText("+++factZ: polling blueP! <" .. aZone.blueP .. "> for factrory <" .. aZone.name .. ">")
+			trigger.action.outText("+++factZ: polling blueP! <" .. aZone.blueP .. "> for factrory <" .. aZone.name .. ">", 30)
 		end 
 		aZone:pollFlag(aZone.blueP, aZone.factoryMethod)
 	end

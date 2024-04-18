@@ -48,7 +48,8 @@ cfxZones.version = "4.3.1"
 - 4.3.0   - boolean supports maybe, random, rnd, ?
 		  - small optimization for randomInRange()
 		  - randomDelayFromPositiveRange also allows 0 
-
+- 4.3.1   - new drawText() for zones 
+		  - dmlZones:getClosestZone() bridge 
 --]]--
 
 --
@@ -1208,6 +1209,11 @@ function cfxZones.getClosestZone(point, theZones)
 	return closestZone, currDelta 
 end
 
+function dmlZones:getClosestZone(theZones)
+	local closestZone, currDelta = cfxZones.getClosestZone(self:getPoint(), theZones)
+	return closestZone, currDelta 
+end
+
 -- return a random zone from the table passed in zones
 function cfxZones.pickRandomZoneFrom(zones)
 	if not zones then zones = cfxZones.zones end
@@ -2108,6 +2114,21 @@ function dmlZone:drawZone(lineColor, fillColor, markID)
 	return cfxZones.drawZone(self, lineColor, fillColor, markID)
 end
 
+function cfxZones.drawText(theZone, theText, fSize, lineColor, fillColor)
+	if not theZone then return end 
+	if not fSize then fSize = 12 end 
+	if not lineColor then lineColor = {0.8, 0.8, 0.8, 1.0} end
+	if not fillColor then fillColor = lineColor end 
+	local markID = dcsCommon.numberUUID()
+	local p = theZone:getPoint()
+	local offset = {x = p.x, y = 0, z = p.z} 
+	trigger.action.textToAll(-1, markID, offset, lineColor , fillColor , fSize, true , theText)
+	return markID
+end
+
+function dmlZone:drawText(theText, fSize, lineColor, fillColor)
+	return cfxZones.drawText(self, theText, fSize, lineColor, fillColor)
+end
 --
 -- ===================
 -- PROPERTY PROCESSING

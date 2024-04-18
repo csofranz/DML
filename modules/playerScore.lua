@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "3.1.0"
+cfxPlayerScore.version = "3.2.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -14,7 +14,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	3.0.1 - cleanup
 	3.0.2 - interface with ObjectDestructDetector for scoring scenery objects
 	3.1.0 - shared data for persistence
-	
+	3.2.0 - integration with bank
 --]]--
 
 cfxPlayerScore.requiredLibs = {
@@ -333,10 +333,16 @@ function cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
 		-- only on positive score
 		if (score > 0) and pFaction > 0 then 
 			cfxPlayerScore.coalitionScore[pFaction] = cfxPlayerScore.coalitionScore[pFaction] + score 
+			if bank and bank.addFunds then 
+				bank.addFunds(pFaction, cfxPlayerScore.score2finance * score)
+			end
 		end
 	else 
 		if pFaction > 0 then 
 			cfxPlayerScore.coalitionScore[pFaction] = cfxPlayerScore.coalitionScore[pFaction] + score 
+			if bank and bank.addFunds then 
+				bank.addFunds(pFaction, cfxPlayerScore.score2finance * score)
+			end		
 		end
 	end
 	return thePlayerScore.score 
@@ -1015,6 +1021,9 @@ function cfxPlayerScore.scheduledAward(args)
 		theScore.score = theScore.score + theScore.scoreaccu
 		desc = desc .. "  score: " .. theScore.scoreaccu .. " for a new total of " .. theScore.score .. "\n"
 		cfxPlayerScore.coalitionScore[playerSide] = cfxPlayerScore.coalitionScore[playerSide] + theScore.scoreaccu
+		if bank and bank.addFunds then 
+			bank.addFunds(playerSide, cfxPlayerScore.score2finance * theScore.scoreaccu)
+		end
 		theScore.scoreaccu = 0 
 		hasAward = true 
 	end 
@@ -1202,6 +1211,8 @@ function cfxPlayerScore.readConfigZone(theZone)
 	if theZone:hasProperty("sharedData") then 
 		cfxPlayerScore.sharedData = theZone:getStringFromZoneProperty("sharedData", "cfxNameMissing")
 	end 
+	
+	cfxPlayerScore.score2finance = theZone:getNumberFromZoneProperty("score2finance", 1) -- factor to convert points to bank finance
 end
 
 --
@@ -1349,6 +1360,10 @@ function cfxPlayerScore.update()
 				-- score!
 				cfxPlayerScore.coalitionScore[coa] = cfxPlayerScore.coalitionScore[coa] + cfxPlayerScore.blueTriggerScore[tName]
 				cfxPlayerScore.blueTriggerFlags[tName] = newVal
+				-- bank it if exists
+				if bank and bank.addFunds then 
+					bank.addFunds(coa, cfxPlayerScore.score2finance * cfxPlayerScore.blueTriggerScore[tName])
+				end 
 				if cfxPlayerScore.announcer then
 					trigger.action.outTextForCoalition(coa, "BLUE goal [" .. tName .. "] achieved, new BLUE coalition score is " .. cfxPlayerScore.coalitionScore[coa], 30)
 					trigger.action.outSoundForCoalition(coa, cfxPlayerScore.scoreSound)
@@ -1365,6 +1380,9 @@ function cfxPlayerScore.update()
 
 				cfxPlayerScore.coalitionScore[coa] = cfxPlayerScore.coalitionScore[coa] + cfxPlayerScore.redTriggerScore[tName]
 				cfxPlayerScore.redTriggerFlags[tName] = newVal
+				if bank and bank.addFunds then 
+					bank.addFunds(coa, cfxPlayerScore.score2finance * cfxPlayerScore.blueTriggerScore[tName])
+				end
 				if cfxPlayerScore.announcer then
 					trigger.action.outTextForCoalition(coa, "RED goal [" .. tName .. "] achieved, new RED coalition score is " .. cfxPlayerScore.coalitionScore[coa], 30)
 					trigger.action.outSoundForCoalition(coa, cfxPlayerScore.scoreSound)

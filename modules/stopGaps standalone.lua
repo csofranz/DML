@@ -286,7 +286,11 @@ end
 
 stopGap.kicks = {}
 function stopGap.kickplayer(args)
-	if not stopGap.kickTheDead then return end 
+	if not stopGap.kickTheDead then 
+--		trigger.action.outText("+++sg: Let em rest, no kick", 30)
+		return 
+	end 
+--	trigger.action.outText("Kick'em while they are down!", 30)
 	local pName = args 
 	for i,slot in pairs(net.get_player_list()) do
 		local nn = net.get_name(slot)

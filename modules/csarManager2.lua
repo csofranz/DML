@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "3.2.5"
+csarManager.version = "3.2.7"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -41,6 +41,7 @@ csarManager.ups = 1
   3.2.5  - smoke callbacks 
 		 - useRanks option 
   3.2.6  - inBuiltup analogon to cloner 
+  3.2.7  - createCSARForParachutist now supports optional coa (autoCSAR)
   
 
 
@@ -1330,8 +1331,8 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score
 	end 
 end
 
-function csarManager.createCSARForParachutist(theUnit, name) -- invoked with parachute guy on ground as theUnit
-	local coa = theUnit:getCoalition()
+function csarManager.createCSARForParachutist(theUnit, name, coa) -- invoked with parachute guy on ground as theUnit
+	if not coa then coa = theUnit:getCoalition() end 
 	local pos = theUnit:getPoint()
 	-- unit DOES NOT HAVE GROUP!!! (unless water splashdown)
 	-- create a CSAR mission now

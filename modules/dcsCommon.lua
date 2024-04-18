@@ -16,12 +16,13 @@ dcsCommon.version = "3.0.5"
 3.0.4  - getGroupLocation() hardened, optional verbose 
 3.0.5  - new getNthItem()
 	   - new getFirstItem()
-
+	   - arrayContainsString() can handle dicts 
+	   - new pointXpercentYdegOffAB()
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
 	-- for easy access and simple mission programming
-	-- (c) 2021 - 2023 by Chritian Franz and cf/x AG
+	-- (c) 2021 - 2024 by Christian Franz and cf/x AG
 
 	dcsCommon.verbose = false -- set to true to see debug messages. Lots of them
 	dcsCommon.uuidStr = "uuid-"
@@ -1830,7 +1831,7 @@ dcsCommon.version = "3.0.5"
 	
 	end;
 	
-	function dcsCommon.pointInDirectionOfPointXYY(dir, dist, p) -- dir in rad, p in XYZ returns XYY 
+	function dcsCommon.pointInDirectionOfPointXYY(dir, dist, p) -- dir in rad, p in XYZ returns XZZ 
 		local fx = math.cos(dir)
 		local fy = math.sin(dir) 
 		local p2 = {}
@@ -1838,6 +1839,15 @@ dcsCommon.version = "3.0.5"
 		p2.y = p.z + dist * fy
 		p2.z = p2.y -- make p2 XYY vec2/3 upcast
 		return p2
+	end
+
+	function dcsCommon.pointXpercentYdegOffAB(A, B, xPer, yDeg) -- rets xzz point 
+		local bearingRad = dcsCommon.bearingFromAtoB(A, B)
+		local dist = dcsCommon.dist(A, B)
+		local deviation = bearingRad + yDeg * 0.0174533
+		local newDist = dist * xPer/100
+		local newPoint = dcsCommon.pointInDirectionOfPointXYY(deviation, newDist, A)
+		return newPoint
 	end
 
 	function dcsCommon.rotatePointAroundOriginRad(inX, inY, angle) -- angle in degrees
@@ -2078,7 +2088,7 @@ end
 		if not theString then return false end
 		if not caseSensitive then caseSensitive = false end 
 		if type(theArray) ~= "table" then 
-			trigger.action.outText("***arrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
+			trigger.action.outText("***wildArrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
 		end
 		if not caseSensitive then theString = string.upper(theString) end 
 		
@@ -2114,10 +2124,11 @@ end
 		if not theArray then return false end
 		if not theString then return false end
 		if type(theArray) ~= "table" then 
-			trigger.action.outText("***arrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
+			trigger.action.outText("***arrayContainsString: theArray is not type <table> but <" .. type(theArray) .. ">", 30)
 		end
-		for i = 1, #theArray do 
-			if theArray[i] == theString then return true end 
+		for idx, item in pairs(theArray) do 
+--		for i = 1, #theArray do 
+			if item == theString then return true end 
 		end
 		return false 
 	end
@@ -2418,7 +2429,7 @@ end
 		if getmetatable(value) then 
 			if type(value) == "string" then 
 			else 
-				trigger.action.outText(prefix .. key (" .. type(value) .. ") .. " HAS META", 30)
+				trigger.action.outText(prefix .. key .. (" .. type(value) .. ") .. " HAS META", 30)
 			end
 		end
 		if type(value) == "table" then 

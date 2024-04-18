@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "2.0.0" 
+autoCSAR.version = "2.0.1" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -14,6 +14,8 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 	1.1.0 - allow open water CSAR, fake pilot with GRG Soldier 
 		  - can be disabled by seaCSAR = false 
 	2.0.0 - OOP, code clean-up
+	2.0.1 - fix for coalition change when ejected player changes coas or is forced to neutral 
+	      - GC 
 --]]--
 
 function autoCSAR.removeGuy(args)
@@ -30,13 +32,16 @@ function autoCSAR.isOverWater(theUnit)
 	return surf == 2 or surf == 3
 end
 
-function autoCSAR.createNewCSAR(theUnit)
+function autoCSAR.createNewCSAR(theUnit, coa)
 	if not csarManager then 
 		trigger.action.outText("+++aCSAR: CSAR Manager not loaded, aborting", 30)
 	end	
 	-- enter with unit from landing_after_eject event
 	-- unit has no group 
-	local coa = theUnit:getCoalition()
+	if not coa then 
+		trigger.action.outText("+++autoCSAR: unresolved coalition, assumed neutral", 30)
+		coa = 0 
+	end 
 	if coa == 0 then -- neutral
 		trigger.action.outText("Neutral Pilot made it safely to ground.", 30)
 		return 
@@ -75,7 +80,7 @@ function autoCSAR.createNewCSAR(theUnit)
 		theUnit = allUnits[1] -- get first (and only) unit
 	end
 	-- create a CSAR mission now
-	csarManager.createCSARForParachutist(theUnit, "Xray-" .. autoCSAR.counter)
+	csarManager.createCSARForParachutist(theUnit, "Xray-" .. autoCSAR.counter, coa)
 	autoCSAR.counter = autoCSAR.counter + 1
 	
 	-- schedule removal of pilot
@@ -88,36 +93,66 @@ function autoCSAR.createNewCSAR(theUnit)
 	end 
 end
 
+-- we backtrack the pilot to their seat to their plane if they have ejector seat  
+autoCSAR.pilotInfo = {}
 function autoCSAR:onEvent(event)
+	if not event.initiator then return end 
+	local initiator = event.initiator 
 	if event.id == 31 then -- landing_after_eject, does not happen at sea
 		-- to prevent double invocations for same process
 		-- check that we are still tracking this ejection 
-		if event.initiator then 
-			local uid = tonumber(event.initiator:getID())
-			if autoCSAR.trackedEjects[uid] then
-				trigger.action.outText("aCSAR: filtered double sea csar (player) event for uid = <" .. uid .. ">", 30)
-				autoCSAR.trackedEjects[uid] = nil -- reset 
-				return 
-			end
-				autoCSAR.createNewCSAR(event.initiator)
+		local uid = tonumber(initiator:getID())
+		if autoCSAR.trackedEjects[uid] then
+			trigger.action.outText("aCSAR: filtered double sea csar (player) event for uid = <" .. uid .. ">", 30)
+			autoCSAR.trackedEjects[uid] = nil -- reset 
+			return 
 		end
+		-- now get the coalition of the pilot.
+		-- if pilot had an ejection seat, we need to get the seat's coa 
+		local coa = initiator:getCoalition()
+		for idx, info in pairs(autoCSAR.pilotInfo) do 
+			if info.pilot == initiator then 
+				coa = info.coa 
+				info.matched = true -- for GC
+			end
+		end 
+		autoCSAR.createNewCSAR(initiator, coa)	
 	end
 
-	if event.id == 6 and autoCSAR.seaCSAR then -- eject, start tracking 
-		if event.initiator then
+	if event.id == 33 then -- discard chair, connect pilot with seat 
+		for idx, info in pairs(autoCSAR.pilotInfo) do 
+			if info.seat == event.target then 
+				info.pilot = initiator
+			end
+		end 
+	end 
+
+	if event.id == 6 then -- eject, start tracking, remember coa 
+		local coa = event.initiator:getCoalition()
+
+		-- see if pilot has ejector seat and prepare to connect one with the other 
+		local info = nil 
+		if event.target and event.target:isExist() then 
+			info = {}
+			info.coa = coa
+			info.seat = event.target
+			table.insert(autoCSAR.pilotInfo, info)
+		end
+
+		local uid = tonumber(event.initiator:getID())
+		autoCSAR.trackedEjects[uid] = nil -- set to not handled (yet)
+		
+		if autoCSAR.seaCSAR then
 			-- see if this happened over open water and immediately 
-		    -- create a seaCSAR 
-			
-			if autoCSAR.isOverWater(event.initiator) then 
-				autoCSAR.createNewCSAR(event.initiator)
+		    -- create a seaCSAR immediately
+			if autoCSAR.isOverWater(initiator) then 
+				autoCSAR.createNewCSAR(initiator, initiator:getCoalition())
+				-- mark this one as completed 
+				autoCSAR.trackedEjects[uid] = "processed" -- remember, so to not proc again 
+				if info then info.matched = true end -- discard this one too in next GC 
 			end
-			
-			-- also mark this one as completed 
-			local uid = tonumber(event.initiator:getID())
-			autoCSAR.trackedEjects[uid] = "processed"
 		end
 	end
-
 
 end
 
@@ -147,6 +182,19 @@ function autoCSAR.readConfigZone()
 	end 
 end
 
+function autoCSAR.GC()
+	timer.scheduleFunction(autoCSAR.GC, {}, timer.getTime() + 30 * 60) -- once every half hour
+	local filtered = {}
+	for idx, info in pairs(autoCSAR.pilotInfo) do 
+		if info.matched then 
+			-- skip it for next round
+		else 
+			table.insert(filtered, info)
+		end 
+	end 
+	autoCSAR.pilotInfo = filtered
+end
+
 function autoCSAR.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
@@ -162,6 +210,9 @@ function autoCSAR.start()
 	
 	-- connect event handler
 	world.addEventHandler(autoCSAR)
+	
+	-- start GC
+	timer.scheduleFunction(autoCSAR.GC, {}, timer.getTime() + 1)
 	
 	trigger.action.outText("cfx autoCSAR v" .. autoCSAR.version .. " started.", 30)
 	return true 

@@ -6,15 +6,30 @@ milHelo.requiredLibs = {
 	"cfxMX",
 }
 milHelo.zones = {}
+milHelo.targetKeywords = {
+	"milTarget", -- my own
+	"camp", -- camps 
+	"airfield", -- airfields
+	"FARP", -- FARPzones 
+	}
+	
 milHelo.targets = {}
+milHelo.flights = {} -- all currently active mil helo flights 
 milHelo.ups = 1 
+milHelo.missionTypes = {
+	"cas", -- standard cas 
+	"patrol", -- orbit over zone for duration 
+	"insert", -- insert one of the ground groups in the src zone after landing
+	"casz", -- engage in zone for target zone's radius 	
+	-- missing csar
+}
 
 function milHelo.addMilHeloZone(theZone)
 	milHelo.zones[theZone.name] = theZone
 end 
 
 function milHelo.addMilTargetZone(theZone)
-	milHelo.targets[theZone.name] = theZone 
+	milHelo.targets[theZone.name] = theZone -- overwrite if duplicate
 end
 
 function milHelo.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
@@ -51,15 +66,48 @@ end
 
 function milHelo.readMilHeloZone(theZone) -- process attributes
 	-- get mission type. part of milHelo 
-	theZone.msnType = string.lower(theZone:getStringFromZoneProperty("milHelo", "cas"))
+	theZone.msnType = string.lower(theZone:getStringFromZoneProperty("milHelo", "cas")) 
+	if dcsCommon.arrayContainsString(milHelo.missionTypes, theZone.msnType) then 
+		-- great, mission type is known
+	else 
+		trigger.action.outText("+++milH: zone <" .. theZone.name .. ">: unknown mission type <" .. theZone.msnType .. ">, defaulting to 'CAS'", 30)
+		theZone.msnType = "cas"
+	end 
+	
 	-- get all groups inside me	
 	local myGroups, count = milHelo.allGroupsInZoneByData(theZone) 
 	theZone.myGroups = myGroups 
 	theZone.groupCount = count 
+	theZone.hGroups = {}
+	theZone.hCount = 0 
+	theZone.gGroups = {}
+	theZone.gCount = 0 
+	theZone.fGroups = {}
+	theZone.fCount = 0 
+	-- sort into ground, helo and fixed 
+	for groupName, data in pairs(myGroups) do 
+		local catRaw = cfxMX.groupTypeByName[groupName]
+		if theZone.verbose then 
+			trigger.action.outText("Proccing zone <" .. theZone.name .. ">: group <" .. groupName .. "> - type <" .. catRaw .. ">", 30)
+		end 
+		if catRaw == "helicopter" then 
+			theZone.hGroups[groupName] = data
+			theZone.hCount = theZone.hCount + 1
+		elseif catRaw == "plane" then 
+			theZone.fGroups[groupName] = data 
+			theZone.fCount = theZone.fCount +  1
+		elseif catRaw == "vehicle" then 
+			theZone.gGroups[groupName] = data 
+			theZone.gCount = theZone.gCount + 1
+		else 
+			trigger.action.outText("+++milH: ignored group <" .. groupName .. ">: unknown type <" .. catRaw .. ">", 30)
+		end 
+	end 
 	theZone.coa = theZone:getCoalitionFromZoneProperty("coalition", 0)
-	theZone.hot = theZone:getBoolFromZoneProperty("hot", true) 
+	theZone.hot = theZone:getBoolFromZoneProperty("hot", false) 
 	theZone.speed = theZone:getNumberFromZoneProperty("speed", 50) -- 110 mph
 	theZone.alt = theZone:getNumberFromZoneProperty("alt", 100) -- we are always radar alt 
+	theZone.loiter = theZone:getNumberFromZoneProperty("loiter", 3600) -- 1 hour loiter default 
 	-- wipe all existing 
 	for groupName, data in pairs(myGroups) do 
 		local g = Group.getByName(groupName) 
@@ -73,25 +121,24 @@ function milHelo.readMilHeloZone(theZone) -- process attributes
 end 
 
 function milHelo.readMilTargetZone(theZone)
-
+	-- can also be "camp", "farp", "airfield"
+	theZone.casRadius = theZone:getNumberFromZoneProperty("casRadius", theZone.radius)
+	if (not theZone.isCircle) and not theZone:hasProperty("casRadius") then
+		-- often when we have a camp there is no cas radius, use 10km 
+		-- and zone is ploygonal 
+		if theZone.verbose then 
+			trigger.action.outText("+++milH: Warning - milH target zone <" .. theZone.name .. "> is polygonal and has no CAS radius attribute. Defaulting to 10km", 30)
+		end 
+		theZone.casRadius = 10000
+	end 
 	if theZone.verbose or milHelo.verbose then 
-		trigger.action.outText("+++milH: processed TARGET zone <" .. theZone.name .. ">", 30)
+		trigger.action.outText("+++milH: processed milHelo TARGET zone <" .. theZone.name .. ">", 30)
 	end
 end 
 
 --
 -- Spawning for a zone
 --
---[[--
-function milHelo.getNthItem(theSet, n)
-	local count = 1 
-	for key, value in pairs(theSet) do
-		if count == n then return value end 
-		count = count + 1 
-	end
-	return nil 
-end
---]]--
 
 function milHelo.createCASTask(num, auto)
 	if not auto then auto = false end 
@@ -104,7 +151,6 @@ function milHelo.createCASTask(num, auto)
 	task.auto = auto 
 	local params = {}
 	params.priority = 0 
---	params.targetTypes = {"Helicopters", "Ground Units", "Light armed ships"}
 	local targetTypes = {[1] = "Helicopters", [2] = "Ground Units", [3] = "Light armed ships",}
 	params.targetTypes = targetTypes
 	
@@ -132,6 +178,29 @@ function milHelo.createROETask(num, roe)
 	return task 
 end 
 
+function milHelo.createEngageIZTask(num, theZone)
+	local p = theZone:getPoint()
+	if not num then num = 1 end 
+	local task = {}
+		task.number = num 
+		task.enabled = true 
+		task.auto = false 
+		task.id = "EngageTargetsInZone"
+		local params = {}
+			targetTypes = {}
+				targetTypes[1] = "All"
+			params.targetTypes = targetTypes
+			params.x = p.x 
+			params.y = p.z -- !!!!
+			params.value = "All;"
+			params.noTargetTypes = {}
+			params.priority = 0
+			local radius = theZone.casRadius
+			params.zoneRadius = radius 
+		task.params = params 
+	return task
+end
+
 function milHelo.createOrbitTask(num, duration, theZone)
 	if not num then num = 1 end 
 	local task = {}
@@ -155,23 +224,72 @@ function milHelo.createOrbitTask(num, duration, theZone)
 	return task 
 end
 
-function milHelo.createTakeOffWP(theZone)
+function milHelo.createLandTask(p, duration, num) 
+	if not num then num = 1 end 
+	local t = {}
+	t.enabled = true 
+	t.auto = false 
+	t.id = "ControlledTask"
+	t.number = num 
+	local params = {}
+	t.params = params 
+	local ptsk = {}
+	params.task = ptsk 
+	ptsk.id = "Land"
+	local ptp = {}
+	ptsk.params = ptp
+	ptp.x = p.x 
+	ptp.y = p.z 
+	ptp.duration = "300" -- not sure why 
+	ptp.durationFlag = false -- off anyway 
+	local stopCon = {}
+	stopCon.duration = duration
+	params.stopCondition = stopCon 
+	return t 
+end
+
+function milHelo.createCommandTask(theCommand, num) 
+	if not num then num = 1 end 
+	local t = {}
+	t.enabled = true 
+	t.auto = false 
+	t.id = "WrappedAction"
+	t.number = num 
+	local params = {}
+	t.params = params 
+	local action = {}
+	params.action = action 
+	action.id = "Script"
+	local p2 = {}
+	action.params = p2 
+	p2.command = theCommand 
+	return t 
+end
+
+function milHelo.createTakeOffWP(theZone, engageInZone, engageZone)
 	local WP = {}
-	WP.alt = theZone.alt 
-	WP.alt_type = "RADIO" 
+	WP.alt = 500 -- theZone.alt 
+	WP.alt_type = "BARO" 
 	WP.properties = {}
 	WP.properties.addopt = {}
 	WP.action = "From Ground Area"
 	if theZone.hot then WP.action = "From Ground Area Hot" end 
-	WP.speed = theZone.speed 
+	WP.speed = 0 -- theZone.speed 
 	WP.task = {}
 	WP.task.id = "ComboTask"
 	WP.task.params = {}
 	local tasks = {}
---	local casTask = milHelo.createCASTask(1)
---	tasks[1] = casTask 
-	local roeTask = milHelo.createROETask(1,0) -- 0 = weapons free 
-	tasks[1] = roeTask 
+	local casTask = milHelo.createCASTask(1)
+	tasks[1] = casTask 
+	local roeTask = milHelo.createROETask(2,0) -- 0 = weapons free 
+	tasks[2] = roeTask 
+	if engageInZone then 
+		if not engageZone then 
+			trigger.action.outText("+++milH: Warning - caz task with no engage zone!", 30)
+		end 
+		local eiz = milHelo.createEngageIZTask(3, engageZone)
+		tasks[3] = eiz 
+	end
 	WP.task.params.tasks = tasks 
 	--
 	WP.type = "TakeOffGround"
@@ -180,7 +298,7 @@ function milHelo.createTakeOffWP(theZone)
 	WP.x = p.x 
 	WP.y = p.z 
 	WP.ETA = 0 
-	WP.ETA_locked = false 
+	WP.ETA_locked = true 
 	WP.speed_locked = true 
 	WP.formation_template = ""
 	return WP
@@ -201,9 +319,9 @@ function milHelo.createOrbitWP(theZone, targetPoint)
 	WP.task.params = {}
 	-- start params construct 
 	local tasks = {}
-	local casTask = milHelo.createCASTask(1, false)
+	local casTask = milHelo.createCASTask(1)
 	tasks[1] = casTask 
-	local oTask = milHelo.createOrbitTask(2, 3600, theZone)
+	local oTask = milHelo.createOrbitTask(2, theZone.loiter, theZone)
 	tasks[2] = oTask 
 	WP.task.params.tasks = tasks 
 	WP.type = "Turning Point"
@@ -217,41 +335,123 @@ function milHelo.createOrbitWP(theZone, targetPoint)
 	return WP
 end
 
+function milHelo.createLandWP(gName, theZone, targetZone)
+	local toWP 
+	toWP = dcsCommon.createSimpleRoutePointData(targetZone:getPoint(), theZone.alt, theZone.speed)
+	toWP.alt_type = "RADIO"
+
+	local task = {}
+	task.id = "ComboTask"
+	task.params = {}
+	local ttsk = {} 
+	local p = targetZone:getPoint()
+	ttsk[1] = milHelo.createLandTask(p, milHelo.landingDuration, 1)
+	local command = "milHelo.landedCB('" .. gName .. "', '" .. targetZone:getName() .. "', '" .. theZone:getName() .. "')"
+	ttsk[2] = milHelo.createCommandTask(command,2)
+	task.params.tasks = ttsk
+	toWP.task = task 	
+	return toWP 
+end 
+
+function milHelo.createOMWCallbackWP(gName, number, pt, alt, speed, action) -- name is group name
+	if not action then action = "none" end 
+	local omwWP = dcsCommon.createSimpleRoutePointData(pt, alt, speed)
+	omwWP.alt_type = "RADIO"
+	-- create a command waypoint
+	local task = {}
+	task.id = "ComboTask"
+	task.params = {}
+	local ttsk = {} 
+	local command = "milHelo.reachedWP('" .. gName .. "', '" .. number .. "', '" .. action .."')"
+	ttsk[1] = milHelo.createCommandTask(command,1)
+	task.params.tasks = ttsk
+	omwWP.task = task 	
+	return omwWP
+end
+
+-- a point yDegrees off the path from AB, xPercent of the total distance
+-- between A and B away from A
+--[[--
+function milHelo.pointXpercentYdegOffAB(A, B, xPer, yDeg) -- rets xzz point 
+	local bearingRad = dcsCommon.bearingFromAtoB(A, B)
+	local dist = dcsCommon.dist(A, B)
+	local deviation = bearingRad + yDeg * 0.0174533
+	local newDist = dist * xPer/100
+	local newPoint = dcsCommon.pointInDirectionOfPointXYY(deviation, newDist, A)
+	return newPoint
+end
+--]]--
+	
 function milHelo.spawnForZone(theZone, targetZone)
-	local theRawData = dcsCommon.getNthItem(theZone.myGroups, 1)
+	local n = dcsCommon.randomBetween(1, theZone.hCount)
+	local theRawData = dcsCommon.getNthItem(theZone.hGroups, n)
 	local gData = dcsCommon.clone(theRawData)
---[[--	
+	local oName = gData.name 
+	
 	-- pre-process gData: names, id etc
 	gData.name = dcsCommon.uuid(gData.name)
+	local gName = gData.name 
 	for idx, uData in pairs(gData.units) do 
 		uData.name = dcsCommon.uuid(uData.name)
+		uData.alt = 10
+		uData.alt_type = "RADIO"
+		uData.speed = 0 
+		uData.unitId = nil 
 	end
 	gData.groupId = nil 
 	
 	-- change task according to missionType in Zone
+	-- we currently use CAS for all 
 	gData.task = "CAS"
 	
 	-- create and process route 
 	local route = {}
 	route.points = {}
---	gData.route = route 
+	gData.route = route 
 	-- create take-off waypoint 
-	local wpTOff = milHelo.createTakeOffWP(theZone)
+	local casInZone = theZone.msnType == "casz"
+	if theZone.verbose and casInZone then 
+		trigger.action.outText("Setting up casZ for <" .. theZone.name .. "> to <" .. targetZone.name .. ">", 30)
+	end 
+	
+	local wpTOff = milHelo.createTakeOffWP(theZone, casInZone, targetZone)
+
 	-- depending on mission, create an orbit or land WP 
 	local dest = targetZone:getPoint()
-	local wpDest = milHelo.createOrbitWP(theZone, dest)
-	-- move group to WP1 and add WP1 and WP2 to route 
---	dcsCommon.moveGroupDataTo(theGroup, 
---							  fromWP.x, 
---							  fromWP.y)
-
-----
-	dcsCommon.addRoutePointForGroupData(gData, wpTOff)
-	dcsCommon.addRoutePointForGroupData(gData, wpDest)
---]]--	
-	dcsCommon.dumpVar2Str("route", gData.route)
+	local B = dest 
+	local A = theZone:getPoint() 
+	if theZone.msnType == "cas" or theZone.msnType == "patrol" then 
+		dcsCommon.addRoutePointForGroupData(gData, wpTOff)
+		local wpDest = milHelo.createOrbitWP(theZone, dest)
+		dcsCommon.addRoutePointForGroupData(gData, wpDest)
+		local retPt = milHelo.createLandWP(gName, theZone, theZone)
+		dcsCommon.addRoutePointForGroupData(gData, retPt)
+		--dcsCommon.dumpVar2Str("caser group", gData)
+	elseif theZone.msnType == "casz" then 
+		dcsCommon.addRoutePointForGroupData(gData, wpTOff)
+		-- go to CAS destination with Engage in Zone active 
+		-- we may want to make ingress and egress wp before heading to 
+		-- the 'real' CASZ point 
+		-- make ingress point, in direction of target, 30 degrees to the right, half distance.
+		local ingress = dcsCommon.pointXpercentYdegOffAB(A, B, math.random(50,80), math.random(20,50))
+		--local pt = targetZone:getPoint()
+		local omw1 = milHelo.createOMWCallbackWP(gName, 2, ingress, theZone.alt, theZone.speed, "none")
+		dcsCommon.addRoutePointForGroupData(gData, omw1)
+		local omw2 = milHelo.createOMWCallbackWP(gName, 3, B, theZone.alt, theZone.speed, "none")
+		dcsCommon.addRoutePointForGroupData(gData, omw2)
+		-- egress point 
+		local egress = dcsCommon.pointXpercentYdegOffAB(B, A, math.random(20, 50), math.random(20,50))
+		local omw3 = milHelo.createOMWCallbackWP(gName, 4, egress, theZone.alt, theZone.speed, "none")
+		dcsCommon.addRoutePointForGroupData(gData, omw3)
+		local retPt = milHelo.createLandWP(gName, theZone, theZone)
+		dcsCommon.addRoutePointForGroupData(gData, retPt)
+	elseif theZone.msnType == "insert" then 
+		local wpDest = milHelo.createLandWP(gName, theZone, targetZone)
+		dcsCommon.addRoutePointForGroupData(gData, wpTOff)
+		dcsCommon.addRoutePointForGroupData(gData, wpDest)
+	end 
 	
-	-- make it a cty 
+	-- make coa a cty 
 	if theZone.coa == 0 then 
 		trigger.action.outText("+++milH: WARNING - zone <" .. theZone.name .. "> is NEUTRAL", 30)
 	end 
@@ -259,9 +459,162 @@ function milHelo.spawnForZone(theZone, targetZone)
 	-- spawn 
 	local groupCat = Group.Category.HELICOPTER
 	local theSpawnedGroup = coalition.addGroup(cty, groupCat, gData)
+	local theFlight = {}
+	theFlight.oName = oName 
+	theFlight.spawn = theSpawnedGroup
+	theFlight.origin = theZone 
+	theFlight.destination = targetZone
+	milHelo.flights[gName] = theFlight --theSpawnedGroup
+	return theSpawnedGroup, gData 
+end
+--
+-- mil helo landed callback (insertion)
+--
+function milHelo.insertTroops(theUnit, targetZone, srcZone)
+	local theZone = srcZone 
+	local n = dcsCommon.randomBetween(1, theZone.gCount)
+	local theRawData = dcsCommon.getNthItem(theZone.gGroups, n)
+--	local theRawData = dcsCommon.getNthItem(srcZone.gGroups, 1)
+	if not theRawData then 
+		trigger.action.outText("+++milH: WARNING: no troops to insert for zone <" .. srcZone.name .. ">", 30)
+		return 
+	end
+	
+	local gData = dcsCommon.clone(theRawData)
+	-- deploy in ring formation 
+	-- remove all routes 
+	-- mayhaps prepare for orders and formation 
+	
+	local p = theUnit:getPoint() 
+	gData.route = nil -- no more route. stand in place 
+	gData.name = dcsCommon.uuid(gData.name)
+	local gName = gData.name 
+	for idx, uData in pairs(gData.units) do 
+		uData.name = dcsCommon.uuid(uData.name)
+		uData.speed = 0 
+		uData.heading = 0 
+		uData.unitId = nil 
+	end
+	gData.groupId = nil 
+	dcsCommon.moveGroupDataTo(gData, 0, 0) -- move to origin so we can arrange them 
+	
+	dcsCommon.arrangeGroupDataIntoFormation(gData, 20, nil, "CIRCLE_OUT")
+	
+	dcsCommon.moveGroupDataTo(gData, p.x, p.z) -- move arranged group to helo
+	
+	-- make coa a cty 
+	if theZone.coa == 0 then 
+		trigger.action.outText("+++milH: WARNING - zone <" .. theZone.name .. "> is NEUTRAL", 30)
+	end 
+	local cty = dcsCommon.getACountryForCoalition(theZone.coa)
+	-- spawn 
+	local groupCat = Group.Category.GROUND
+	local theSpawnedGroup = coalition.addGroup(cty, groupCat, gData)
+		
+	trigger.action.outText("Inserted troops <" .. gName .. ">", 30)
 	
 	return theSpawnedGroup, gData 
 end
+
+function milHelo.replaceUnitsWithStatics(gName)
+
+end
+
+function milHelo.getRawDataFromGroupNamed(gName, oName)
+	local theGroup = Group.getByName(gName)
+	local groupName = gName
+	local cat = theGroup:getCategory()
+	-- access mxdata for livery because getDesc does not return the livery 	
+	local liveries = {} 
+	local mxData = cfxMX.getGroupFromDCSbyName(oName)
+	for idx, theUnit in pairs (mxData.units) do 
+		liveries[theUnit.name] = theUnit.livery_id
+	end 
+	
+	local ctry
+	local gID = theGroup:getID()
+	local allUnits = theGroup:getUnits()
+	local rawGroup = {}
+	rawGroup.name = groupName
+	local rawUnits = {}
+	for idx, theUnit in pairs(allUnits) do 
+		local ir = {}
+		local unitData = theUnit:getDesc()
+		-- build record 
+		ir.heading = dcsCommon.getUnitHeading(theUnit)
+		ir.name = theUnit:getName()
+		ir.type = unitData.typeName -- warning: fields are called differently! typename vs type
+		ir.livery_id = liveries[ir.name] -- getDesc does not return livery
+		ir.groupId = gID
+		ir.unitId = theUnit:getID()
+		local up = theUnit:getPoint()
+		ir.x = up.x
+		ir.y = up.z -- !!! warning! 
+		-- see if any zones are linked to this unit 
+		ir.linkedZones = cfxZones.zonesLinkedToUnit(theUnit)
+		
+		table.insert(rawUnits, ir)
+		ctry = theUnit:getCountry()
+	end
+	rawGroup.ctry = ctry 
+	rawGroup.cat = cat 
+	rawGroup.units = rawUnits 
+	return rawGroup, cat, ctry
+end
+
+function milHelo.spawnImpostorsFromData(rawData, cat, ctry) 
+	for idx, unitData in pairs(rawData.units) do 
+		-- build impostor record 
+		local ir = {}
+		ir.heading = unitData.heading
+		ir.type = unitData.type
+		ir.name = dcsCommon.uuid(rawData.name) -- .. "-" .. tostring(impostors.uniqueID())
+		ir.groupID = nil -- impostors.uniqueID()
+		ir.unitId = nil -- impostors.uniqueID()
+		ir.x = unitData.x
+		ir.y = unitData.y 
+		ir.livery_id = unitData.livery_id		
+		-- spawn the impostor 
+		local theImp = coalition.addStaticObject(ctry, ir)
+	end
+end
+
+function milHelo.reachedWP(gName, wpNum, action)
+	trigger.action.outText("MilH group  <" .. gName .. " reached wp #" .. wpNum .. ".", 30)
+
+end 
+
+function milHelo.landedCB(who, where, from) -- who group name, where a zone
+	trigger.action.outText("milhelo landed CB for group <" .. who .. ">", 30)
+	-- step 1: remove the flight
+	local theGroup = Group.getByName(who)
+	if theGroup then 
+		if Group.isExist(theGroup) then 
+			Group.destroy(theGroup)
+		end 
+	else 
+		trigger.action.outText("+++milH: cannot find group <" .. who .. ">", 30)
+	end 
+		
+	-- step 3: replace with static helo 
+	local aGroup = theGroup
+	local theFlight = milHelo.flights[who]
+	local oName = theFlight.oName 
+	local theZone = theFlight.origin
+	if theZone.msn == "insertion" then 
+		-- create a static stand-in for scenery 
+		local rawData, cat, ctry = milHelo.getRawDataFromGroupNamed(who, oName)
+		Group.destroy(aGroup)
+		milHelo.spawnImpostorsFromData(rawData, cat, ctry) 
+	else 
+		-- remove group 
+		Group.destroy(aGroup)	
+	end
+	
+	-- remove flight from list of active flights 
+	milHelo.flights[who] = nil 
+end
+
 --
 -- update and event 
 --
@@ -269,10 +622,98 @@ function milHelo.update()
 	timer.scheduleFunction(milHelo.update, {}, timer.getTime() + 1)
 end
 
-function milHelo.onEvent(theEvent)
-
+function milHelo.GCcollected(gName)
+	-- do some housekeeping?
+	trigger.action.outText("removed flight <" .. gName .. ">", 30)
 end
 
+function milHelo.GC()
+	timer.scheduleFunction(milHelo.GC, {}, timer.getTime() + 1)
+	local filtered = {}
+	for gName, theFlight in pairs(milHelo.flights) do 
+		local theGroup = Group.getByName(gName)
+		if theGroup and Group.isExist(theGroup) then 
+			-- all fine, keep it
+			filtered[gName] = theFlight
+		else 
+			milHelo.GCcollected(gName)
+		end 
+	end
+	milHelo.flights = filtered
+end
+
+function milHelo:onEvent(theEvent)
+	if not theEvent then return end 
+	if not theEvent.initiator then return end 
+	local theUnit = theEvent.initiator 
+	if not theUnit.getGroup then return end 
+	local theGroup = theUnit:getGroup()
+	if not theGroup then 
+--		trigger.action.outText("event <" .. theEvent.id .. ">: group shenenigans for unit detected", 30)
+		return 
+	end
+	local gName = theGroup:getName()
+	local theFlight = milHelo.flights[gName]
+	if not theFlight then return end 
+
+	local id = theEvent.id 
+	if id == 4 then 
+		-- flight landed
+		-- did it land in target zone? 
+		local p = theUnit:getPoint()
+		local srcZone = theFlight.origin
+		local tgtZone = theFlight.destination 
+		if tgtZone:pointInZone(p) then 
+			trigger.action.outText("Flight <" .. gName .. "> originating from <" .. srcZone.name .. "> landed in zone <" .. tgtZone.name .. ">", 30) 
+			if srcZone.msnType == "insert" then 
+				trigger.action.outText("Commencing Troop Insertion", 30)
+				milHelo.insertTroops(theUnit, tgtZone, srcZone)
+			end
+		else
+			-- maybe its a return flight 
+			if srcZone:pointInZone(p) then 
+				trigger.action.outText("Flight <" .. gName .. "> originating from <" .. srcZone.name .. "> landed back home", 30) 
+			else 
+				trigger.action.outText("Flight <" .. gName .. "> originating from <" .. srcZone.name .. "> landed OUTSIDE of src or target zone <" .. tgtZone.name .. ">", 30) 
+			end			
+		end 
+	end 
+	
+--	trigger.action.outText("Event <" .. theEvent.id .. "> for milHelo flight <" .. gName .. ">", 30)
+end
+
+--
+-- API
+--
+function milHelo.getMilSources(side, msnType) -- msnType is optional
+	if side == "red" then side = 1 end -- better safe...
+	if side == "blue" then side = 2 end 
+	local sources = {}
+	for idx, theZone in pairs(milHelo.zones) do 
+		if theZone.owner == side then -- must be owned by same side 
+			if msnType then 
+				if theZone.msnType == msnType then 
+					table.insert(sources, theZone)
+				end
+			else 
+				table.insert(sources, theZone)
+			end
+		end
+	end
+	return sources -- an array, NOT dict so we can pickrandom
+end
+
+function milHelo.getMilTargets(side) -- gets mil targets that DO NOT belong to side 
+	if side == "red" then side = 1 end -- better safe...
+	if side == "blue" then side = 2 end 
+	local tgt = {}
+	for idx, theZone in pairs(milHelo.targets) do 
+		if theZone.owner ~= side then -- must NOT be owned by same side 
+			table.insert(tgt, theZone)
+		end
+	end
+	return tgt
+end
 --
 -- Config & start 
 --
@@ -282,6 +723,7 @@ function milHelo.readConfigZone()
 		theZone = cfxZones.createSimpleZone("milHeloConfig") 
 	end 
 	milHelo.verbose = theZone.verbose 
+	milHelo.landingDuration = theZone:getNumberFromZoneProperty("landingDuration", 180) -- seconds = 3 minutes
 end
 
 		
@@ -305,11 +747,13 @@ function milHelo.start()
 		milHelo.addMilHeloZone(aZone) -- add to list
 	end
 	
-	attrZones = cfxZones.getZonesWithAttributeNamed("milTarget")
-	for k, aZone in pairs(attrZones) do 
-		milHelo.readMilTargetZone(aZone) -- process attributes
-		milHelo.addMilTargetZone(aZone) -- add to list
-	end
+	for idx, keyWord in pairs(milHelo.targetKeywords) do 
+		attrZones = cfxZones.getZonesWithAttributeNamed(keyWord)
+		for k, aZone in pairs(attrZones) do 
+			milHelo.readMilTargetZone(aZone) -- process attributes
+			milHelo.addMilTargetZone(aZone) -- add to list
+		end
+	end 
 	
 	-- start update in 5 seconds
 	timer.scheduleFunction(milHelo.update, {}, timer.getTime() + 1/milHelo.ups)
@@ -327,7 +771,21 @@ if not milHelo.start() then
 	milHelo = nil 
 end 
 
+--[[
+function milHelo.latestuff()
+	trigger.action.outText("doing stuff", 30)
+	local theZone = cfxZones.getZoneByName("milCAS") --dcsCommon.getFirstItem(milHelo.zones)
+	local targetZone = cfxZones.getZoneByName("mh Target")  -- dcsCommon.getFirstItem(milHelo.targets)
+	milHelo.spawnForZone(theZone, targetZone)
+	theZone = cfxZones.getZoneByName("milInsert")  --dcsCommon.getNthItem(milHelo.zones, 2)
+	milHelo.spawnForZone(theZone, targetZone)
+	theZone = cfxZones.getZoneByName("doCASZ") 
+	targetZone = cfxZones.getZoneByName("milTarget Z")
+	if not theZone then trigger.action.outText("Not theZone", 30) end 
+	if not targetZone then trigger.action.OutText("Not targetZone", 30) end 
+	milHelo.spawnForZone(theZone, targetZone)
+end
+
 -- do some one-time stuff 
-local theZone = dcsCommon.getFirstItem(milHelo.zones)
-local targetZone = dcsCommon.getFirstItem(milHelo.targets)
-milHelo.spawnForZone(theZone, targetZone)
+timer.scheduleFunction(milHelo.latestuff, {}, timer.getTime() + 1)
+--]]--

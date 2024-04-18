@@ -256,7 +256,11 @@ function stopGap:onEvent(event)
 		-- is now slotted into 
 		trigger.action.setUserFlag("SG"..gName, 0)
 	end
+	if id == 6 then -- eject
+--		trigger.action.outText("+++SG: not handled: Eject Eject Eject!", 30)
+	end
 	if 	(id == 9) or (id == 30) or (id == 5) then -- dead, lost, crash 
+--		trigger.action.outText("+++sg: event <" .. id .. ">, handing off to kicker", 30)
 		local pName = theUnit:getPlayerName()
 		timer.scheduleFunction(stopGap.kickplayer, pName, timer.getTime() + 1)
 	end
@@ -265,6 +269,7 @@ end
 
 stopGap.kicks = {}
 function stopGap.kickplayer(args)
+--	trigger.action.outText("+++sg: enter kicker!", 30)
 	if not stopGap.kickTheDead then return end 
 	local pName = args 
 	for i,slot in pairs(net.get_player_list()) do

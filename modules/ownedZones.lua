@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.2.0"
+cfxOwnedZones.version = "2.3.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -30,25 +30,30 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - method support for global (config) output 
 	  - moved drawZone to cfxZones
 2.2.0 - excludedTypes option in config 
-
+2.3.0 - include airfield zones (module) in collectZones()
+      - if airfield is defined.
+	  - allManagedOwnedZones
+	  - gatherAllManagedOwnedZones()
+	  - commented out unused (?) methods 
+	  - optmized getNearestEnemyOwnedZone
+	  - collectZones now uses gatherAllManagedOwnedZones
+	  - sideOwnsAll can use allManagedOwnedZones
+	  - per-zone local numCap 
+	  - per-zone local numkeep 
+	  - title attribute 
+	  - code clean-up
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
 	"cfxZones",  
 }
 
-cfxOwnedZones.zones = {}
+cfxOwnedZones.zones = {} -- ownedZones FROM THIS module
+cfxOwnedZones.allManagedOwnedZones = {} -- superset, indexed by name 
 cfxOwnedZones.ups = 1
 cfxOwnedZones.initialized = false 
---[[--
- owned zones is a module that manages conquerable zones and keeps a record
- of who owns the zone based on rules  
 
- *** EXTENTDS ZONES ***
-
- when a zone changes hands, a callback can be installed to be told of that fact
- callback has the format (zone, newOwner, formerOwner) with zone being the Zone, and new owner and former owners
- --]]--
+-- *** EXTENTDS ZONES *** --
  
 cfxOwnedZones.conqueredCallbacks = {}
 
@@ -100,11 +105,13 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 	if aZone.markID then 
 		trigger.action.removeMark(aZone.markID)
 	end 
-	if aZone.hidden then return end 
+	if aZone.titleID then 
+		trigger.action.removeMark(aZone.titleID)
+	end 
 	
 	local lineColor = aZone.redLine -- {1.0, 0, 0, 1.0} -- red  
 	local fillColor = aZone.redFill -- {1.0, 0, 0, 0.2} -- red 
-	local owner = aZone.owner -- cfxOwnedZones.getOwnerForZone(aZone)
+	local owner = aZone.owner 
 	if owner == 2 then 
 		lineColor = aZone.blueLine -- {0.0, 0, 1.0, 1.0}
 		fillColor = aZone.blueFill -- {0.0, 0, 1.0, 0.2}
@@ -112,7 +119,12 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 		lineColor = aZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
 		fillColor = aZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
-		
+	
+	if aZone.title then 
+		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
+	end 
+	
+	if aZone.hidden then return end 	
 	aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
 end
 
@@ -154,6 +166,9 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	aZone.untargetable = aZone:getBoolFromZoneProperty("untargetable", false)
 	
 	aZone.hidden = aZone:getBoolFromZoneProperty("hidden", false)
+	-- numCap, numKeep
+	aZone.numCap = aZone:getNumberFromZoneProperty("numCap", cfxOwnedZones.numCap)
+	aZone.numKeep = aZone:getNumberFromZoneProperty("numKeep", cfxOwnedZones.numKeep)
 	
 	-- individual colors, else default from config 
 	aZone.redLine = aZone:getRGBAVectorFromZoneProperty("redLine", cfxOwnedZones.redLine)
@@ -163,6 +178,31 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	aZone.neutralLine = aZone:getRGBAVectorFromZoneProperty("neutralLine", cfxOwnedZones.neutralLine)
 	aZone.neutralFill = aZone:getRGBAVectorFromZoneProperty("neutralFill", cfxOwnedZones.neutralFill)
 	
+	-- masterOwner 
+	if aZone:hasProperty("masterOwner") then 
+		local masterZone = aZone:getStringFromZoneProperty("masterOwner", "cfxNoneErr")
+		local theMaster = cfxZones.getZoneByName(masterZone)
+		if not theMaster then 
+			trigger.action.outText("+++owdZ: WARNING: owned zone <" .. aZone.name .. ">'s masterOwner <" .. masterZone .. "> does not exist, not connecting!", 30)
+		else 
+			aZone.masterOwner = theMaster 
+			aZone.owner = theMaster.owner 
+			if aZone.verbose or cfxOwnedZones.verbose then 
+				trigger.action.outText("+++OwdZ: owned zone <" .. aZone.name .. "> inherits ownership from master zone <" .. masterZone .. ">", 30)
+			end
+		end
+	end
+	
+	aZone.announcer = aZone:getBoolFromZoneProperty("announcer", cfxZones.announcer)
+	if aZone:hasProperty("announce") then 
+		aZone.announcer = aZone:getBoolFromZoneProperty("announce", cfxZones.announcer)
+	end 
+	
+	-- title 
+	if aZone:hasProperty("title") then 
+		aZone.title = aZone:getStringFromZoneProperty("title")
+		if aZone.title == "*" then aZone.title = aZone.name end 
+	end
 	aZone.method = aZone:getStringFromZoneProperty("method", "inc")
 	
 	cfxOwnedZones.zones[aZone] = aZone 
@@ -178,23 +218,17 @@ end
 
 function cfxOwnedZones.bangNeutral(value)
 	if not cfxOwnedZones.neutralTriggerFlag then return end 
-	--local newVal = trigger.misc.getUserFlag(cfxOwnedZones.neutralTriggerFlag) + value 
-	--trigger.action.setUserFlag(cfxOwnedZones.neutralTriggerFlag, newVal)
 	cfxZones.pollFlag(cfxOwnedZones.neutralTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
 function cfxOwnedZones.bangRed(value, theZone)
 	if not cfxOwnedZones.redTriggerFlag then return end 
-	--local newVal = trigger.misc.getUserFlag(cfxOwnedZones.redTriggerFlag) + value 
-	--trigger.action.setUserFlag(cfxOwnedZones.redTriggerFlag, newVal)
 	cfxZones.pollFlag(cfxOwnedZones.redTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
 function cfxOwnedZones.bangBlue(value, theZone)
 	if not cfxOwnedZones.blueTriggerFlag then return end 
 	local newVal = trigger.misc.getUserFlag(cfxOwnedZones.blueTriggerFlag) + value 
-	-- trigger.action.setUserFlag(cfxOwnedZones.blueTriggerFlag, newVal)
-	-- cfxZones.setFlagValue(cfxOwnedZones.blueTriggerFlag, newVal, cfxOwnedZones)
 	cfxZones.pollFlag(cfxOwnedZones.blueTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
@@ -214,14 +248,15 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 	local who = "REDFORCE"
 	if theSide == 2 then who = "BLUEFORCE" 
 	elseif theSide == 0 then who = "NEUTRAL" end
+	aZone.owner = theSide -- just to be sure 
 	
-	if cfxOwnedZones.announcer then 
+	if aZone.announcer then 
 		if theSide == 0 then 
 			trigger.action.outText(aZone.name .. " has become NEUTRAL", 30)
 		else 
 			trigger.action.outText(who .. " have secured zone " .. aZone.name, 30)
 		end
-		aZone.owner = theSide -- just to be sure 
+		
 		-- play different sounds depending on who's won
 		if theSide == 1 then 
 			trigger.action.outSoundForCoalition(1, cfxOwnedZones.winSound)
@@ -307,47 +342,38 @@ function cfxOwnedZones.update()
 	if cfxOwnedZones.fixWingCap then 
 		allBlue = dcsCommon.combineTables(allBlue, coalition.getGroups(2, Group.Category.AIRPLANE)) 
 	end
-		
+	
+	-- WARNING: we only proc ownedZones, NOT airfield nor FARP or other
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
 		theZone.numRed = 0
 		theZone.numBlue = 0 
+		local lastOwner = theZone.owner
+		if not lastOwner then 
+			trigger.action.outText("+++owdZ: WARNING - zone <" .. theZone.name .. "> has NIL owner", 30)
+			return 
+		end 
+		if theZone.verbose then 
+			trigger.action.outText("Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">", 30)
+		end 
+		local newOwner = 0 -- neutral is default 
 		-- count red units in zone 
-		for idx, aGroup in pairs(allRed) do 
-			if Group.isExist(aGroup) then 
-				if cfxOwnedZones.fastEval then 
-					-- we only check first unit that is alive
-					local theUnit = dcsCommon.getGroupUnit(aGroup)
-					if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
-						if cfxOwnedZones.excludedTypes then
-							-- special carve-out for exclduding some 
-							-- unit types to prevent them from capping
-							local uType = theUnit:getTypeName()
-							local forbidden = false 
-							for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
-								if uType == aType then 
-									forbidden = true 
-								else 
-								end
-							end
-							if not forbidden then 
-								theZone.numRed = theZone.numRed + aGroup:getSize()
-							end
-						else 
-							theZone.numRed = theZone.numRed + aGroup:getSize()
-						end
-					end
-				else -- full eval
-					local allUnits = aGroup:getUnits() 
-					for idy, theUnit in pairs(allUnits) do 
-						if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then 
---							theZone.numRed = theZone.numRed + 1
+		if not theZone.masterOwner then 
+			for idx, aGroup in pairs(allRed) do 
+				if Group.isExist(aGroup) then 
+					if cfxOwnedZones.fastEval then 
+						-- we only check first unit that is alive
+						local theUnit = dcsCommon.getGroupUnit(aGroup)
+						if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
 							if cfxOwnedZones.excludedTypes then
 								-- special carve-out for exclduding some 
 								-- unit types to prevent them from capping
 								local uType = theUnit:getTypeName()
 								local forbidden = false 
 								for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
-									if uType == aType then forbidden = true end
+									if uType == aType then 
+										forbidden = true 
+									else 
+									end
 								end
 								if not forbidden then 
 									theZone.numRed = theZone.numRed + aGroup:getSize()
@@ -356,48 +382,47 @@ function cfxOwnedZones.update()
 								theZone.numRed = theZone.numRed + aGroup:getSize()
 							end
 						end
+					else -- full eval
+						local allUnits = aGroup:getUnits() 
+						for idy, theUnit in pairs(allUnits) do 
+							if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then 
+								if cfxOwnedZones.excludedTypes then
+									-- special carve-out for exclduding some 
+									-- unit types to prevent them from capping
+									local uType = theUnit:getTypeName()
+									local forbidden = false 
+									for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+										if uType == aType then forbidden = true end
+									end
+									if not forbidden then 
+										theZone.numRed = theZone.numRed + aGroup:getSize()
+									end
+								else 
+									theZone.numRed = theZone.numRed + aGroup:getSize()
+								end
+							end
+						end
 					end
 				end
 			end
-		end
 
-		-- count blue units 
-		for idx, aGroup in pairs(allBlue) do 
-			if Group.isExist(aGroup) then 
-				if cfxOwnedZones.fastEval then 
-					-- we only check first unit that is alive
-					local theUnit = dcsCommon.getGroupUnit(aGroup)
-					if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
-						if cfxOwnedZones.excludedTypes then
-							-- special carve-out for exclduding some 
-							-- unit types to prevent them from capping
-							local uType = theUnit:getTypeName()
-							local forbidden = false 
-							for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
-								if uType == aType then 
-									forbidden = true 
-								else 
-								end
-							end
-							if not forbidden then 
-								theZone.numBlue = theZone.numBlue + aGroup:getSize()
-							end
-						else 
-							theZone.numBlue = theZone.numBlue + aGroup:getSize()
-						end
-					end
-				else 
-					local allUnits = aGroup:getUnits() 
-					for idy, theUnit in pairs(allUnits) do 
-						if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
---							theZone.numBlue = theZone.numBlue + 1
+			-- count blue units 
+			for idx, aGroup in pairs(allBlue) do 
+				if Group.isExist(aGroup) then 
+					if cfxOwnedZones.fastEval then 
+						-- we only check first unit that is alive
+						local theUnit = dcsCommon.getGroupUnit(aGroup)
+						if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
 							if cfxOwnedZones.excludedTypes then
 								-- special carve-out for exclduding some 
 								-- unit types to prevent them from capping
 								local uType = theUnit:getTypeName()
 								local forbidden = false 
 								for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
-									if uType == aType then forbidden = true end
+									if uType == aType then 
+										forbidden = true 
+									else 
+									end
 								end
 								if not forbidden then 
 									theZone.numBlue = theZone.numBlue + aGroup:getSize()
@@ -406,28 +431,50 @@ function cfxOwnedZones.update()
 								theZone.numBlue = theZone.numBlue + aGroup:getSize()
 							end
 						end
+					else 
+						local allUnits = aGroup:getUnits() 
+						for idy, theUnit in pairs(allUnits) do 
+							if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
+								if cfxOwnedZones.excludedTypes then
+									-- special carve-out for exclduding some 
+									-- unit types to prevent them from capping
+									local uType = theUnit:getTypeName()
+									local forbidden = false 
+									for idx, aType in pairs(cfxOwnedZones.excludedTypes) do 
+										if uType == aType then forbidden = true end
+									end
+									if not forbidden then 
+										theZone.numBlue = theZone.numBlue + aGroup:getSize()
+									end
+								else 
+									theZone.numBlue = theZone.numBlue + aGroup:getSize()
+								end
+							end
+						end
 					end
 				end
 			end
-		end
+			
+			if theZone.verbose then 
+				trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
+			end
+		else 
+			-- zone has master owner, no counting done 
+		end 
 		
-		if theZone.verbose then 
-			trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
-		end
-		
-		-- trigger.action.outText(theZone.name .. " blue: " .. theZone.numBlue .. " red " .. theZone.numRed, 30)
-		local lastOwner = theZone.owner
-		local newOwner = 0 -- neutral is default 
 		if theZone.unbeatable then -- Parker Lewis can't lose. Neither this zone.
 			newOwner = lastOwner 
 		end
 		
 		-- determine new owner 
 		if theZone.unbeatable then 
-			-- we do nothing 
+			-- we do nothing
+		elseif theZone.masterOwner then 
+			-- inherit from my master 
+			newOwner = theZone.masterOwner.owner
 		elseif theZone.numRed < 1 and theZone.numBlue < 1 then 
 			-- no troops here. Become neutral?
-			if cfxOwnedZones.numKeep < 1 then 
+			if theZone.numKeep < 1 then 
 				newOwner = lastOwner -- keep it, else turns neutral
 			else 
 				-- noone here, zone becomes neutral
@@ -435,9 +482,9 @@ function cfxOwnedZones.update()
 			end
 		elseif theZone.numRed < 1 then 
 			-- only blue here. enough to keep? 
-			if theZone.numBlue >= cfxOwnedZones.numCap then 
+			if theZone.numBlue >= theZone.numCap then 
 				newOwner = 2 -- blue owns it
-			elseif lastOwner == 2 and theZone.numBlue >= cfxOwnedZones.numKeep then 
+			elseif lastOwner == 2 and theZone.numBlue >= theZone.numKeep then 
 				-- enough to keep if owned before
 				newOwner = 2
 			else 
@@ -445,9 +492,9 @@ function cfxOwnedZones.update()
 			end 
 		elseif theZone.numBlue < 1 then 
 			-- only red here. enough to keep?
-			if theZone.numRed >= cfxOwnedZones.numCap then 
+			if theZone.numRed >= theZone.numCap then 
 				newOwner = 1 
-			elseif lastOwner == 1 and theZone.numRed >= cfxOwnedZones.numKeep then 
+			elseif lastOwner == 1 and theZone.numRed >= theZone.numKeep then 
 				newOwner = 1 
 			else 
 				newOwner = 0 
@@ -459,18 +506,18 @@ function cfxOwnedZones.update()
 			if cfxOwnedZones.easyContest then 
 				-- this zone is immediately contested
 				newOwner = 0 -- just to be explicit 
-			elseif cfxOwnedZones.numKeep < 1 then 
+			elseif theZone.numKeep < 1 then 
 				-- old owner keeps it until none left 
 				newOwner = lastOwner
 			else
 				if lastOwner == 1 then 
 					-- red can keep it as long as enough units here 
-					if theZone.numRed >= cfxOwnedZones.numKeep then 
+					if theZone.numRed >= theZone.numKeep then 
 						newOwner = 1
 					end -- else 0
 				elseif lastOwner == 2 then
 					-- blue can keep it if enough units here
-					if theZone.numBlue >= cfxOwnedZones.numKeep then 
+					if theZone.numBlue >= theZone.numKeep then 
 						newOwner = 2
 					end -- else 0 
 				else -- stay 0 
@@ -525,14 +572,14 @@ function cfxOwnedZones.update()
 
 	-- see if one side owns all and bang the flags if requiredLibs
 	if cfxOwnedZones.allBlue and not cfxOwnedZones.hasAllBlue then
-		if cfxOwnedZones.sideOwnsAll(2) then 
+		if cfxOwnedZones.sideOwnsAll(2) then -- ignores other owner-managed zones
 			cfxZones.pollFlag(cfxOwnedZones.allBlue, cfxOwnedZones.method, cfxOwnedZones)
 			cfxOwnedZones.hasAllBlue = true 
 		end
 	end
 
 	if cfxOwnedZones.allRed and not cfxOwnedZones.hasAllRed then
-		if cfxOwnedZones.sideOwnsAll(1) then 
+		if cfxOwnedZones.sideOwnsAll(1) then -- ignores other managed owner zones
 			cfxZones.pollFlag(cfxOwnedZones.allRed, cfxOwnedZones.method, cfxOwnedZones)
 			cfxOwnedZones.hasAllRed = true 
 		end
@@ -540,8 +587,10 @@ function cfxOwnedZones.update()
 	
 end
 
-function cfxOwnedZones.sideOwnsAll(theSide) 
-	for key, aZone in pairs(cfxOwnedZones.zones) do 
+function cfxOwnedZones.sideOwnsAll(theSide, useAllManaged)
+	local themAll = cfxOwnedZones.zones 
+	if useAllManaged then themAll = cfxZones.allManagedOwnedZones end 
+	for key, aZone in pairs(themAll) do 
 		if aZone.owner ~= theSide then 
 			return false
 		end
@@ -550,27 +599,44 @@ function cfxOwnedZones.sideOwnsAll(theSide)
 	return true
 end
 
-function cfxOwnedZones.hasOwnedZones() 
-	for idx, zone in pairs (cfxOwnedZones.zones) do
-		return true -- even the first returns true
-	end
-	-- no owned zones
-	return false 
-end
-
 -- getting closest owned zones etc
 -- required for groundTroops and factory attackers 
 -- methods provided only for other modules (e.g. cfxGroundTroops or 
 -- factoryZone 
 --
 
+function cfxOwnedZones.gatherAllManagedOwnedZones()
+	-- we collect all zones with 'owner'
+	local all = {}
+	local pZones = cfxZones.zonesWithProperty("owner")
+	for k, theZone in pairs(pZones) do
+		all[theZone.name] = theZone
+	end
+	
+	-- and add all zones with airfield 
+	local pZones = cfxZones.zonesWithProperty("airfield")
+	for k, theZone in pairs(pZones) do
+		all[theZone.name] = theZone
+	end	
+	-- and all zones with 'FARP' 
+	local pZones = cfxZones.zonesWithProperty("FARP")
+	for k, theZone in pairs(pZones) do
+		all[theZone.name] = theZone
+	end	
+	
+	-- and all with ownAll?
+	-- not yet 
+	cfxOwnedZones.allManagedOwnedZones = all 
+end
+
 -- collect zones can filter owned zones. 
 -- by default it filters all zones that are in water 
+-- includes all managed-owner zones 
 function cfxOwnedZones.collectZones(mode)
 	if not mode then mode = "land" end 
 	if mode == "land" then 
 		local landZones = {}
-		for idx, theZone in pairs(cfxOwnedZones.zones) do 
+		for idx, theZone in pairs(cfxOwnedZones.allManagedOwnedZones) do 
 			p = theZone:getPoint()
 			p.y = p.z 
 			local surfType = land.getSurfaceType(p)
@@ -580,64 +646,12 @@ function cfxOwnedZones.collectZones(mode)
 			end
 		end
 		return landZones
+	else 
+		return cfxOwnedZones.allManagedOwnedZones
 	end
-	
-	-- return all zones 
-	return cfxOwnedZones.zones 
-	--if not mode then mode = "OWNED" end 
-	-- Note: since cfxGroundTroops currently simply uses owner flag
-	-- we cannot migrate to a differentiation between factory and 
-	-- owned. All produced attackers always attack owned zones.
-end
+end 
 
-function cfxOwnedZones.getEnemyZonesFor(aCoalition) 
-	local enemyZones = {}
-	local allZones = cfxOwnedZones.collectZones()  
-	local ourEnemy = dcsCommon.getEnemyCoalitionFor(aCoalition)
-	for zKey, aZone in pairs(allZones) do 
-		if aZone.owner == ourEnemy then -- only check enemy owned zones
-			-- note: will include untargetable zones 
-			table.insert(enemyZones, aZone)			
-		end
-	end
-	return enemyZones
-end
-
-function cfxOwnedZones.getNearestOwnedZoneToPoint(aPoint)
-	local shortestDist = math.huge
-	local closestZone = nil
-	local allZones = cfxOwnedZones.collectZones() 
-	
-	for zKey, aZone in pairs(allZones) do 
-		local zPoint = aZone:getPoint() 
-		currDist = dcsCommon.dist(zPoint, aPoint)
-		if aZone.untargetable ~= true and 
-		   currDist < shortestDist then 
-			shortestDist = currDist
-			closestZone = aZone
-		end
-	end
-	
-	return closestZone, shortestDist
-end
-
-function cfxOwnedZones.getNearestOwnedZone(theZone)
-	local shortestDist = math.huge
-	local closestZone = nil
-	local aPoint = theZone:getPoint()
-	local allZones = cfxOwnedZones.collectZones()
-	for zKey, aZone in pairs(allZones) do
-		local zPoint = aZone:getPoint() 
-		currDist = dcsCommon.dist(zPoint, aPoint)
-		if aZone.untargetable ~= true and currDist < shortestDist then 
-			shortestDist = currDist
-			closestZone = aZone
-		end
-	end
-	
-	return closestZone, shortestDist
-end
-
+-- getNearestEnemyOwnedZone invoked by cfxGroundTroops
 function cfxOwnedZones.getNearestEnemyOwnedZone(theZone, targetNeutral)
 	if not targetNeutral then targetNeutral = false else targetNeutral = true end
 	local shortestDist = math.huge
@@ -650,20 +664,20 @@ function cfxOwnedZones.getNearestEnemyOwnedZone(theZone, targetNeutral)
 	for zKey, aZone in pairs(allZones) do 
 		if targetNeutral then 
 			-- return all zones that do not belong to us
-			if aZone.owner ~= theZone.owner then 
+			if aZone.owner ~= theZone.owner and not aZone.untargetable then 
 				local aPoint = aZone:getPoint()
 				currDist = dcsCommon.dist(aPoint, zPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
+				if currDist < shortestDist then 
 					shortestDist = currDist
 					closestZone = aZone
 				end
 			end
 		else 
 			-- return zones that are taken by the Enenmy
-			if aZone.owner == ourEnemy then -- only check own zones
+			if aZone.owner == ourEnemy and not aZone.untargetable then -- only check own zones
 				local aPoint = aZone:getPoint()
 				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
+				if currDist < shortestDist then 
 					shortestDist = currDist
 					closestZone = aZone
 				end
@@ -674,46 +688,12 @@ function cfxOwnedZones.getNearestEnemyOwnedZone(theZone, targetNeutral)
 	return closestZone, shortestDist
 end
 
-function cfxOwnedZones.getNearestFriendlyZone(theZone, targetNeutral)
-	if not targetNeutral then targetNeutral = false else targetNeutral = true end
-	local shortestDist = math.huge
-	local closestZone = nil
-	local ourEnemy = dcsCommon.getEnemyCoalitionFor(theZone.owner)
-	if not ourEnemy then return nil end -- we called for a neutral zone. they have no enemies nor friends, all zones would be legal.
-	local zPoint = theZone:getPoint()
-	local allZones = cfxOwnedZones.collectZones() 
-
-	for zKey, aZone in pairs(allZones) do 
-		if targetNeutral then 
-			-- target all zones that do not belong to the enemy
-			if aZone.owner ~= ourEnemy then
-				local aPoint = aZone:getPoint()
-				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		else 
-			-- only target zones that are taken by us
-			if aZone.owner == theZone.owner then -- only check own zones
-				local aPoint = aZone:getPoint()
-				currDist = dcsCommon.dist(zPoint, aPoint)
-				if aZone.untargetable ~= true and currDist < shortestDist then 
-					shortestDist = currDist
-					closestZone = aZone
-				end
-			end
-		end 
-	end
-	
-	return closestZone, shortestDist
-end
-
+-- invoked by factory 
 function cfxOwnedZones.enemiesRemaining(aZone)
 	if cfxOwnedZones.getNearestEnemyOwnedZone(aZone) then return true end
 	return false
 end
+
 
 --
 -- load / save data 
@@ -796,6 +776,9 @@ function cfxOwnedZones.readConfigZone(theZone)
 	cfxOwnedZones.name = "cfxOwnedZones" -- just in case, so we can access with cfxZones 
 	cfxOwnedZones.verbose = theZone.verbose -- cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
 	cfxOwnedZones.announcer = theZone:getBoolFromZoneProperty("announcer", true)
+	if theZone:hasProperty("announce") then 
+		cfxZones.announcer = theZone:getBoolFromZoneProperty("announce", true)
+	end 
 	
 	if theZone:hasProperty("r!") then 
 		cfxOwnedZones.redTriggerFlag = theZone:getStringFromZoneProperty("r!", "*<cfxnone>")
@@ -892,6 +875,9 @@ function cfxOwnedZones.init()
 		cfxOwnedZones.addOwnedZone(aZone)
 	end
 	
+	-- gather ALL managed owner zones 
+	cfxOwnedZones.gatherAllManagedOwnedZones()
+	
 	if persistence then 
 		-- sign up for persistence 
 		callbacks = {}
@@ -917,6 +903,11 @@ end
 	masterOwner input for zones, overrides all else when not neutral 
 	
 	dont count zones that cant be conquered for allBlue/allRed
-		
+	
+	noRed, noBlue options to prevent a zone to become that color 
+	
+	black color for dead. dead status to be defined. dead can't be capped and do not attact 
+	
+	
 --]]--
 
