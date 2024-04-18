@@ -1209,7 +1209,7 @@ function cfxZones.getClosestZone(point, theZones)
 	return closestZone, currDelta 
 end
 
-function dmlZones:getClosestZone(theZones)
+function dmlZone:getClosestZone(theZones)
 	local closestZone, currDelta = cfxZones.getClosestZone(self:getPoint(), theZones)
 	return closestZone, currDelta 
 end
