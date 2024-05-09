@@ -1,5 +1,5 @@
 bombRange = {}
-bombRange.version = "1.1.1"
+bombRange.version = "1.1.2"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {
@@ -20,6 +20,8 @@ VERSION HISTORY
 		also sampling kill events 
 1.1.1 - fixed reading smoke color for zone 
 	    minor clean-up 	
+1.1.2 - corrected bug when no bomb range is detected
+
 --]]--
 bombRange.bombs = {} -- live tracking
 bombRange.collector = {} -- post-impact collections for 0.5 secs
@@ -492,7 +494,7 @@ function bombRange.impacted(weapon, target, finalPass)
 	
 	-- see if inside a range 
 	if #bombRange.ranges < 1 then 
-		trigger.action.outText("+++bRng: No Bomb Ranges detected!")
+		trigger.action.outText("+++bRng: No Bomb Ranges detected!", 30)
 		return -- no need to update anything
 	end
 	local minDist = math.huge 

@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.3.0"
+cfxOwnedZones.version = "2.3.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -42,6 +42,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - per-zone local numkeep 
 	  - title attribute 
 	  - code clean-up
+2.3.1 - restored getNearestOwnedZoneToPoint 
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -250,7 +251,7 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 	elseif theSide == 0 then who = "NEUTRAL" end
 	aZone.owner = theSide -- just to be sure 
 	
-	if aZone.announcer then 
+	if cfxOwnedZones.announcer or aZone.announcer then 
 		if theSide == 0 then 
 			trigger.action.outText(aZone.name .. " has become NEUTRAL", 30)
 		else 
@@ -632,6 +633,7 @@ end
 -- collect zones can filter owned zones. 
 -- by default it filters all zones that are in water 
 -- includes all managed-owner zones 
+-- called from external sources
 function cfxOwnedZones.collectZones(mode)
 	if not mode then mode = "land" end 
 	if mode == "land" then 
@@ -650,6 +652,12 @@ function cfxOwnedZones.collectZones(mode)
 		return cfxOwnedZones.allManagedOwnedZones
 	end
 end 
+
+-- getNearestOwnedZoneToPoint invoked by heloTroops
+function cfxOwnedZones.getNearestOwnedZoneToPoint(p)
+	local allZones = cfxOwnedZones.collectZones()
+	return cfxZones.getClosestZone(p, allZones)
+end
 
 -- getNearestEnemyOwnedZone invoked by cfxGroundTroops
 function cfxOwnedZones.getNearestEnemyOwnedZone(theZone, targetNeutral)

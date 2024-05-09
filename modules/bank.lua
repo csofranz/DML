@@ -1,10 +1,10 @@
 bank = {}
-bank.version = "0.0.0"
+bank.version = "1.0.0"
 bank.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
-bank.acts = {}
+bank.acts = {} -- 'accounts'
 
 function bank.addFunds(act, amt)
 	if not act then act = "!!NIL!!" end 
@@ -57,9 +57,9 @@ function bank.getBalance(act)
 	return true, curVal
 end
 
-function bank.openAccount(act, amount)
+function bank.openAccount(act, amount, oride)
 	if not amount then amount = 0 end 
-	if bank.acts[act] then return false end -- account exists 
+	if bank.acts[act] and not oride then return false end -- account exists 
 	bank.acts[act] = amount 
 	return true 
 end
@@ -79,9 +79,43 @@ function bank.readConfigZone()
 	bank.acts["blue"] = bank.blue 
 	bank.acts["neutral"] = bank.neutral 
 	
+	if theZone:hasProperty("sharedData") then -- future-proof
+		bank.sharedData = theZone:getStringFromZoneProperty("sharedData", "cfxNameMissing")
+	end 
+	
 	bank.verbose = theZone.verbose
 end
 
+--
+-- load / save (persistence)
+--
+function bank.saveData()
+	local theData = {}
+	-- save current score list. simple clone 
+	local acts = dcsCommon.clone(bank.acts)
+	theData.acts = acts
+	
+	return theData, bank.sharedData
+end
+
+
+function bank.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("bank", bank.sharedData)
+	if not theData then 
+		if bank.verbose then 
+			trigger.action.outText("+++bank: no save data received, skipping.", 30)
+		end
+		return
+	end
+	
+	local acts = theData.acts
+	bank.acts = acts 
+end
+
+--
+-- start
+--
 function bank.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
@@ -94,6 +128,17 @@ function bank.start()
 	
 	-- read config 
 	bank.readConfigZone()
+
+	-- load data if persisted 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = bank.saveData
+		persistence.registerModule("bank", callbacks)
+		-- now load my data 
+		bank.loadData()
+	end	
+
 		
 	trigger.action.outText("bank v" .. bank.version .. " started.", 30)
 	return true 

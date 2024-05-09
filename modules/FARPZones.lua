@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.0.0"
+FARPZones.version = "2.1.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -16,6 +16,15 @@ FARPZones.verbose = false
   1.2.1 - now gracefully handles a FARP Zone that does not 
           contain a FARP, but is placed beside it
   2.0.0 - dmlZones 
+  2.0.1 - locking up FARPS for the first five seconds 
+		  loadMission handles lockup 
+		  FARPs now can show their name
+		  showTitle attribute 
+		  refresh attribute (config)
+  2.0.2 - clean-up 
+		  verbosity enhancements 
+  2.1.0 - integration with camp: needs repairs, produceResourceVehicles()
+		  
   
 --]]--
 
@@ -23,6 +32,7 @@ FARPZones.requiredLibs = {
 	"dcsCommon", 
 	"cfxZones", -- Zones, of course 
 }
+FARPZones.lockup = {} -- for the first 5 seconds of the game, released later
 
 -- *** DOES NOT EXTEND ZONES, USES OWN STRUCT ***
 -- *** SETS ZONE.OWNER IF PRESENT, POSSIBLE CONFLICT 
@@ -77,11 +87,11 @@ FARPZones.resourceTypes = {
 FARPZones.spinUpDelay = 30 -- seconds until FARP becomes operational after capture
 
 
-FARPZones.allFARPZones = {}
+FARPZones.allFARPZones = {} -- indexed by zone, returns dmlFARP struct 
 FARPZones.startingUp = false -- not needed / read anywhere
 
 -- FARP ZONE ACCESS
-function FARPZones.addFARPZone(aFARP)
+function FARPZones.addFARPZone(aFARP) -- entry with dmlFARP struct 
 	FARPZones.allFARPZones[aFARP.zone] = aFARP
 end
 
@@ -89,8 +99,8 @@ function FARPZones.removeFARPZone(aFARP)
 	FARPZones.allFARPZones[aFARP.zone] = nil
 end
 
-function FARPZones.getFARPForZone(aZone)
-	return FARPZones.allFARPZones[aZone]
+function FARPZones.getFARPForZone(aZone) -- enter with zone 
+	return FARPZones.allFARPZones[aZone] -- returns dmlFARP
 end
 
 function FARPZones.getFARPZoneByName(aName)
@@ -153,7 +163,12 @@ function FARPZones.createFARPFromZone(aZone)
 	theFarp.point = theFarp.mainFarp:getPoint() -- this is FARP, not zone!!!
 	theFarp.owner = theFarp.mainFarp:getCoalition()
 	aZone.owner = theFarp.owner
---	end
+	-- lock up the faction until release in a few seconds after mission start
+	theFarp.mainFarp:autoCapture(false)
+	table.insert(FARPZones.lockup, theFarp.mainFarp) -- will be released in 5 seconds 
+	if aZone.verbose then 
+		trigger.action.outText("FARPzone <" .. aZone.name .. "> currently has owner <" .. aZone.owner .. ">", 30)
+	end
 	
 	-- get r and phi for defenders 
 	local rPhi = aZone:getVectorFromZoneProperty("rPhiHDef",3)
@@ -191,7 +206,7 @@ function FARPZones.createFARPFromZone(aZone)
 	theFarp.hideBlue = aZone:getBoolFromZoneProperty("hideBlue", false)
 	theFarp.hideGrey = aZone:getBoolFromZoneProperty("hideGrey", false)
 	theFarp.hidden = aZone:getBoolFromZoneProperty("hidden", false)
-	
+	theFarp.showTitle = aZone:getBoolFromZoneProperty("showTitle", true)
 	theFarp.neutralProduction = aZone:getBoolFromZoneProperty("neutralProduction", false)
 	return theFarp 
 end
@@ -204,6 +219,12 @@ function FARPZones.drawFARPCircleInMap(theFarp)
 		-- remove previous mark
 		trigger.action.removeMark(theFarp.zone.markID)
 		theFarp.zone.markID = nil 
+	end 
+	
+	if theFarp.zone and theFarp.zone.titleID then 
+		-- remove previous mark
+		trigger.action.removeMark(theFarp.zone.titleID)
+		theFarp.zone.titleID = nil 
 	end 
 	
 	if theFarp.hideRed and 
@@ -251,39 +272,12 @@ function FARPZones.drawFARPCircleInMap(theFarp)
 
 	trigger.action.circleToAll(-1, markID, thePoint, 2000, lineColor, fillColor, 1, true, "")
 	aZone.markID = markID 
-	
-end
---[[--
-function FARPZones.drawZoneInMap(aZone, owner)
-	-- owner is 0 = neutral, 1 = red, 2 = blue 
-	-- will save markID in zone's markID
-	-- should be moved to cfxZones 
-	-- should be able to only show owned 
-	
-	if aZone.markID then 
-		trigger.action.removeMark(aZone.markID)
-	end 
-	
-	
-	local lineColor = {1.0, 0, 0, 1.0} -- red 
-	local fillColor = {1.0, 0, 0, 0.2} -- red 
-	
-	if owner == 2 then 
-		lineColor = {0.0, 0, 1.0, 1.0}
-		fillColor = {0.0, 0, 1.0, 0.2}
-	elseif owner == 0 then 
-		lineColor = {0.8, 0.8, 0.8, 1.0}
-		fillColor = {0.8, 0.8, 0.8, 0.2}
+	if theFarp.showTitle then 
+		aZone.titleID = aZone:drawText(aZone.name, 16, lineColor, {0.8, 0.8, 0.8, 0.0})
 	end
 	
-	local theShape = 2 -- circle
-	local markID = dcsCommon.numberUUID()
-
-	trigger.action.circleToAll(-1, markID, aZone.point, aZone.radius, lineColor, fillColor, 1, true, "")
-	aZone.markID = markID 
-	
 end
---]]--
+
 
 function FARPZones.scheduedProduction(args)
 	-- args contain [aFarp, owner]
@@ -305,6 +299,35 @@ function FARPZones.scheduedProduction(args)
 		
 	end
 end
+
+function FARPZones.serviceNeedsRepair(theFarp) 
+	if theFarp.owner == 0 then return false end 
+	if not theFarp.resources then return false end -- no group yet 
+	if not Group.isExist(theFarp.resources) then return true end 
+	if theFarp.resources:getSize() < #FARPZones.resourceTypes then 
+		return true 
+	end 
+	return false 
+end
+
+function FARPZones.produceResourceVehicles(theFarp, coa) 
+	if theFarp.resources and Group.isExist(theFarp.resources) then --theFarp.resources:isExist() then 
+		Group.destroy(theFarp.resources) --theFarp.resources:destroy()
+		theFarp.resources = nil 
+	end
+	local unitTypes = FARPZones.resourceTypes -- an array 
+	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
+			coa, 
+			theFarp.name .. "-R" .. theFarp.count, -- must be unique 
+			theFarp.resZone,
+			unitTypes,
+			"line_v",
+			theFarp.resHeading)
+	theFarp.resources = theGroup 
+	theFarp.resourceData = theData 		
+	-- update unique counter
+	theFarp.count = theFarp.count + 1
+end 
 
 function FARPZones.produceVehicles(theFarp)
 	local theZone = theFarp.zone 
@@ -357,6 +380,9 @@ function FARPZones.produceVehicles(theFarp)
 		theFarp.defenderData = theData 
 	end 
 	
+	-- spawn resource vehicles 
+	FARPZones.produceResourceVehicles(theFarp, theCoalition) 
+--[[--
 	unitTypes = FARPZones.resourceTypes
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 			theCoalition, 
@@ -366,7 +392,8 @@ function FARPZones.produceVehicles(theFarp)
 			"line_v",
 			theFarp.resHeading)
 	theFarp.resources = theGroup 
-	theFarp.resourceData = theData 		
+	theFarp.resourceData = theData
+--]]--	
 	-- update unique counter
 	theFarp.count = theFarp.count + 1
 end
@@ -453,6 +480,20 @@ function FARPZones.somethingHappened(event)
 	
 end
 
+--
+-- Update / Refresh
+--
+
+function FARPZones.refreshMap()
+	timer.scheduleFunction(FARPZones.refreshMap, {}, timer.getTime() + FARPZones.refresh)
+	if FARPZones.verbose then 
+		trigger.action.outText("+++Farp map refresh started", 30)
+	end 
+	
+	for idx, theFARP in pairs(FARPZones.allFARPZones) do 
+		FARPZones.drawFARPCircleInMap(theFARP)
+	end
+end
 
 --
 -- LOAD / SAVE 
@@ -503,6 +544,8 @@ function FARPZones.loadMission()
 			if theFARP then 
 				theFARP.owner = fData.owner 
 				theFARP.zone.owner = fData.owner 
+				local theAB = theFARP.mainFarp
+				theAB:setCoalition(theFARP.owner) -- FARP is in lockup.
 				theFARP.defenderData = dcsCommon.clone(fData.defenderData)
 				local groupData = fData.defenderData
 				if groupData and #groupData.units > 0 then 
@@ -532,6 +575,14 @@ end
 --
 -- Start 
 --
+function FARPZones.releaseFARPS()
+--	trigger.action.outText("Releasing hold on FARPS", 30)
+	for idx, aFarp in pairs(FARPZones.lockup) do 
+		aFarp:autoCapture(true)
+--		trigger.action.outText("releasing farp <" .. aFarp:getName() .. ">", 30)
+	end 
+end
+
 function FARPZones.readConfig()
 	local theZone = cfxZones.getZoneByName("farpZonesConfig") 
 	if not theZone then 
@@ -541,6 +592,8 @@ function FARPZones.readConfig()
 	FARPZones.verbose = theZone.verbose 
  	
 	FARPZones.spinUpDelay = theZone:getNumberFromZoneProperty( "spinUpDelay", 30)
+	
+	FARPZones.refresh = theZone:getNumberFromZoneProperty("refresh", -1)
 	
 end
 
@@ -597,6 +650,12 @@ function FARPZones.start()
 	end 
 	
 	FARPZones.startingUp = false -- not needed / read anywhere
+	
+	timer.scheduleFunction(FARPZones.releaseFARPS, {}, timer.getTime() + 5)
+	
+	if FARPZones.refresh > 0 then 
+		timer.scheduleFunction(FARPZones.refreshMap, {}, timer.getTime() + FARPZones.refresh)
+	end 
 	
 	trigger.action.outText("cf/x FARP Zones v" .. FARPZones.version .. " started", 30)
 	return true 

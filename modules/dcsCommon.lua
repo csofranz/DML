@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.5"
+dcsCommon.version = "3.0.6"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -18,6 +18,9 @@ dcsCommon.version = "3.0.5"
 	   - new getFirstItem()
 	   - arrayContainsString() can handle dicts 
 	   - new pointXpercentYdegOffAB()
+3.0.6  - new arrayContainsStringCaseInsensitive()
+3.0.7  - fixed small bug in wildArrayContainsString 
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -2093,7 +2096,7 @@ end
 		if not caseSensitive then theString = string.upper(theString) end 
 		
 		local wildIn = dcsCommon.stringEndsWith(theString, "*")
-		if wildIn then dcsCommon.removeEnding(theString, "*") end 
+		if wildIn then theString = dcsCommon.removeEnding(theString, "*") end 
 		for idx, theElement in pairs(theArray) do -- i = 1, #theArray do 
 			if not caseSensitive then theElement = string.upper(theElement) end 
 			local wildEle = dcsCommon.stringEndsWith(theElement, "*")
@@ -2129,6 +2132,19 @@ end
 		for idx, item in pairs(theArray) do 
 --		for i = 1, #theArray do 
 			if item == theString then return true end 
+		end
+		return false 
+	end
+
+	function dcsCommon.arrayContainsStringCaseInsensitive(theArray, theString) -- case insensitive
+		if not theArray then return false end
+		if not theString then return false end
+		if type(theArray) ~= "table" then 
+			trigger.action.outText("***arrayContainsStringCI: theArray is not type <table> but <" .. type(theArray) .. ">", 30)
+		end
+		theString = string.upper(theString)
+		for idx, item in pairs(theArray) do 
+			if string.upper(item) == theString then return true end 
 		end
 		return false 
 	end

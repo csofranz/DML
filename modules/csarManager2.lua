@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "3.2.7"
+csarManager.version = "3.4.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -42,12 +42,15 @@ csarManager.ups = 1
 		 - useRanks option 
   3.2.6  - inBuiltup analogon to cloner 
   3.2.7  - createCSARForParachutist now supports optional coa (autoCSAR)
-  
+  3.3.0  - persistence support 
+  3.4.0  - global timeLimit option in config zone 
+         - fixes expiration bug when persisting data 
 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
 	INTEGRATES AUTOMATICALLY WITH SCRIBE 
+	SUPPORTS PERSISTENCE 
 		 
 --]]--
 -- modules that need to be loaded BEFORE I run 
@@ -201,10 +204,22 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 	
 	newMission.timeStamp = timer.getTime() -- now 
 	
+	-- if no time limit given but csarManager's own global dictates it, 
+	-- set it now 
+	if not timeLimit and csarManager.timeLimit then 
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: setting GLOBAL csar time limit (" .. csarManager.timeLimit[1] .. "," .. csarManager.timeLimit[2] .. ") for new mission " .. name, 30)
+		end 
+		timeLimit = csarManager.timeLimit
+	end 
+	
 	-- set timeLimit if enabled 
 	if timeLimit then 
 		local theLimit = cfxZones.randomDelayFromPositiveRange(timeLimit[1], timeLimit[2]) * 60
 		newMission.expires = timer.getTime() + theLimit 
+		if csarManager.verbose then 
+			trigger.action.outText("+++csar: setting time limit to expire in (" .. math.floor(theLimit/60) .. ") minutes for mission " .. name, 30)
+		end 
 	end 
 
 	-- update counter and return
@@ -794,10 +809,10 @@ function csarManager.doListCSARRequests(args)
 			local status = "alive"
 			if mission.expires then
 				delta = math.floor ((mission.expires - now) / 60) 
-				if delta < 10 then status = "+deteriorating+" end 
-				if delta < 5 then status = "*critical*" end  
+				if delta < 30 then status = "+deteriorating+" end 
+				if delta < 15 then status = "*critical*" end  
 				if csarManager.verbose then 
-					status = status .. "[" .. delta .. "]" -- remove me 
+					status = status .. " [" .. delta .. "]" -- remove me 
 				end 
 			end 
 			if csarManager.vectoring then 
@@ -841,9 +856,9 @@ function csarManager.doStatusCarrying(args)
 			report = report .. "\n".. i .. ") " .. evacMission.name 
 			if evacMission.expires then 
 				delta = math.floor ((evacMission.expires - now) / 60)
-				if delta > 20 then
-					report = report .. " is hurt but stable"
-				elseif delta > 10 then
+				if delta > 30 then
+					report = report .. " is hurt and stable"
+				elseif delta > 15 then
 					report = report .. " is badly hurt"
 				else 
 					report = report .. " is in critical condition" -- or 'beat up, but will live'
@@ -1438,7 +1453,11 @@ function csarManager.readCSARZone(theZone)
 
 	-- add to list of startable csar
 	if theZone.startCSAR then 
-		csarManager.addCSARZone(theZone)
+		if persistence and persistence.hasDate then 
+			-- we load data instead of spawning on start 
+		else 
+			csarManager.addCSARZone(theZone)
+		end
 	end 
 
 	if (not deferred) then 
@@ -1592,12 +1611,88 @@ function csarManager.readConfigZone()
 	local typeArray = dcsCommon.splitString(hTypes, ",")
 	typeArray = dcsCommon.trimArray(typeArray)
 	csarManager.rescueTypes = typeArray
+
+	if theZone:hasProperty("timeLimit") then
+		local tmin, tmax = theZone:getPositiveRangeFromZoneProperty("timeLimit", 1)
+		csarManager.timeLimit = {tmin, tmax}
+	else 
+		csarManager.timeLimit = nil 
+	end 
 		
 	if csarManager.verbose then 
 		trigger.action.outText("+++csar: read config", 30)
 	end 
 end
 
+--
+-- Save and Load Data 
+--
+function csarManager.saveData()
+	local now = timer.getTime()
+	local theData = {}
+	local missions = {}
+	-- gather dater from all currently open missions and 
+	-- place them in a new array 
+	for idx, aMission in pairs(csarManager.openMissions) do 
+		m = {}
+		m.point = aMission.zone:getPoint()
+		m.side = aMission.side
+		m.freq = aMission.freq 
+		m.name = aMission.name 
+		m.score = aMission.score 
+		if aMission.expires then 
+			remains = (aMission.expires - now) / 60 -- limit in minutes! 
+			m.timeLimit = {remains, remains}
+		end 
+		table.insert(missions, m)
+	end
+	theData.missions = missions 
+	theData.missionID = csarManager.missionID 
+	 
+	return theData, csarManager.sharedData
+end
+
+function csarManager.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("csarManager", csarManager.sharedData)
+	if not theData then 
+		if csarManager.verbose then 
+			trigger.action.outText("+++csarManager: no save data received, skipping.", 30)
+		end
+		return
+	end
+	if theData.missionID then 
+		csarManager.missionID  = theData.missionID
+	end 
+	if theData.missions then 
+		for idx, m in pairs(theData.missions) do 
+			-- csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, timeLimit, mapMarker, inRadius, parashootUnit)
+			if m.timeLimit and csarManager.verbose then 
+				trigger.action.outText("+++csar: loadData - timelimit of [" .. m.timeLimit[1] .. "," .. m.timeLimit[2] .. "] read for csar <" .. m.name .. ">", 30)
+			end 
+			local theMission = csarManager.createCSARMissionData(
+				m.point, -- point, 
+				m.side, -- theSide, 
+				m.freq, -- freq, 
+				m.name, -- name, 
+				nil, -- numCrew, 
+				m.timeLimit, -- timeLimit, can be nil or {lower, upper}
+				nil, --mapMarker, 
+				0.1, -- inRadius, 
+				nil -- parashootUnit)
+			)
+			theMission.score = m.score 
+			csarManager.addMission(theMission)
+			if csarManager.verbose then 
+				trigger.action.outText("+++csarM (persitence): restored csar mission <" .. m.name .. ">", 30)
+			end 
+		end
+	end
+end
+
+--
+-- Start 
+--
 
 function csarManager.start()
 	-- make sure we have loaded all relevant libraries 
@@ -1622,6 +1717,16 @@ function csarManager.start()
 	local allPlayerUnits = dcsCommon.getAllExistingPlayerUnitsRaw() 
 	for pName, aUnit in pairs(allPlayerUnits) do 
 		csarManager.setCommsMenu(aUnit)
+	end
+	
+	-- connect to persistence if it exists 
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = csarManager.saveData
+		persistence.registerModule("csarManager", callbacks)
+		-- now load my data 
+		csarManager.loadData()
 	end
 	
 	-- start updating and track all helicopters in the air against missions

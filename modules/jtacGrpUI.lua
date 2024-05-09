@@ -6,8 +6,6 @@ jtacGrpUI.requiredLibs = {
 	"cfxGroundTroops", 
 }
 --[[-- VERSION HISTORY
- - 1.0.2 - also include idling JTACS
-         - add positional info when using owned zones 
  - 2.0.0 - dmlZones 
          - sanity checks upon load 
 		 - eliminated cfxPlayer dependence 
@@ -20,14 +18,6 @@ jtacGrpUI.requiredLibs = {
  
 jtacGrpUI.groupConfig = {} -- all inited group private config data, indexed by group name. 
 jtacGrpUI.simpleCommands = true -- if true, f10 other invokes directly
-
---
--- C O N F I G   H A N D L I N G 
--- =============================
---
--- Each group has their own config block that can be used to 
--- store group-private data and configuration items.
---
 
 function jtacGrpUI.resetConfig(conf)
 end

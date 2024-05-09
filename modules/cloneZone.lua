@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.2.0"
+cloneZones.version = "2.2.1"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -50,6 +50,8 @@ cloneZones.respawnOnGroupID = true
 		  - damaged! output 
 		  - health# output 
 		  - persistence: persist oSize and set lastSize 
+	2.2.1 - verbosity updates for post-check 
+		  - if cloned group is late activation, turn it off 
 --]]--
 
 --
@@ -1054,7 +1056,12 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	local dataToSpawn = {} -- temp save so we can connect in-group references
 	
 	for idx, aGroupName in pairs(theZone.cloneNames) do 
-		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(aGroupName)
+		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(aGroupName) -- fetches a clone!
+		-- sanity checks: lateActivation etc 
+		if rawData.lateActivation then
+			trigger.action.outText("+++clnZ: WARNING - clone group <" .. rawData.name .. "> in cloner <" .. theZone.name .. "> is set to 'late activation'. Ignored.", 30)
+			rawData.lateActivation = false
+		end
 		rawData.CZorigName = rawData.name -- save original group name
 		local origID = rawData.groupId -- save original group ID 
 		rawData.CZorigID = origID 
@@ -1287,7 +1294,9 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 				end 
 				cloneZones.unitXlate[aUnit.CZorigID] = uID 
 			else 
-				trigger.action.outText("clnZ: post-clone verifiaction failed for unit <" .. uName .. ">: not found", 30) 
+				if spawnZone.verbose then 
+					trigger.action.outText("clnZ: post-clone verifiaction failed for unit <" .. uName .. ">: not found", 30) 
+				end 
 			end 
 		end
 		

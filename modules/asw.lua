@@ -16,6 +16,7 @@ asw.fixes = {} -- all subs that we have a fix on. indexed by sub name
 	Version History
 	1.0.0 - initial version 
 	1.0.1 - integration with playerScore 
+	1.0.2 - new useSmoke attribute 
 	
 --]]--
 
@@ -151,7 +152,9 @@ function asw.dropBuoyFrom(theUnit)
 	local theBuoy = asw.createBuoyForUnit(theUnit)
 	
 	-- mark point 
-	dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+	if asw.useSmoke then 
+		dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+	end 
 	theBuoy.smokeTimer = now + 5 * 60
 	
 	-- add buoy to my inventory 
@@ -202,7 +205,9 @@ function asw.dropBuoyFromZone(theZone)
 	local theBuoy = asw.createBuoyForZone(theZone)
 	
 	-- mark point 
-	dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+	if asw.useSmoke then 
+		dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+	end 
 	theBuoy.smokeTimer = now + 5 * 60
 	
 	-- add buoy to my inventory 
@@ -369,7 +374,9 @@ function asw.updateBuoy(theBuoy, allSubs)
 	-- see if we need to resmoke 
 	if now > theBuoy.smokeTimer then 
 		--env.info("  resmoking buoy, continue")
-		dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+		if asw.useSmoke then 
+			dcsCommon.markPointWithSmoke(theBuoy.point, theBuoy.smokeColor)
+		end 
 		theBuoy.smokeTimer = now + 5 * 60
 		--env.info("  resmoke done, continue")
 	end
@@ -1042,7 +1049,8 @@ function asw.readConfigZone()
 	
 	asw.smokeColor = cfxZones.getSmokeColorStringFromZoneProperty(theZone, "smokeColor", "red")
 	asw.smokeColor = dcsCommon.smokeColor2Num(asw.smokeColor)
-
+	asw.useSmoke = theZone:getBoolFromZoneProperty("useSmoke", true)
+	
 	asw.killScore = cfxZones.getNumberFromZoneProperty(theZone, "killScore", 0)
 	
 	if cfxZones.hasProperty(theZone, "killFeat") then 

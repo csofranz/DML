@@ -1,15 +1,27 @@
 camp = {}
 camp.ups = 1
-camp.version = "0.0.0"
+camp.version = "1.0.2"
 camp.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 	"cfxMX",
 	"bank"
 }
-
+-- AUTOMATICALLY INTEGRATES WITH income MODULE IF PRESENT
+-- REQUIRES CLONEZONES TO RUN (BUT NOT TO START) 
+--[[--
+VERSION HISTORY 
+	1.0.0 - initial version 
+	1.0.1 - changed "Ground Repairs / Upgrades" to "Funds / Repairs / Upgrades"
+		  - provided income info for camp if it exists 
+		  - provide income total if exists
+		  - actionSound 
+		  - output sound with communications 
+	1.0.2 - integration with FARPZones 
+--]]--
 --
 -- CURRENTLY REQUIRES SINGLE-UNIT PLAYER GROUPS
+-- REQUIRES CLONEZONES MODULE TO BE RUNNING, BUT NOT TO BE LOADED ON START
 --
 camp.camps = {} -- all camps on the map 
 camp.roots = {} -- all player group comms roots 
@@ -18,15 +30,26 @@ function camp.addCamp(theZone)
 	camp.camps[theZone.name] = theZone
 end
 
-function camp.getMyCurrentCamp(theUnit) -- returns first hit plaayer is in
+function camp.getMyCurrentCamp(theUnit) -- returns first hit player is in
+	local coa = theUnit:getCoalition()
 	local p = theUnit:getPoint()
 	for idx, theCamp in pairs(camp.camps) do 
-		if theCamp:pointInZone(p) then 
+		if theCamp.owner == coa and theCamp:pointInZone(p) then 
 			return theCamp
 		end 
 	end
 	return nil 
 end 
+
+function camp.getCampsForCoa(coa)
+	local myCamps = {}
+	for idx, theCamp in pairs(camp.camps) do 
+		if theCamp.owner == coa then 
+			table.insert(myCamps, theCamp)
+		end 
+	end
+	return myCamps 
+end
 
 function camp.createCampWithZone(theZone)
 	-- look for all cloners inside my zone 
@@ -47,7 +70,7 @@ function camp.createCampWithZone(theZone)
 			table.insert(cloners, aZone)
 			if not aZone:hasProperty("blueOnly") then 
 				table.insert(redCloners, aZone)
-			end
+			end 
 			if not aZone:hasProperty("redOnly") then 
 				table.insert(blueCloners, aZone)
 			end
@@ -70,6 +93,12 @@ function camp.createCampWithZone(theZone)
 	theZone.upgradable = theZone:getBoolFromZoneProperty("upgrade", true)
 	theZone.repairCost = theZone:getNumberFromZoneProperty("repairCost", 100)
 	theZone.upgradeCost = theZone:getNumberFromZoneProperty("upgradeCost", 3 * theZone.repairCost)
+	if theZone:hasProperty("FARP") then 
+		theZone.isAlsoFARP = true 
+		if theZone.verbose or camp.verbose then 
+			trigger.action.outText("+++camp: <" .. theZone.name .. "> has FARP attached", 30)
+		end 
+	end 
 end
 
 --
@@ -93,7 +122,7 @@ function camp.processPlayers()
 	for idx, gData in pairs(cfxMX.playerGroupByName) do 
 		gID = gData.groupId
 		gName = gData.name 
-		local theRoot = missionCommands.addSubMenuForGroup(gID, "Ground Repairs / Upgrades")
+		local theRoot = missionCommands.addSubMenuForGroup(gID, "Funds / Repairs / Upgrades")
 		camp.roots[gName] = theRoot 
 		local c00 = missionCommands.addCommandForGroup(gID, "Theatre Overview", theRoot, camp.redirectTFunds, {gName, gID, "tfunds"})
 		local c0 = missionCommands.addCommandForGroup(gID, "Local Funds & Status Overview", theRoot, camp.redirectFunds, {gName, gID, "funds"})
@@ -126,12 +155,16 @@ function camp.doTFunds(args)
 	local hasBalance, amount = bank.getBalance(coa)
 	if not hasBalance then return end 
 	local msg = "\nYour faction currently has §" .. amount .. " available for repairs/upgrades.\n"
-
+	local income = 0
 	-- now iterate all camps that are on my side
 	for idx, theZone in pairs(camp.camps) do 
 		if theZone.owner == coa then 
 			msg = msg .. "\n  - <" .. theZone.name .. ">"
-
+			if theZone.income then 
+				msg = msg .. " Income: §" .. theZone.income 
+				income = income + theZone.income 
+			end 
+			
 			if theZone.repairable and theZone.upgradable then 
 				msg = msg .. " (§" .. theZone.repairCost .. "/§" .. theZone.upgradeCost .. ")"
 				if camp.zoneNeedsRepairs(theZone, coa) then
@@ -165,8 +198,12 @@ function camp.doTFunds(args)
 			end
 		end
 	end
+	if income > 0 then 
+		msg = msg .. "\n\nTotal Income: §" .. income 
+	end
 	msg = msg .. "\n"
 	trigger.action.outTextForGroup(gID, msg, 30)
+	trigger.action.outSoundForGroup(gID, camp.actionSound)
 end
 
 function camp.doFunds(args)
@@ -183,11 +220,13 @@ function camp.doFunds(args)
 	if not Unit.isExist(theUnit) or theUnit:getLife() < 1 or 
 		theUnit:inAir() or dcsCommon.getUnitSpeed(theUnit) > 1 then 
 		trigger.action.outTextForGroup(gID, msg, 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	local theZone = camp.getMyCurrentCamp(theUnit)
 	if not theZone or (not theZone.repairable) or theZone.owner ~= theUnit:getCoalition() then 
 		trigger.action.outTextForGroup(gID, msg, 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return
 	end 
 	
@@ -204,17 +243,30 @@ function camp.doFunds(args)
 		msg = msg .. "\nZone <" .. theZone.name .. "> is fully upgraded.\n" 
 	end 	
 	trigger.action.outTextForGroup(gID, msg, 30)
+	trigger.action.outSoundForGroup(gID, camp.actionSound)
 end
 
 --
 -- REPAIRS
 --
+
 function camp.zoneNeedsRepairs(theZone, coa)
-	-- return true if this zone needs repairs, i.e. it has cloners that have a damaged clone set 
+	-- return true if this zone needs repairs, i.e. it has cloners that have a damaged clone set or FARP resource vehicles are incomplete
+	if theZone.isAlsoFARP and FARPZones then 
+		local theFarp = FARPZones.getFARPForZone(theZone)
+		if FARPZones.serviceNeedsRepair(theFarp) then 
+			if theZone.verbose or camp.verbose then 
+				trigger.action.outText("camp: <" .. theZone.name .. "> has FARP service is dinged up...", 30)
+			end
+			return true 
+			-- WARNING: RETURNS BOOLEAN, not a dmlZone!
+		end
+	end 
+	
 	local myCloners = theZone.cloners 
 	
 	if not coa then 
-		trigger.action.outText("+++camp: warning: no coa on zoneNeedsRepair for zone <" .. theZone.name .. ">", 30)	
+		trigger.action.outText("+++camp: warning: no coa on zoneNeedsRepairs for zone <" .. theZone.name .. ">", 30)	
 	elseif coa == 1 then 
 		myCloners = theZone.redCloners
 	elseif coa == 2 then 
@@ -251,19 +303,23 @@ function camp.doRepairs(args)
 	if theUnit:getLife() < 1 then return end 
 	if theUnit:inAir() then 
 		trigger.action.outTextForGroup(gID, "\nPlease land inside a fortified zone to order repairs\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	if  dcsCommon.getUnitSpeed(theUnit) > 1 then 
 		trigger.action.outTextForGroup(gID, "\nYou must come to a complete stop before being able to order repairs\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	local theZone = camp.getMyCurrentCamp(theUnit)
 	if not theZone or not theZone.repairable then 
 		trigger.action.outTextForGroup(gID, "\nYou are not inside a zone that can be repaired.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	if theZone.owner ~= theUnit:getCoalition() then 
 		trigger.action.outTextForGroup(gID, "\nYou currently do not own zone <" .. theZone.name .. ">. Capture it first.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return
 	end 
 	
@@ -274,6 +330,7 @@ function camp.doRepairs(args)
 			msg = msg .. "\nZone <" .. theZone.name .. "> can be upgraded.\n"
 		end 
 		trigger.action.outTextForGroup(gID, msg, 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return	
 	end 
 	
@@ -285,7 +342,9 @@ function camp.doRepairs(args)
 	end 
 	
 	if amount < theZone.repairCost then 
-		trigger.action.outTextForGroup(gID, "\nYou curently cannot afford repairs here\n", 30)
+--		trigger.action.outTextForGroup(gID, "\nYou curently cannot afford repairs here\n", 30)
+		trigger.action.outTextForGroup(gID, "\nYou curently cannot afford repairs here (§" .. theZone.repairCost .. " required, you have §" .. amount .. ")\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end 
 	
@@ -296,13 +355,23 @@ function camp.doRepairs(args)
 --	cloneZones.spawnWithCloner(theCloner)
 	bank.withdawFunds(coa, theZone.repairCost)
 	local ignore, remain = bank.getBalance(coa)
-	trigger.action.outTextForCoalition(coa, "\nZone <" .. theZone.name .. "> was repaired by <" .. pName .. 
+	trigger.action.outTextForCoalition(coa, "\nZone <" .. theZone.name .. "> was ordered repaired by <" .. pName .. 
 	"> for §" .. theZone.repairCost .. ".\nFaction has §" .. remain .. " remaining funds.\n", 30)
+	trigger.action.outSoundForCoalition(coa, camp.actionSound)
 end
 
 function camp.repairZone(theZone, coa)
 	theCloner = camp.zoneNeedsRepairs(theZone, coa)
 	if not theCloner then return end 
+	if type(theCloner) == "boolean" then -- at least farp was dinged up 
+		local theFarp = FARPZones.getFARPForZone(theZone)
+		FARPZones.produceResourceVehicles(theFarp, coa) 
+		if theZone.verbose or camp.verbose then 
+			trigger.action.outText("+++camp: repaired FARP in camp <" .. theZone.name .. ">", 30)
+		end 
+	end 
+	theCloner = camp.zoneNeedsRepairs(theZone, coa) -- do again to see if other repairs are needed. FARP repairs come free with first fix
+	if not theCloner then return end
 	cloneZones.despawnAll(theCloner)
 	cloneZones.spawnWithCloner(theCloner)
 end 
@@ -311,7 +380,7 @@ end
 --
 
 function camp.zoneNeedsUpgrades(theZone, coa)
-	-- return true if this zone can be upgraded, i.e. it has cloners that have an empty clone set  
+	-- returns first cloner in this zone that can be upgraded, i.e. it has cloners that have an empty clone set  
 	if not theZone.upgradable then return nil end 
 	
 	local myCloners = theZone.cloners 
@@ -352,30 +421,36 @@ function camp.doUpgrades(args)
 	if not pName then pName = "<Big Err>" end 
 	if theUnit:inAir() then 
 		trigger.action.outTextForGroup(gID, "\nPlease land inside a fortified zone to order upgrades.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	if dcsCommon.getUnitSpeed(theUnit) > 1 then 
 		trigger.action.outTextForGroup(gID, "\nYou must come to a complete stop before being able to order upgrades\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	local theZone = camp.getMyCurrentCamp(theUnit)
 	if not theZone or not theZone.upgradable then 
 		trigger.action.outTextForGroup(gID, "\nYou are not inside a zone that can be upgraded.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	if theZone.owner ~= theUnit:getCoalition() then 
 		trigger.action.outTextForGroup(gID, "\nYou currently do not own zone <" .. theZone.name .. ">. Capture it first.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return
 	end 
 	
 	if camp.zoneNeedsRepairs(theZone, coa) then 
 		trigger.action.outTextForGroup(gID, "\nZone <" .. theZone.name .. "> requires repairs before it can be upgraded.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end 
 	
 	-- if we get here, we are inside a zone that can be upgraded. see if it needs upgrades and then get upgrade cost and see if we have enough fund to do it  
 	if not camp.zoneNeedsUpgrades(theZone, coa) then 
 		trigger.action.outTextForGroup(gID, "\nZone <" .. theZone.name .. "> has been fully upgraded.\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end
 	
@@ -387,7 +462,8 @@ function camp.doUpgrades(args)
 	end 
 	
 	if amount < theZone.upgradeCost then 
-		trigger.action.outTextForGroup(gID, "\nYou curently cannot afford an upgrade here\n", 30)
+		trigger.action.outTextForGroup(gID, "\nYou curently cannot afford an upgrade here (§" .. theZone.upgradeCost .. " required, you have §" .. amount .. ")\n", 30)
+		trigger.action.outSoundForGroup(gID, camp.actionSound)
 		return 
 	end 
 	
@@ -398,8 +474,9 @@ function camp.doUpgrades(args)
 	-- bill it to side 
 	bank.withdawFunds(coa, theZone.upgradeCost)
 	local ignore, remain = bank.getBalance(coa)
-	trigger.action.outTextForCoalition(coa, "\nZone <" .. theZone.name .. "> was upgraded by <" .. pName .. 
+	trigger.action.outTextForCoalition(coa, "\nZone <" .. theZone.name .. "> was ordered upgraded by <" .. pName .. 
 	"> for §" .. theZone.upgradeCost .. ".\nFaction has §" .. remain .. " remaining funds.\n", 30)
+	trigger.action.outSoundForCoalition(coa, camp.actionSound)
 end
 
 -- can be called externally
@@ -408,6 +485,32 @@ function camp.upgradeZone(theZone, coa)
 	if not theCloner then return end 
 	cloneZones.spawnWithCloner(theCloner)
 end
+
+--
+-- API
+--
+function camp.campsThatNeedRepairs(coa) -- returns the zones that need repairs
+	local repairs = {}
+	for idx, theZone in pairs(camp.camps) do 
+		if theZone.repairable and theZone.owner == coa and camp.zoneNeedsRepairs(theZone, coa) then 
+			table.insert(repairs, theZone)
+		end 
+	end 
+
+	return repairs 
+end 
+
+function camp.campsThatNeedUpgrades(coa) -- returns the zones that can be upgraded
+	local repairs = {}
+	for idx, theZone in pairs(camp.camps) do 
+		if theZone.upgradable and theZone.owner == coa and camp.zoneNeedsUpgrades(theZone, coa) then 
+			table.insert(repairs, theZone)
+		end 
+	end 
+
+	return repairs 
+end 
+
 --
 -- Config & Go
 --
@@ -417,7 +520,7 @@ function camp.readConfigZone()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("campConfig") 
 	end 
-	
+	camp.actionSound = theZone:getStringFromZoneProperty("actionSound", "Quest Snare 3.wav")
 	camp.verbose = theZone.verbose
 end
 

@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "2.0.1" 
+autoCSAR.version = "2.1.0" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -16,6 +16,7 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 	2.0.0 - OOP, code clean-up
 	2.0.1 - fix for coalition change when ejected player changes coas or is forced to neutral 
 	      - GC 
+	2.1.0 - persistence support 
 --]]--
 
 function autoCSAR.removeGuy(args)
@@ -195,6 +196,33 @@ function autoCSAR.GC()
 	autoCSAR.pilotInfo = filtered
 end
 
+--
+-- load/save
+--
+
+function autoCSAR.saveData()
+	local theData = {}
+	theData.counter = autoCSAR.counter 
+	return theData, autoCSAR.sharedData
+end
+
+function autoCSAR.loadData()
+	if not persistence then return end 
+	local theData = persistence.getSavedDataForModule("autoCSAR", autoCSAR.sharedData)
+	if not theData then 
+		if autoCSAR.verbose then 
+			trigger.action.outText("+++autoCSAR: no save data received, skipping.", 30)
+		end
+		return
+	end
+	if theData.counter then 
+		autoCSAR.counter = theData.counter 
+	end 
+end
+
+--
+-- GO!
+--
 function autoCSAR.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
@@ -210,6 +238,16 @@ function autoCSAR.start()
 	
 	-- connect event handler
 	world.addEventHandler(autoCSAR)
+	
+	-- do persistence
+	if persistence then 
+		-- sign up for persistence 
+		callbacks = {}
+		callbacks.persistData = autoCSAR.saveData
+		persistence.registerModule("autoCSAR", callbacks)
+		-- now load my data 
+		autoCSAR.loadData()
+	end
 	
 	-- start GC
 	timer.scheduleFunction(autoCSAR.GC, {}, timer.getTime() + 1)

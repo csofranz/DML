@@ -1,10 +1,13 @@
 tacan = {}
-tacan.version = "1.1.0"
+tacan.version = "1.2.2"
 --[[--
 Version History
  1.0.0 - initial version 
  1.1.0 - OOP cfxZones 
- 
+ 1.2.0 - desc attribute 
+ 1.2.1 - actionSound config attribute 
+       - sound with output 
+ 1.2.2 - corrected typo when reading sound file for actionSound
 --]]--
 tacan.verbose = false  
 tacan.requiredLibs = {
@@ -60,6 +63,10 @@ function tacan.createTacanZone(theZone)
 	end
 	
 	theZone.announcer = theZone:getBoolFromZoneProperty("announcer", false)
+	
+	if theZone:hasProperty("desc") then 
+		theZone.desc = theZone:getStringFromZoneProperty("desc", "<none>")
+	end 
 	
 	-- interface to groupTracker 
 	if theZone:hasProperty("trackWith:") then 
@@ -138,6 +145,7 @@ function tacan.createTacanInZone(theZone, channel, mode, callsign)
 	t.activeChan = channel 
 	t.theGroup = theGroup 
 	t.theData = theCopy 
+	t.desc = theZone.desc 
 	table.insert(theZone.spawnedTACANS, t)
 	
 	-- run a GC cycle 
@@ -175,8 +183,10 @@ function tacan.TacanFromZone(theZone, silent)
 		local str = "NOTAM: Deployed new TACAN " .. theZone.name .. " <" .. callsign .. ">, channel " .. channel .. mode .. ", active now"
 		if theZone.coa == 0 then 
 			trigger.action.outText(str, 30)
+			trigger.action.outSound(tacan.actionSound)
 		else 
 			trigger.action.outTextForCoalition(theZone.coa, str, 30)
+			trigger.action.outSoundForCoalition(theZone.coa, tacan.actionSound)
 		end
 	end
 end
@@ -193,6 +203,7 @@ function tacan.destroyTacan(theZone, announce)
 			trigger.action.outText(str, 30)
 		else 
 			trigger.action.outTextForCoalition(coa, str, 30)
+			trigger.action.outSoundForCoalition(coa, tacan.actionSound)
 		end
 	end
 		
@@ -331,7 +342,6 @@ end
 function tacan.installComms()
 	tacan.redC = missionCommands.addCommandForCoalition(1, "Available TACAN stations", nil, tacan.listTacan, 1)
 	tacan.blueC = missionCommands.addCommandForCoalition(2, "Available TACAN stations", nil, tacan.listTacan, 2)
-	
 end
 
 function tacan.listTacan(side)
@@ -353,6 +363,7 @@ function tacan.doListTacan(args)
 	
 	if #theTs < 1 then 
 		trigger.action.outTextForCoalition(args, "No active TACAN.", 30)
+		trigger.action.outSoundForCoalition(args, tacan.actionSound)
 		return 
 	end
 	
@@ -360,9 +371,13 @@ function tacan.doListTacan(args)
 
 	for idx, aTacan in pairs(theTs) do 
 		msg = msg .. "\n  - " .. aTacan.activeCallsign .. ": " .. aTacan.activeChan .. aTacan.activeMode
+		if aTacan.desc then 
+			msg = msg .. " - " .. aTacan.desc 
+		end 
 	end
 	msg = msg .. "\n"
 	trigger.action.outTextForCoalition(args, msg, 30)
+	trigger.action.outSoundForCoalition(args, tacan.actionSound)
 end
 
 --
@@ -379,7 +394,7 @@ function tacan.readConfigZone()
 	if theZone:hasProperty("GUI") then 
 		tacan.list = theZone:getBoolFromZoneProperty("GUI", false)
 	end
-	
+	tacan.actionSound = theZone:getStringFromZoneProperty("actionSound", "Quest Snare 3.wav")
 	if tacan.verbose then 
 		trigger.action.outText("+++tcn: read config", 30)
 	end 

@@ -35,25 +35,40 @@ function income.update()
 	-- schedule next round 
 	timer.scheduleFunction(income.update, {}, timer.getTime() + income.interval)
 	
+	local neuI, redI, blueI = income.neutral, income.red, income.blue
 	-- base income 
-	bank.addFunds(0, income.neutral)
-	bank.addFunds(1, income.red)
-	bank.addFunds(2, income.blue)
+--	bank.addFunds(0, income.neutral)
+--	bank.addFunds(1, income.red)
+--	bank.addFunds(2, income.blue)
+	
 	
 	for idx, theZone in pairs(income.sources) do 
-		bank.addFunds(0, income.getIncomeForZoneAndCoa(theZone, 0))
-		bank.addFunds(1, income.getIncomeForZoneAndCoa(theZone, 1))
-		bank.addFunds(2, income.getIncomeForZoneAndCoa(theZone, 2))
+		local ni = income.getIncomeForZoneAndCoa(theZone, 0)
+		local ri = income.getIncomeForZoneAndCoa(theZone, 1)
+		local bi = income.getIncomeForZoneAndCoa(theZone, 2)
+		redI = redI + ri 
+		blueI = blueI + bi 
+		neuI = neuI + ni 		
 	end
+
+	bank.addFunds(0, neuI)
+	bank.addFunds(1, redI)
+	bank.addFunds(2, blueI)
+
 	
 	if income.announceTicks then
 --		trigger.action.outText(income.tickMessage, 30)
 		local has, balance = bank.getBalance(0)
-		trigger.action.outTextForCoalition(0, "\n" .. income.tickMessage .. "\nNew balance: §" .. balance .. "\n", 30)
+		local tick = string.gsub(income.tickMessage, "<i>", neuI)
+		trigger.action.outTextForCoalition(0, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
+		
 		has, balance = bank.getBalance(1)
-		trigger.action.outTextForCoalition(1, "\n" .. income.tickMessage .. "\nNew balance: §" .. balance .. "\n", 30)
+		tick = string.gsub(income.tickMessage, "<i>", redI)
+		trigger.action.outTextForCoalition(1, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
+		
 		has, balance = bank.getBalance(2)
-		trigger.action.outTextForCoalition(2, "\n" .. income.tickMessage .. "\nNew balance: §" .. balance .. "\n", 30)
+		tick = string.gsub(income.tickMessage, "<i>", blueI)
+		trigger.action.outTextForCoalition(2, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
 	end 
 	
 end 
@@ -71,7 +86,7 @@ function income.readConfigZone()
 	income.neutral = theZone:getNumberFromZoneProperty ("neutral", income.base)
 	
 	income.interval = theZone:getNumberFromZoneProperty("interval", 10 * 60) -- every 10 minutes 
-	income.tickMessage = theZone:getStringFromZoneProperty("tickMessage", "New funds from income available.")
+	income.tickMessage = theZone:getStringFromZoneProperty("tickMessage", "New funds from income available: §<i>")
 	income.announceTicks = theZone:getBoolFromZoneProperty("announceTicks", true)
 	income.verbose = theZone.verbose
 end

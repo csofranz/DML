@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.2.1"
+radioMenu.version = "2.3.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -19,6 +19,8 @@ radioMenu.menus = {}
 	2.1.1 - outMessage now works correctly 
 	2.2.0 - clean-up
 	2.2.1 - corrected ackD 
+	2.3.0 - added wildcard "*" ability for group name match 
+		  - added ackASnd .. ackDSnd sounds as options 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -114,17 +116,35 @@ function radioMenu.filterPlayerIDForGroup(theZone)
 	end
 
 	for idx, gName in pairs(allGroups) do 
+		-- if gName ends in wildcard "*" we process differently 
 		gName = dcsCommon.trim(gName)
-		local theGroup = cfxMX.playerGroupByName[gName]
-		if theGroup then 
-			local gID = theGroup.groupId
-			table.insert(theIDs, gID)
-			if theZone.verbose or radioMenu.verbose then 
-				trigger.action.outText("+++menu: Player Group <" .. gName .. "> found: <" .. gID .. ">", 30)
+		if dcsCommon.stringEndsWith(gName, "*") then 
+			-- we must check all group names if they start with the 
+			-- the same root. WARNING: CASE-SENSITIVE!!!! 
+			gName = dcsCommon.removeEnding(gName, "*")
+			for mxName, theGroupData in pairs(cfxMX.playerGroupByName) do 
+				if dcsCommon.stringStartsWith(mxName, gName) then 
+					-- group match, install menu 
+					local gID = theGroupData.groupId
+					table.insert(theIDs, gID)
+					if theZone.verbose or radioMenu.verbose then 
+						trigger.action.outText("+++menu: WILDCARD Player Group <" .. gName .. "*> matched with <" .. mxName .. ">: gID = <" .. gID .. ">", 30)
+					end
+				else
+				end
 			end
 		else 
-			trigger.action.outText("+++menu: Player Group <" .. gName .. "> does not exist", 30)
-		end
+			local theGroup = cfxMX.playerGroupByName[gName]
+			if theGroup then 
+				local gID = theGroup.groupId
+				table.insert(theIDs, gID)
+				if theZone.verbose or radioMenu.verbose then 
+					trigger.action.outText("+++menu: Player Group <" .. gName .. "> found: <" .. gID .. ">", 30)
+				end
+			else 
+				trigger.action.outText("+++menu: Player Group <" .. gName .. "> does not exist", 30)
+			end
+		end 
 	end
 
 	return theIDs
@@ -272,6 +292,9 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	if theZone:hasProperty("ackA") then 
 		theZone.ackA = theZone:getStringFromZoneProperty("ackA", "Acknowledged: A")
 	end
+	if theZone:hasProperty("ackASnd") then 
+		theZone.ackASnd = theZone:getStringFromZoneProperty("ackASnd", "<none>")
+	end
 	
 	theZone.itemBChosen = theZone:getStringFromZoneProperty("B!", "*<none>")
 	theZone.cooldownB = theZone:getNumberFromZoneProperty("cooldownB", 0)
@@ -281,6 +304,9 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	end
 	if theZone:hasProperty("ackB") then 
 		theZone.ackB = theZone:getStringFromZoneProperty("ackB", "Acknowledged: B")
+	end
+	if theZone:hasProperty("ackBSnd") then 
+		theZone.ackBSnd = theZone:getStringFromZoneProperty("ackBSnd", "<none>")
 	end
 	
 	theZone.itemCChosen = theZone:getStringFromZoneProperty("C!", "*<none>")
@@ -292,6 +318,9 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	if theZone:hasProperty("ackC") then 
 		theZone.ackC = theZone:getStringFromZoneProperty("ackC", "Acknowledged: C")
 	end
+	if theZone:hasProperty("ackCSnd") then 
+		theZone.ackCSnd = theZone:getStringFromZoneProperty("ackCSnd", "<none>")
+	end
 	
 	theZone.itemDChosen = theZone:getStringFromZoneProperty("D!", "*<none>")
 	theZone.cooldownD = theZone:getNumberFromZoneProperty("cooldownD", 0)
@@ -301,6 +330,9 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	end	
 	if theZone:hasProperty("ackD") then 
 		theZone.ackD = theZone:getStringFromZoneProperty("ackD", "Acknowledged: D")
+	end
+	if theZone:hasProperty("ackDSnd") then 
+		theZone.ackDSnd = theZone:getStringFromZoneProperty("ackDSnd", "<none>")
 	end
 	
 	if theZone:hasProperty("removeMenu?") then 
@@ -395,6 +427,7 @@ function radioMenu.doMenuX(args)
 	local theFlag = theZone.itemAChosen
 	local outVal = theZone.outValA
 	local ack = theZone.ackA 
+	local ackSnd = theZone.ackASnd
 	
 	-- decode A..X
 	if theItemIndex == "B"then 
@@ -403,18 +436,21 @@ function radioMenu.doMenuX(args)
 		theFlag = theZone.itemBChosen
 		outVal = theZone.outValB
 		ack = theZone.ackB 
+		ackSnd = theZone.ackBSnd
 	elseif theItemIndex == "C" then 
 		cd = radioMenu.cdByGID(theZone.mcdC, theZone, theGroup) -- theZone.mcdC
 		busy = theZone.busyC 
 		theFlag = theZone.itemCChosen
 		outVal = theZone.outValC
 		ack = theZone.ackC 
+		ackSnd = theZone.ackCSnd
 	elseif theItemIndex == "D" then 
 		cd = radioMenu.cdByGID(theZone.mcdD, theZone, theGroup) -- theZone.mcdD
 		busy = theZone.busyD 
 		theFlag = theZone.itemDChosen
 		outVal = theZone.outValD
 		ack = theZone.ackD
+		ackSnd = theZone.ackDSnd
 	end
 	
 	-- see if we are on cooldown 
@@ -427,10 +463,13 @@ function radioMenu.doMenuX(args)
 		return 
 	else
 		-- see if we have an acknowledge
+		local gid = theGroup 
 		if ack then 
-			local gid = theGroup 
 			radioMenu.radioOutMsg(ack, gid, theZone)
 		end
+		if ackSnd then 
+			trigger.action.outSoundForGroup(gid, ackSnd)
+		end 
 	end
 	
 	-- set new cooldown -- needs own decoder A..X

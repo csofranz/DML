@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.1"
+cfxZones.version = "4.3.2"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -50,6 +50,8 @@ cfxZones.version = "4.3.1"
 		  - randomDelayFromPositiveRange also allows 0 
 - 4.3.1   - new drawText() for zones 
 		  - dmlZones:getClosestZone() bridge 
+- 4.3.2   - new getListFromZoneProperty()
+
 --]]--
 
 --
@@ -2097,7 +2099,7 @@ end
 function cfxZones.drawZone(theZone, lineColor, fillColor, markID)
 	if not theZone then return 0 end 
 	if not lineColor then lineColor = {0.8, 0.8, 0.8, 1.0} end
-	if not fillColor then fillColor = {0.8, 0.8, 0.8, 0.2} end 
+	if not fillColor then fillColor = {0.8, 0.8, 0.8, 0.0} end 
 	if not markID then markID = dcsCommon.numberUUID() end 
 	
 	if theZone.isCircle then 
@@ -2118,7 +2120,7 @@ function cfxZones.drawText(theZone, theText, fSize, lineColor, fillColor)
 	if not theZone then return end 
 	if not fSize then fSize = 12 end 
 	if not lineColor then lineColor = {0.8, 0.8, 0.8, 1.0} end
-	if not fillColor then fillColor = lineColor end 
+	if not fillColor then fillColor = {0, 0, 0, 0} end 
 	local markID = dcsCommon.numberUUID()
 	local p = theZone:getPoint()
 	local offset = {x = p.x, y = 0, z = p.z} 
@@ -2322,6 +2324,24 @@ function dmlZone:getPositiveRangeFromZoneProperty(theProperty, default, defaultm
 	return lo, up 
 end
 
+function cfxZones.getListFromZoneProperty(theZone, theProperty, defaultItem) -- comma delimited
+	if not defaultItem then defaultItem = "default" end 
+	
+	local theString = theZone:getStringFromZoneProperty(theProperty, defaultItem)
+	if dcsCommon.containsString(theString, ",") then 
+		local theArray = dcsCommon.splitString(theString, ',')
+		theArray = dcsCommon.trimArray(theArray)
+		return theArray
+	else 
+		return {theString}
+	end
+	
+	return nil 
+end
+
+function dmlZone:getListFromZoneProperty(theProperty, defaultItem)
+	return cfxZones.getListFromZoneProperty(self, theProperty, defaultItem)
+end
 
 function cfxZones.hasProperty(theZone, theProperty) 
 	if not theProperty then 

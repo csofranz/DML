@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "3.0.1"
+cfxSSBClient.version = "4.0.0"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -8,75 +8,15 @@ cfxSSBClient.reUseAfter = -1 -- seconds for re-use delay
   
 cfxSSBClient.requiredLibs = {
 	"dcsCommon", -- always
-	"cfxGroups", -- for slot access
+	"cfxMX", --"cfxGroups", -- for slot access
 	"cfxZones", -- Zones, of course 
 }
 
 --[[--
 Version History
-  1.0.0 - initial version
-  1.1.0 - detect airfield by action and location, not group name
-  1.1.1 - performance tuning. only read player groups once 
-        - and remove in-air-start groups from scan. this requires
-        - ssb (server) be not modified	
-  1.2.0 - API to close airfields: invoke openAirFieldNamed() 
-          and closeAirfieldNamed() with name as string (exact match required)
-		  to block an airfield for any player aircraft.
-		  Works for FARPS as well 
-		  API to associate a player group with any airfied's status (nil for unbind):
-		  cfxSSBClient.bindGroupToAirfield(group, airfieldName)
-		  API shortcut to unbind groups: cfxSSBClient.unbindGroup(group) 
-		  verbose messages now identify better: "+++SSB:"
-		  keepInAirGroups option 
-  2.0.0 - include single-use ability: crashed airplanes are blocked from further use
-        - single-use can be turned off 
-		- getPlayerGroupForGroupNamed()
-		- split setSlotAccess to single accessor 
-		  and interator
-		- reUseAfter option for single-use  
-		- dcsCommon, cfxZones import
-  2.0.1 - stricter verbosity: moved more comments to verbose only 
-  2.0.2 - health check code (initial) 
-		- added verbosity
-  2.0.3 - getPlayerName nil-trap on cloned player planes guard 
-          in onEvent
-  2.1.0 - slotState
-        - persistence 
-  3.0.0 - closing an airfield will not kick players who are active 
-		- much better verbosity
-		- open?
-		- close? 
-		- also persists closed airfield list
-  3.0.1 - ability to detect if an airfield doesn't exist (late activate)
-		
-		
-	
-WHAT IT IS
-SSB Client is a small script that forms the client-side counterpart to
-Ciribob's simple slot block. It will block slots for all client airframes
-that are on an airfield that does not belong to the faction that currently
-owns the airfield. 
-
-REQUIRES CIRIBOB's SIMPLE SLOT BLOCK (SSB) TO RUN ON THE SERVER
-
-If run without SSB, your planes will not be blocked.
-
-In order to work, a plane that should be blocked when the airfield or 
-FARP doesn't belong to the player's faction, the group's first unit
-must be within 3000 meters of the airfield and on the ground. 
-Previous versions of this script relied on group names. No longer.
-
-
-WARNING:
-If you modified ssb's flag values, this script will not work 
-
-YOU DO NOT NEED TO ACTIVATE SBB, THIS SCRIPT DOES SO AUTOMAGICALLY
-
-
+  4.0.0 - dmlZones 
+		- cfxMX instead of cfxGroups 
 --]]--
-
--- below value for enabled MUST BE THE SAME AS THE VALUE OF THE SAME NAME 
--- IN SSB. DEFAULT IS ZERO, AND THIS WILL WORK
 
 cfxSSBClient.enabledFlagValue = 0 -- DO NOT CHANGE, MUST MATCH SSB 
 cfxSSBClient.disabledFlagValue = cfxSSBClient.enabledFlagValue + 100 -- DO NOT CHANGE
@@ -124,26 +64,26 @@ end
 -- read client zones 
 --
 function cfxSSBClient.createClientZone(theZone)
-	local thePoint = cfxZones.getPoint(theZone)
+	local thePoint = theZone:getPoint()
 	local theAF = cfxSSBClient.getClosestAirbaseTo(thePoint)
 	local afName = theAF:getName()
 	if cfxSSBClient.verbose or theZone.verbose then 
 		trigger.action.outText("+++ssbc: zone <" .. theZone.name .. "> linked to AF/FARP <" .. afName .. ">", 30)
 	end
 	theZone.afName = afName
-	theZone.ssbTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "ssbTriggerMethod", "change")
+	theZone.ssbTriggerMethod = theZone:getStringFromZoneProperty( "ssbTriggerMethod", "change")
 	
-	if cfxZones.hasProperty(theZone, "open?") then 
-		theZone.ssbOpen = cfxZones.getStringFromZoneProperty(theZone, "open?", "none")
+	if theZone:hasProperty("open?") then 
+		theZone.ssbOpen = theZone:getStringFromZoneProperty("open?", "none")
 		theZone.lastSsbOpen = cfxZones.getFlagValue(theZone.ssbOpen, theZone)
 	end
 	
-	if cfxZones.hasProperty(theZone, "close?") then 
-		theZone.ssbClose = cfxZones.getStringFromZoneProperty(theZone, "close?", "none")
+	if theZone:hasProperty("close?") then 
+		theZone.ssbClose = theZone:getStringFromZoneProperty("close?", "none")
 		theZone.lastSsbClose = cfxZones.getFlagValue(theZone.ssbClose, theZone)
 	end
 	
-	theZone.ssbOpenOnStart = cfxZones.getBoolFromZoneProperty(theZone, "openOnStart", true)
+	theZone.ssbOpenOnStart = theZone:getBoolFromZoneProperty( "openOnStart", true)
 	if not theZone.ssbOpenOnStart then 
 		cfxSSBClient.closeAirfieldNamed(theZone.afName)
 	end
@@ -494,7 +434,7 @@ end
 -- pre-process static player data to minimize 
 -- processor load on checks
 function cfxSSBClient.processPlayerData()
-	cfxSSBClient.playerGroups = cfxGroups.getPlayerGroup()
+	cfxSSBClient.playerGroups = cfxMX.getPlayerGroup()
 	local pGroups = cfxSSBClient.playerGroups
 	local filteredPlayers = {}
 	for idx, theGroup in pairs(pGroups) do
@@ -511,7 +451,7 @@ end
 
 -- add airfield information to each player group
 function cfxSSBClient.processGroupData()
-	local pGroups = cfxGroups.getPlayerGroup() -- we want the group.name attribute
+	local pGroups = cfxMX.getPlayerGroup() -- we want the group.name attribute
 	for idx, theGroup in pairs(pGroups) do
 		-- we always use the first player's plane as referenced
 		local playerData = theGroup.playerUnits[1]
