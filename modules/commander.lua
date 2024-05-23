@@ -4,7 +4,7 @@
 -- *** EXTENDS ZONES: 'pathing' attribute 
 --
 cfxCommander = {}
-cfxCommander.version = "1.1.4"
+cfxCommander.version = "2.0.0"
 --[[-- VERSION HISTORY
  - 1.0.5 - createWPListForGroupToPointViaRoads: detect no road found 
  - 1.0.6 - build in more group checks in assign wp list 
@@ -30,7 +30,11 @@ cfxCommander.version = "1.1.4"
  - 1.1.3 - isExist() guard improvements for multiple methods
          - cleaned up comments
  - 1.1.4 - hardened makeGroupGoThere()
- 
+ - 2.0.0 - dml zones 
+		 - units now can move with moveFormation 
+		 - hardened performCommands() 
+         - createWPListForGroupToPoint() supports moveFormation 
+         - makeGroupGoTherePreferringRoads() supports moveFormation 
 --]]--
 
 cfxCommander.requiredLibs = {
@@ -72,16 +76,11 @@ function cfxCommander.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("CommanderConfig") 
 	if not theZone then 
-		trigger.action.outText("+++cmdr: no config zone!", 30) 
-		return 
+		theZone = cfxZones.createSimpleZone("CommanderConfig")
 	end 
-	
-	trigger.action.outText("+++cmdr: found config zone!", 30) 
-	
-	cfxCommander.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	cfxCommander.forceOffRoad = cfxZones.getBoolFromZoneProperty(theZone, "forceOffRoad", false) -- if true, vehicles path follow roads, but may drive offroad
-	cfxCommander.noRoadsAtAll = cfxZones.getBoolFromZoneProperty(theZone, "noRoadsAtAll", false)
-
+	cfxCommander.verbose = theZone.verbose
+	cfxCommander.forceOffRoad = theZone:getBoolFromZoneProperty("forceOffRoad", false) -- if true, vehicles path follow roads, but may drive offroad
+	cfxCommander.noRoadsAtAll = theZone:getBoolFromZoneProperty("noRoadsAtAll", false)
 end
 
 --
@@ -118,8 +117,14 @@ function cfxCommander.performCommands(commandData)
 	if not commandData.group then 
 		commandData.group = Group.getByName(commandData.name) -- better be inited!
 	end
+	if not Group.isExist(commandData.group) then 
+		-- something bad is happening 
+		return nil 
+	end 
 	-- get the AI
 	local theController = commandData.group:getController()
+	if not theController then return nil end 
+	
 	for i=1, #commandData.commands do
 		if cfxCommander.verbose then 
 			trigger.action.outText("Commander: performing " .. commandData.commands[i].id, 30)
@@ -204,7 +209,6 @@ function cfxCommander.doScheduledTask(data)
 	local theGroup = data.group 
 	if not theGroup then return end 
 	if not Group.isExist(theGroup) then return end 
---	if not theGroup.isExist then return end
 	
 	local theController = theGroup:getController()
 	theController:pushTask(data.task)
@@ -262,7 +266,7 @@ function cfxCommander.createBasicWaypoint(point, speed, formation)
 	
 	if not formation then formation = "Off Road" end
 	-- legal formations:
-	-- Off road
+	-- Off Road
 	-- On Road -- second letter upper case?
 	-- Cone 
 	-- Rank
@@ -300,21 +304,22 @@ function cfxCommander.assignWPListToGroup(group, wpList, delay)
 	local theTask = cfxCommander.buildTaskFromWPList(wpList)
 	local ctrl = group:getController()
 
---[[--
-	if delay < 0.001 then -- immediate action
-		if ctrl then
-			ctrl:setTask(theTask)
-		end
-	else 
-		-- delay execution of this command by the specified amount 
-		-- of seconds 
-		cfxCommander.scheduleTaskForGroup(group, theTask, delay)
-	end
---]]--
 	cfxCommander.scheduleTaskForGroup(group, theTask, delay)
 end
 
-function cfxCommander.createWPListForGroupToPoint(group, point, speed, formation)
+--[[--
+	Formations and their "action" keywords
+	Line Abreast = "Rank"
+	Cone = "Cone"
+	Vee = "Vee" 
+	Diamond = "Diamond" 
+	Echelon Left = "EchelonL" 
+	Echelon Right = "EchelonR"
+	Custom = "Custom"
+	
+--]]--
+
+function cfxCommander.createWPListForGroupToPoint(group, point, speed, moveFormation)
 	if type(group) == 'string' then -- group name
 		group = Group.getByName(group)
 	end
@@ -323,8 +328,8 @@ function cfxCommander.createWPListForGroupToPoint(group, point, speed, formation
 	-- here we are, and we want to go there. In DCS, this means that
 	-- we need to create a wp list consisting of here and there
 	local here = dcsCommon.getGroupLocation(group)
-	local wpHere = cfxCommander.createBasicWaypoint(here, speed, formation)
-	local wpThere = cfxCommander.createBasicWaypoint(point, speed, formation)
+	local wpHere = cfxCommander.createBasicWaypoint(here, speed, moveFormation)
+	local wpThere = cfxCommander.createBasicWaypoint(point, speed, moveFormation)
 	wpList[1] = wpHere
 	wpList[2] = wpThere
 	return wpList
@@ -398,11 +403,8 @@ function cfxCommander.createWPListForGroupToPointViaRoads(group, point, speed)
 	
 	if pathLength > (2 * direct) then 
 		-- road takes too long, take direct approach
-		--trigger.action.outText("+++ road path (" .. pathLength .. ") > twice direct route(" .. direct .. "), commencing direct off-road", 30)
 		return cfxCommander.createWPListForGroupToPoint(group, point, speed)
 	end
-	
-	--trigger.action.outText("+++ ".. group:getName() .. ": choosing road path l=" .. pathLength .. " over direct route d=" .. direct, 30)
 	
 	-- if we are here, the road trip is valid 
 	for idx, wp in pairs(rawRoadPoints) do 
@@ -422,16 +424,17 @@ function cfxCommander.createWPListForGroupToPointViaRoads(group, point, speed)
 	return wpList
 end
 
-function cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, delay)
+function cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, delay, moveFormation)
 	if type(group) == 'string' then -- group name
 		group = Group.getByName(group)
 	end
 	if not delay then delay = 0 end 
 
+	if not moveFormation then moveFormation = "Off Road" end 
 
 	if cfxCommander.noRoadsAtAll then 
 		-- we don't even follow roads, completely forced off
-		cfxCommander.makeGroupGoThere(group, there, speed, "Off Road", delay)
+		cfxCommander.makeGroupGoThere(group, there, speed, moveFormation, delay)
 		return 
 	end
 
@@ -443,7 +446,7 @@ function cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, delay
 		local oRide = cfxCommander.hasPathZoneFor(here, there)
 		if oRide and oRide.pathing == "offroad" then 
 			-- yup, override road preference
-			cfxCommander.makeGroupGoThere(group, there, speed, "Off Road", delay)
+			cfxCommander.makeGroupGoThere(group, there, speed, moveFormation, delay)
 			return 
 		end
 	end
@@ -498,9 +501,6 @@ function cfxCommander.start()
 	
 	-- identify and process all 'pathing' zones
 	local pathZones = cfxZones.getZonesWithAttributeNamed("pathing")
-	
-	-- now create a spawner for all, add them to the spawner updater, and spawn for all zones that are not
-	-- paused 
 	for k, aZone in pairs(pathZones) do 
 		cfxCommander.processPathingZone(aZone) -- process attribute and add to zone
 		cfxCommander.addPathingZone(aZone) -- remember it so we can smoke it

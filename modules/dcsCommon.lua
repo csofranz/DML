@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.6"
+dcsCommon.version = "3.0.7"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 

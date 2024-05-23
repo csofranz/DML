@@ -1075,7 +1075,7 @@ function csarManager.updateCSARMissions()
 		else 
 			local msg = aMission.name .. " confirmed KIA, repeat KIA. Abort CSAR."	
 			trigger.action.outTextForCoalition(aMission.side, msg, 30)
-			trigger.action.outSoundForCoalition(aMission.side, csarManager.actionSound)
+			trigger.action.outSoundForCoalition(aMission.side, csarManager.lostSound)
 			csarManager.invokeCallbacks(aMission.side, false, 1, "KIA", aMission)
 		end
 	end
@@ -1765,4 +1765,6 @@ end
 	
 	-- may want to change if time limit was exceeded on return to tell 
 	   player that they did not survive the transport 
+	   
+	- randomize smoke color if smoke color has more than one entries 
 --]]--

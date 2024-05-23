@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.0.3"
+cfxHeloTroops.version = "3.0.4"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -40,6 +40,7 @@ cfxHeloTroops.requestRange = 500 -- meters
  3.0.1 - fixed a bug with legalTroops attribute
  3.0.2 - fixed a typo in in-air menu 
  3.0.3 - pointInZone check for insertion rather than radius 
+ 3.0.4 - also handles picking up troops with orders "captureandhold"
  
 --]]--
 --
@@ -52,8 +53,6 @@ cfxHeloTroops.requestRange = 500 -- meters
 
 cfxHeloTroops.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
-	             -- pretty stupid to check for this since we 
-				 -- need common to invoke the check, but anyway
 	"cfxZones", -- Zones, of course 
 	"cfxCommander", -- to make troops do stuff
 	"cfxGroundTroops", -- generic when dropping troops
@@ -641,6 +640,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local orders = conf.troopsOnBoard.orders 
 	local dest = conf.troopsOnBoard.destination
 	local theName = conf.troopsOnBoard.name 
+	local moveFormation = conf.troopsOnBoard.moveFormation 
 	
 	if not orders then orders = "guard" end
 	
@@ -670,7 +670,15 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	troopData.destination = dest -- only for attackzone orders 
 	cfxHeloTroops.deployedTroops[theData.name] = troopData 
 	
-	local troop = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+	local troop = cfxGroundTroops.createGroundTroops(theGroup, range, orders, moveFormation) 
+	if orders == "captureandhold" then 
+		-- we get the target zone NOW!!! before we flip the zone and 
+		-- and make them run to the wrong zone 
+		dest = cfxGroundTroops.getClosestEnemyZone(troop)
+		troopData.destination = dest
+		trigger.action.outText("Inserting troops to capture zone <" .. dest.name .. ">", 30)
+	end 
+	
 	troop.destination = dest -- transfer target zone for attackzone oders
 	cfxGroundTroops.addGroundTroopsToPool(troop) -- will schedule move orders
 	trigger.action.outTextForGroup(conf.id, "<" .. theGroup:getName() .. "> have deployed to the ground with orders " .. orders .. "!", 30)
@@ -735,8 +743,13 @@ function cfxHeloTroops.doLoadGroup(args)
 		conf.troopsOnBoard.orders = pooledGroup.orders
 		conf.troopsOnBoard.range = pooledGroup.range
 		conf.troopsOnBoard.destination = pooledGroup.destination -- may be nil 
+		conf.troopsOnBoard.moveFormation = pooledGroup.moveFormation
+		if pooledGroup.orders and pooledGroup.orders == "captureandhold" then 
+			conf.troopsOnBoard.destination = nil -- forget last destination so they can be helo-redeployed
+		end 
 		cfxGroundTroops.removeTroopsFromPool(pooledGroup)
 		trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' loaded and has orders <" .. conf.troopsOnBoard.orders .. ">", 30)
+--		trigger.action.outText("and mf = <" .. conf.troopsOnBoard.moveFormation .. ">", 30)
 		--trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
 	else 
 		if cfxHeloTroops.verbose then 

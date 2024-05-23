@@ -1,6 +1,6 @@
 -- theDebugger 2.x
 debugger = {}
-debugger.version = "2.1.0"
+debugger.version = "2.1.1"
 debugDemon = {}
 debugDemon.version = "2.1.0"
 
@@ -39,6 +39,7 @@ debugger.log = ""
 			debug invocation on clone of data structure 
 			readback verification of flag set 
 			fixed getProperty() in debugger with zone 
+	2.1.1 - removed bug that skipped events? when zone not verbose 
 			
 --]]--
 
@@ -267,11 +268,13 @@ function debugger.createEventMonWithZone(theZone)
 	end
 	for idx, aFlag in pairs(flagArray) do 
 		local evt = tonumber(aFlag) 		
-		if evt and (debugger.verbose or theZone.verbose) then 
+		if evt then 
 			if evt < 0 then evt = 0 end 
 			if evt > 57 then evt = 57 end 
 			debugger.showEvents[evt] = debugDemon.eventList[tostring(evt)]
-			debugger.outText("    monitoring event <" .. debugger.showEvents[evt] .. ">", 30)
+			if (debugger.verbose or theZone.verbose) then 
+				debugger.outText("    monitoring event <" .. debugger.showEvents[evt] .. ">", 30)
+			end
 		end
 	end
 end

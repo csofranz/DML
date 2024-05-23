@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.1.0"
+FARPZones.version = "2.1.1"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -24,7 +24,7 @@ FARPZones.verbose = false
   2.0.2 - clean-up 
 		  verbosity enhancements 
   2.1.0 - integration with camp: needs repairs, produceResourceVehicles()
-		  
+  2.1.1 - loading a farp from data respaws all defenders and resource vehicles 		  
   
 --]]--
 
@@ -547,6 +547,8 @@ function FARPZones.loadMission()
 				local theAB = theFARP.mainFarp
 				theAB:setCoalition(theFARP.owner) -- FARP is in lockup.
 				theFARP.defenderData = dcsCommon.clone(fData.defenderData)
+
+				--[[--
 				local groupData = fData.defenderData
 				if groupData and #groupData.units > 0 then 
 					local cty = groupData.cty 
@@ -560,11 +562,13 @@ function FARPZones.loadMission()
 					local cat = groupData.cat
 					theFARP.resources = coalition.addGroup(cty, cat, groupData)
 				end 
+				--]]--
+				FARPZones.produceVehicles(theFARP) -- do full defender and resource cycle 
 				FARPZones.drawFARPCircleInMap(theFARP) -- mark in map
-				if (not theFARP.defenders) and (not theFARP.resources) then 
+--				if (not theFARP.defenders) and (not theFARP.resources) then 
 					-- we instigate a resource and defender drop 
-					FARPZones.produceVehicles(theFARP)
-				end
+--					FARPZones.produceVehicles(theFARP)
+--				end
 			else 
 				trigger.action.outText("frpZ: persistence: FARP <" .. fName .. "> no longer exists in mission, skipping", 30)
 			end

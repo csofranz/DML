@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.0.1"
+cfxSpawnZones.version = "2.0.2"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -27,6 +27,8 @@ cfxSpawnZones.spawnedGroups = {}
 		 - baseName defaults to zone name, as it is safe for naming
          - spawnWithSpawner direct link in spawner to spawnZones
    2.0.1 - fix in verifySpawnOwnership() when not master zone found 
+   2.0.2 - new "moveFormation" attribute 
+   
   --]]--
   
 cfxSpawnZones.allSpawners = {}
@@ -128,6 +130,13 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.count = 1 -- used to create names, and count how many groups created
 	theSpawner.theSpawn = nil -- link to last spawned group
 	theSpawner.formation = inZone:getStringFromZoneProperty("formation", "circle_out")
+	theSpawner.moveFormation = inZone:getStringFromZoneProperty("moveFormation", "Custom")
+	
+	if theSpawner.moveFormation == "Custom" or theSpawner.moveFormation == "EchelonR" or theSpawner.moveFormation == "EchelonL" or theSpawner.moveFormation == "Diamond" or theSpawner.moveFormation == "Vee" or theSpawner.moveFormation == "Cone" or  theSpawner.moveFormation == "Rank" then -- all fine, do nothing
+	else 
+		trigger.action.outText("+++SpwZ: unknown moveFormation <" .. theSpawner.moveFormation .. "> in spawn zone <" .. inZone.name .. ">, defaulting to 'Custom'", 30)
+		theSpawner.moveFormation = "Custom"
+	end 
 	theSpawner.paused = inZone:getBoolFromZoneProperty("paused", false)
 	-- orders are always converted to all lower case 
 	theSpawner.orders = inZone:getStringFromZoneProperty("orders", "guard"):lower() 
@@ -297,6 +306,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	troopData.groupData = theData
 	troopData.orders = aSpawner.orders -- always set 
 	troopData.side = theCoalition
+	troopData.moveFormation = aSpawner.moveFormation 
 	troopData.target = aSpawner.target -- can be nil!
 	troopData.tracker = theZone.trackWith -- taken from ZONE!!, can be nil
 	troopData.range = aSpawner.range
@@ -318,7 +328,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 			AI.Option.Ground.val.ROE.WEAPON_HOLD, 
 			1.0)
 	else 
-		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders) 
+		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders, aSpawner.moveFormation) 
 		cfxGroundTroops.addGroundTroopsToPool(newTroops)
 		
 		-- see if we have defined a target zone as destination
@@ -576,6 +586,7 @@ function cfxSpawnZones.loadData()
 	for gName, gdTroop in pairs (allTroopData) do 
 		local gData = gdTroop.groupData 
 		local orders = gdTroop.orders 
+		local moveFormation = gdTroop.moveFormation 
 		local target = gdTroop.target
 		local tracker = gdTroop.tracker 
 		local side = gdTroop.side 
@@ -598,7 +609,7 @@ function cfxSpawnZones.loadData()
 				1.0)
 		else 
 			-- add to groundTroops 
-			local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+			local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders, moveFormation) 
 			cfxGroundTroops.addGroundTroopsToPool(newTroops)
 			-- engage a target zone 
 			if target then 

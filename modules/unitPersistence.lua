@@ -1,5 +1,5 @@
 unitPersistence = {}
-unitPersistence.version = '2.0.0'
+unitPersistence.version = '2.0.1'
 unitPersistence.verbose = false 
 unitPersistence.updateTime = 60 -- seconds. Once every minute check statics
 unitPersistence.requiredLibs = {
@@ -21,6 +21,7 @@ unitPersistence.requiredLibs = {
 	      - fixed air spawn (fixed wing)
 	2.0.0 - dmlZones, OOP
 			cleanup 
+	2.0.1 - cosmetic verbosity during save 
 	
 	REQUIRES PERSISTENCE AND MX
 
@@ -162,7 +163,9 @@ function unitPersistence.saveData()
 						end
 					else 
 						theUnitData.isDead = true
-						trigger.action.outText("+++unitPersistence - unit <" .. uName .. "> of group <" .. groupName .. "> is dead or non-existant", 30)
+						if unitPersistence.verbose then 
+							trigger.action.outText("+++unitPersistence - unit <" .. uName .. "> of group <" .. groupName .. "> is dead or non-existant", 30)
+						end 
 					end -- is alive and exists?
 				end	-- unit maybe not dead 
 			end -- iterate units in group 

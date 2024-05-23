@@ -678,7 +678,9 @@ end
 
 function milHelo.GCcollected(gName)
 	-- do some housekeeping?
-	trigger.action.outText("removed flight <" .. gName .. ">", 30)
+	if milHelo.verbose then 
+		trigger.action.outText("removed flight <" .. gName .. ">", 30)
+	end 
 end
 
 function milHelo.GC()

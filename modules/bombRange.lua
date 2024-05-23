@@ -1,5 +1,5 @@
 bombRange = {}
-bombRange.version = "1.1.2"
+bombRange.version = "1.1.3"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {
@@ -21,6 +21,7 @@ VERSION HISTORY
 1.1.1 - fixed reading smoke color for zone 
 	    minor clean-up 	
 1.1.2 - corrected bug when no bomb range is detected
+1.1.3 - added meters/feet distance when reporting impact 
 
 --]]--
 bombRange.bombs = {} -- live tracking
@@ -543,7 +544,8 @@ function bombRange.impacted(weapon, target, finalPass)
 		tDist = math.floor(tDist*100) /100
 		trigger.action.outTextForGroup(weapon.gID, "impact of " .. weapon.type .. " released by " .. weapon.pName .. " from " .. weapon.uType .. " after traveling " .. tDist .. " km in " .. t .. " sec, impact velocity at impact is " .. v .. " m/s!", 30)
 	end
-	
+	local meters = math.floor(minDist * 10) / 10 
+	local feet = math.floor(minDist * 3.28084 * 10) / 10 
 	local msg = ""
 	if impactInside then
 		local percentage = 0 
@@ -553,15 +555,17 @@ function bombRange.impacted(weapon, target, finalPass)
 			percentage = 1 - (minDist / theRange.radius)
 			percentage = math.floor(percentage * 100)
 		end
+		
+		
 		msg = "INSIDE target area"
 		if theRange.reportName then msg = msg .. " " .. theRange.name end 
-		if (not targetName) and theRange.details then msg = msg .. ", off-center by " .. math.floor(minDist *10)/10 .. " m" end
+		if (not targetName) and theRange.details then msg = msg .. ", off-center by " .. meters .. "m/" .. feet .. "ft" end--math.floor(minDist *10)/10 .. " m" end
 		if targetName then msg = msg .. ", hit on " .. targetName end 
 			
 		if not theRange.usePercentage then 
 			percentage = 100 
 		else  
-			msg = msg .. " (Quality " .. percentage .."%)"
+			msg = msg .. " (Quality " .. percentage .."%)" --, off-center by " .. meters .. "m/" .. feet .. "ft)"
 		end 
 		
 		if theRange.hitOut then 
@@ -572,7 +576,7 @@ function bombRange.impacted(weapon, target, finalPass)
 	else 
 		msg = "Outside target area" 
 		if theRange.reportName then msg = msg .. " " .. theRange.name end
-		if theRange.details then msg = msg .. " (off-center by " .. math.floor(minDist *10)/10 .. " m)" end 
+		if theRange.details then msg = msg .. " (off-center by " .. meters .. "m/" .. feet .. "ft)" end --math.floor(minDist *10)/10 .. " m)" end 
 		msg = msg .. ", no hit."
 		bombRange.addImpactForWeapon(weapon, false, 0)
 	end 

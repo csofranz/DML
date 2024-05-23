@@ -65,10 +65,12 @@ function income.update()
 		has, balance = bank.getBalance(1)
 		tick = string.gsub(income.tickMessage, "<i>", redI)
 		trigger.action.outTextForCoalition(1, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
+		trigger.action.outSoundForCoalition(1, income.reportSound)
 		
 		has, balance = bank.getBalance(2)
 		tick = string.gsub(income.tickMessage, "<i>", blueI)
 		trigger.action.outTextForCoalition(2, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
+		trigger.action.outSoundForCoalition(2, income.reportSound)
 	end 
 	
 end 
@@ -88,6 +90,8 @@ function income.readConfigZone()
 	income.interval = theZone:getNumberFromZoneProperty("interval", 10 * 60) -- every 10 minutes 
 	income.tickMessage = theZone:getStringFromZoneProperty("tickMessage", "New funds from income available: §<i>")
 	income.announceTicks = theZone:getBoolFromZoneProperty("announceTicks", true)
+	income.reportSound = theZone:getStringFromZoneProperty("reportSound", "<none>")
+	
 	income.verbose = theZone.verbose
 end
 

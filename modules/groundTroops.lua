@@ -1,6 +1,6 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "2.0.1"
-cfxGroundTroops.ups = 1
+cfxGroundTroops.version = "2.2.0"
+cfxGroundTroops.ups = 0.25 -- every 4 seconds 
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
@@ -29,10 +29,11 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
 
    2.0.0 - dmlZones 
 	     - jtacSound 
-		 - clanup 
+		 - cleanup 
 		 - jtacVerbose 
    2.0.1 - small fiex ti checkPileUp()
-   
+   2.1.0 - captureandhold - oneshot attackowned 
+   2.2.0 - moveFormation support 
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -41,6 +42,8 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
             "laze" - will stay in place and try to laze visible vehicles in range
 			"attackOwnedZone" - interface to cfxOwnedZones module, seeks out
 			  enemy zones to attack and capture them
+			"captureandhold" - interface to ownedZones, seeks out nearest enemy 
+			  or neutral owned zone. once captured, it stays there 
             "wait-<some other orders>" do nothing. the "wait" prefix will be removed some time and <some other order> then revealed. Used at least by heloTroops
             "train" - target dummies. ROE=HOLD, no ground loop 
             "attack" - transition to destination, once there, stop and 
@@ -53,6 +56,7 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
   - lazeTarget - target currently lazing
   - lazeCode - laser code. default is 1688
   - moving - has been given orders to move somewhere already. used for first movement order with attack orders 
+  -- reduced ups to 0.24, updating troops every 4 seconds is fast enough 
 
  
  usage:
@@ -169,9 +173,9 @@ function cfxGroundTroops.makeTroopsEngageEnemies(troop)
 	
 	-- we lerp to 2/3 of enemy location
 	there = dcsCommon.vLerp(from, there, 0.66) 
-	
+	local moveFormation = troop.moveFormation
 	local speed = 10 -- m/s = 10 km/h -- wait. 10 m/s is 36 km/h 
-	cfxCommander.makeGroupGoThere(group, there, speed)
+	cfxCommander.makeGroupGoThere(group, there, speed, moveFormation)
 	local attask = cfxCommander.createAttackGroupCommand(enemies)
 	cfxCommander.scheduleTaskForGroup(group, attask, 0.5)
 	troop.moving = true 
@@ -189,15 +193,20 @@ function cfxGroundTroops.makeTroopsEngageZone(troop)
 	local enemyZone = troop.destination -- must be cfxZone 
 	local from = dcsCommon.getGroupLocation(group)
 	if not from then return end -- the group died
-	local there = enemyZone.point -- access zone position
+	local there = enemyZone:getPoint() -- access zone position
 	if not there then return end
 		
 	local speed = 14 -- m/s; 10 m/s = 36 km/h
 	
 	-- make troops stop in 1 second, then start in 5 seconds to give AI respite 
 	cfxCommander.makeGroupHalt(group, 1) -- 1 second delay
-	cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, 5)
-
+	if troop.orders == "captureandhold" then 
+		-- direct capture never uses roads 
+		cfxCommander.makeGroupGoThere(group, there, speed, troop.moveFormation, 5)
+	else 
+		-- when we attack any owned zone, we prefer roads 
+		cfxCommander.makeGroupGoTherePreferringRoads(group, there, speed, 5, troop.moveFormation)
+	end
 	-- remember that we have issued a move order 
 	troop.moving = true 	
 end
@@ -236,6 +245,10 @@ end
 -- are heading for is already owned by their side, then look for 
 -- the closest enemy zone, and cut attack orders to move there 
 function cfxGroundTroops.getClosestEnemyZone(troop)
+	if not cfxOwnedZones then 
+		trigger.action.outText("+++groundT: WARNING! ownedZones is not loaded, which is required.", 30)
+		return nil 
+	end 
 	local p = dcsCommon.getGroupLocation(troop.group)
 	local tempZone = cfxZones.createSimpleZone("tz", p, 100)
 	tempZone.owner = troop.side
@@ -250,6 +263,17 @@ function cfxGroundTroops.updateZoneAttackers(troop)
 		return 
 	end
 	troop.insideDestination = false -- mark as not inside 
+
+	-- we *have* a destination, but not yet isued move orders,
+	-- meaning that we just spawned, probably  from helo.
+	-- do not look for new location, issue move orders instead 
+	if not troop.hasMovedOrders and troop.destination then 
+		troop.hasMovedOrders = true 
+		cfxGroundTroops.makeTroopsEngageZone(troop)
+		troop.lastOrderDate = timer.getTime()
+		troop.speedWarning = 0
+		return
+	end 
 	
 	local newTargetZone = cfxGroundTroops.getClosestEnemyZone(troop)
 	if not newTargetZone then
@@ -259,6 +283,12 @@ function cfxGroundTroops.updateZoneAttackers(troop)
 	end
 	
 	if newTargetZone ~= troop.destination then 
+		if troop.destination and troop.orders == "captureandhold" then 
+			troop.lastOrderDate = timer.getTime() -- we may even dismiss them 
+			-- from troop array. But orders should remain when picked up by helo 
+			-- we never change target. Stay.
+			return 
+		end 
 		troop.destination = newTargetZone 
 		cfxGroundTroops.makeTroopsEngageZone(troop)
 		troop.lastOrderDate = timer.getTime()
@@ -532,6 +562,10 @@ function cfxGroundTroops.updateWait(troop)
 end
 
 function cfxGroundTroops.updateTroops(troop)
+	if cfxGroundTroops.verbose then 
+		trigger.action.outText("+++GTroop: enter updateTroopps for <" .. troop.name .. ">", 30)
+	end 
+	
 	-- if orders start with "wait-" then the troops 
 	-- simply do nothing
 	if dcsCommon.stringStartsWith(troop.orders, "wait-") then
@@ -547,6 +581,9 @@ function cfxGroundTroops.updateTroops(troop)
 	elseif troop.orders == "attackownedzone" then 
 		cfxGroundTroops.updateZoneAttackers(troop)
 
+	elseif troop.orders == "captureandhold" then 
+		cfxGroundTroops.updateZoneAttackers(troop) 
+		
 	elseif troop.orders == "laze" then 
 		cfxGroundTroops.updateLaze(troop)
 	
@@ -880,14 +917,16 @@ end
 -- createGroundTroop
 -- use this to create a cfxGroundTroops from a dcs group
 --
-function cfxGroundTroops.createGroundTroops(inGroup, range, orders) 
+function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormation) 
 	local newTroops = {}
 	if not orders then 
 		orders = "guard" 
 	end
+	if not moveFormation then moveFormation = "Custom" end 
 	if orders:lower() == "lase" then 
 		orders = "laze" -- we use WRONG spelling here, cause we're cool. yeah, right.
 	end
+	trigger.action.outText("Enter createGT group <" .. inGroup:getName() .. "> with o=<" .. orders .. ">, mf=<" .. moveFormation .. ">", 30)
 	newTroops.insideDestination = false
 	newTroops.unscheduleCount = 0 -- will count up as we aren't scheduled
 	newTroops.speedWarning = 0
@@ -897,6 +936,7 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders)
 	newTroops.coalition = inGroup:getCoalition()
 	newTroops.side = newTroops.coalition -- because we'e been using both.
 	newTroops.name = inGroup:getName()
+	newTroops.moveFormation = moveFormation
 	newTroops.moving = false -- set to not have received move orders yet 
 	newTroops.signature = "cfx" -- to verify this is groundTroop group, not dcs groups
 	if not range then range = 300 end
@@ -912,6 +952,7 @@ function cfxGroundTroops.addGroundTroopsToPool(troops) -- troops MUST be a table
 	end
 	if not troops.orders then troops.orders = "guard" end 
 	troops.orders = troops.orders:lower()
+	if not troops.moveFormation then troops.moveFormation = "Custom" end 
 	troops.reschedule = true -- in case we use scheduled update 
 	-- we now add to internal array. this is worked on by all 
 	-- update meths, on scheduled upadtes, it is only used to 

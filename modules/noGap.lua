@@ -1,5 +1,5 @@
 noGap = {}
-noGap.version = "1.0.0"
+noGap.version = "1.0.1"
 
 noGap.verbose = false 
 noGap.ignoreMe = "-ng" -- ignore altogether
@@ -37,6 +37,7 @@ noGap.requiredLibs = {
 	
 	Version History
 	1.0.0 - Initial version
+	1.0.1 - added "from runway"
     
 --]]--
 
@@ -80,6 +81,7 @@ function noGap.isGroundStart(theGroup)
 	if action == "Fly Over Point" then return false end 
 	if action == "Turning Point" then return false end 	
 	if action == "Landing" then return false end 	
+	if action == "From Runway" then return false end 
 	-- aircraft is on the ground - but is it in water (carrier)? 
 	local u1 = theGroup.units[1]
 	local sType = land.getSurfaceType(u1) -- has fields x and y

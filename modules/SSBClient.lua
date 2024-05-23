@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "4.0.0"
+cfxSSBClient.version = "4.0.1"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -16,6 +16,8 @@ cfxSSBClient.requiredLibs = {
 Version History
   4.0.0 - dmlZones 
 		- cfxMX instead of cfxGroups 
+  4.0.1 - check slot availability immediately upon start 
+		- ssb autoenable option  
 --]]--
 
 cfxSSBClient.enabledFlagValue = 0 -- DO NOT CHANGE, MUST MATCH SSB 
@@ -490,33 +492,31 @@ function cfxSSBClient.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("SSBClientConfig") 
 	if not theZone then 
-		trigger.action.outText("+++SSBC: no config zone!", 30) 
-		return 
-	end 
-	
-	trigger.action.outText("+++SSBC: found config zone!", 30) 
-	
-	cfxSSBClient.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
+		theZone = cfxZones.createSimpleZone("SSBClientConfig")
+	end 	
+	cfxSSBClient.verbose = theZone.verbose
 	
 	-- single-use
-	cfxSSBClient.singleUse = cfxZones.getBoolFromZoneProperty(theZone, "singleUse", false) -- use airframes only once? respawn after kick must be disabled in ssb
-	cfxSSBClient.reUseAfter = cfxZones.getNumberFromZoneProperty(theZone, "reUseAfter", -1)
+	cfxSSBClient.singleUse = theZone:getBoolFromZoneProperty("singleUse", false) -- use airframes only once? respawn after kick must be disabled in ssb
+	cfxSSBClient.reUseAfter = theZone:getNumberFromZoneProperty( "reUseAfter", -1)
 	
 	-- airfield availability 
-	cfxSSBClient.allowNeutralFields = cfxZones.getBoolFromZoneProperty(theZone, "allowNeutralFields", false)
+	cfxSSBClient.allowNeutralFields = theZone:getBoolFromZoneProperty( "allowNeutralFields", false)
 	
-	cfxSSBClient.maxAirfieldRange = cfxZones.getNumberFromZoneProperty(theZone, "maxAirfieldRange", 3000) -- meters, to find attached airfield
+	cfxSSBClient.maxAirfieldRange = theZone:getNumberFromZoneProperty("maxAirfieldRange", 3000) -- meters, to find attached airfield
 
 	-- optimization 
 	
-	cfxSSBClient.keepInAirGroups = cfxZones.getBoolFromZoneProperty(theZone, "keepInAirGroups", false)
+	cfxSSBClient.keepInAirGroups = theZone:getBoolFromZoneProperty("keepInAirGroups", false)
 	
 	-- SSB direct control. 
 	-- USE ONLY WHEN YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING
 	
-	cfxSSBClient.enabledFlagValue = cfxZones.getNumberFromZoneProperty(theZone, "enabledFlagValue", 0)
+	cfxSSBClient.enabledFlagValue = theZone:getNumberFromZoneProperty("enabledFlagValue", 0)
 	
-	cfxSSBClient.disabledFlagValue = cfxZones.getNumberFromZoneProperty(theZone, "disabledFlagValue", cfxSSBClient.enabledFlagValue + 100)
+	cfxSSBClient.disabledFlagValue = theZone:getNumberFromZoneProperty("disabledFlagValue", cfxSSBClient.enabledFlagValue + 100)
+	
+	cfxSSBClient.ssbAutoenable = theZone:getBoolFromZoneProperty("ssbAutoenable", true)
 end
 
 --
@@ -601,13 +601,18 @@ function cfxSSBClient.start()
 	
 	-- install a timed update just to make sure
 	-- and start NOW
-	timer.scheduleFunction(cfxSSBClient.update, {}, timer.getTime() + 1)
+	-- timer.scheduleFunction(cfxSSBClient.update, {}, timer.getTime() + 1)
+	cfxSSBClient.update()
 	
 	-- start dml update (on a different timer
 	cfxSSBClient.dmlUpdate()
 	 
 	-- now turn on ssb 
-	trigger.action.setUserFlag("SSB",100)
+	if cfxSSBClient.ssbAutoenable then 
+		trigger.action.setUserFlag("SSB",100)
+	else 
+		trigger.action.outText("WARNING: cfxSSBClient did !!NOT!! auto-enable SSB for mission.", 30)
+	end 
 	
 	-- persistence: load states 
 	if persistence then 
