@@ -201,7 +201,7 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	
 	-- title 
 	if aZone:hasProperty("title") then 
-		aZone.title = aZone:getStringFromZoneProperty("title")
+		aZone.title = aZone:getStringFromZoneProperty("title", "<no tile defined>")
 		if aZone.title == "*" then aZone.title = aZone.name end 
 	end
 	aZone.method = aZone:getStringFromZoneProperty("method", "inc")
