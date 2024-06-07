@@ -467,7 +467,7 @@ function unitPersistence.loadMission()
 	end
 	
 	if mismatchWarning then 
-		trigger.action.outText("\n+++WARNING: \nSaved data does not match mission. You should re-start from scratch\n", 30)
+		trigger.action.outText("\n+++WARNING: \nSaved unit data does not match mission. You should re-start from scratch\n", 30)
 	end
 	-- set mission according to data received from last save 
 	if unitPersistence.verbose then 

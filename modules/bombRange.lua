@@ -1,5 +1,5 @@
 bombRange = {}
-bombRange.version = "1.1.3"
+bombRange.version = "2.0.0"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {
@@ -22,6 +22,11 @@ VERSION HISTORY
 	    minor clean-up 	
 1.1.2 - corrected bug when no bomb range is detected
 1.1.3 - added meters/feet distance when reporting impact 
+1.1.4 - code hardening against CA interference 
+2.0.0 - support for radioMainMenu 
+      - support for types 
+	  - types can have wild cards
+
 
 --]]--
 bombRange.bombs = {} -- live tracking
@@ -170,6 +175,10 @@ function bombRange.showStatsForPlayer(pName, gID, unitName)
 
 	if bombRange.mustCheckIn then 
 		local comms = bombRange.unitComms[unitName]
+		if not comms then 
+			-- player controlled CA vehicle calling. go away.
+			return
+		end 
 		if comms.checkedIn then 
 			msg = msg .. "\nYou are checked in with weapons range command.\n"
 		else 
@@ -184,6 +193,11 @@ end
 -- unit UI
 --
 function bombRange.initCommsForUnit(theUnit)
+	local mainMenu = nil 
+	if bombRange.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(bombRange.mainMenu) -- nilling both next params will return menus[0]
+	end 
+	
 	local uName = theUnit:getName() 
 	local pName = theUnit:getPlayerName()
 	local theGroup = theUnit:getGroup()
@@ -199,7 +213,7 @@ function bombRange.initCommsForUnit(theUnit)
 	end 
 	comms = {}
 	comms.checkedIn = false 
-	comms.root = missionCommands.addSubMenuForGroup(gID, bombRange.menuTitle)
+	comms.root = missionCommands.addSubMenuForGroup(gID, bombRange.menuTitle, mainMenu)
 	comms.getStat = missionCommands.addCommandForGroup(gID, "Get statistics for " .. pName, comms.root, bombRange.redirectComms, {"getStat", uName, pName, gID})
 	comms.reset = missionCommands.addCommandForGroup(gID, "RESET statistics for " .. pName, comms.root, bombRange.redirectComms, {"reset", uName, pName, gID})
 	if bombRange.mustCheckIn then 
@@ -231,6 +245,10 @@ function bombRange.commsRequest(args)
 	
 	if command == "check" then 
 		comms = bombRange.unitComms[uName]
+		if not comms then 
+			-- CA player here. we don't talk to you (yet)
+			return 
+		end 
 		if comms.checkedIn then 
 			comms.checkedIn = false -- we are now checked out
 			missionCommands.removeItemForGroup(gID, comms.checkin)
@@ -424,6 +442,10 @@ function bombRange:onEvent(event)
 	if event.id == 1 then -- shot event, from player
 		if not event.weapon then return end 
 		local uComms = bombRange.unitComms[uName]
+		if not uComms then 
+			-- this is a player-controlled CA vehicle. bye bye
+			return 
+		end 
 		if bombRange.mustCheckIn and (not uComms.checkedIn) then 
 			if bombRange.verbose then 
 				trigger.action.outText("+++bRng: Player <" .. pName .. "> not checked in.", 30)
@@ -459,12 +481,39 @@ function bombRange:onEvent(event)
 		end
 	end
 	
-	if event.id == 15 then 
+	if event.id == 15 then -- birth
+		
+		if bombRange.types then 
+			if not bombRange.typeCheck(theUnit) then return end 
+		end
+		
+		-- we could add unit filtering by group here, e.g. only some 
+		-- planes, defined in config 
+		-- for example, bomb range is silly for most helicopter
 		bombRange.initCommsForUnit(theUnit)
+		
 	end
 	
 end
 
+function bombRange.typeCheck(theUnit)
+	local theGroup = theUnit:getGroup()
+	local cat = theGroup:getCategory() -- we use group, not unit. Airplane is 0, Heli is 1 
+	-- check the type explicitly 
+	local myType = theUnit:getTypeName()
+	if dcsCommon.wildArrayContainsString(bombRange.types, myType) then return true end 
+	
+	-- planes or plane perhaps?
+--	if cat == 0 and dcsCommon.arrayContainsStringCaseInsensitive(bombRange.types, "planes") then return true end 
+	if cat == 0 and dcsCommon.wildArrayContainsString(bombRange.types, "plan*") then return true end
+	
+	-- helos?
+	if cat == 1 and dcsCommon.wildArrayContainsString(bombRange.types, "hel*") then return true end
+--	if cat == 1 and dcsCommon.arrayContainsStringCaseInsensitive(bombRange.types, "helos") then return true end
+--	if cat == 1 and dcsCommon.arrayContainsStringCaseInsensitive(bombRange.types, "helicopter") then return true end
+	
+	return false 
+end
 --
 -- Update 
 --
@@ -688,6 +737,25 @@ function bombRange.readConfigZone()
 		bombRange.signOut = theZone:getStringFromZoneProperty("signOut!", 30)
 	end 
 	bombRange.method = theZone:getStringFromZoneProperty("method", "inc")
+	
+	if theZone:hasProperty("types") then 
+		bombRange.types = theZone:getListFromZoneProperty("types", "<none>")
+	end 
+	
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu then 
+			local mainMenu = radioMenu.mainMenus[attachTo]
+			if mainMenu then 
+				bombRange.mainMenu = mainMenu 
+			else 
+				trigger.action.outText("+++bombRange: cannot find super menu <" .. attachTo .. ">", 30)
+			end
+		else 
+			trigger.action.outText("+++bombRange: REQUIRES radioMenu to run before bombRange. 'AttachTo:' ignored.", 30)
+		end 
+	end 
+	
 	bombRange.verbose = theZone.verbose 
 end
 

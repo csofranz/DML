@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "3.0.5"
+guardianAngel.version = "3.0.6"
 guardianAngel.ups = 10
 guardianAngel.name = "Guardian Angel" -- just in case someone accesses .name  
 guardianAngel.launchWarning = true -- detect launches and warn pilot 
@@ -65,6 +65,7 @@ guardianAngel.requiredLibs = {
 		   - msgTime to control how long warnings remain on the screen
 		   - disappear message now only on verbose 
 		   - dmlZones 
+	 3.0.6 - Hardening of targets that aren't part of groups 
 		   
 
 This script detects missiles launched against protected aircraft an 
@@ -167,9 +168,13 @@ function guardianAngel.createQItem(theWeapon, theTarget, threat, launcher)
 		trigger.action.outText("gA: tracking missile <" .. wName .. "> launched by <" .. launcherName .. ">", guardianAngel.msgTime)
 	end 
 	theItem.theTarget = theTarget
-	theItem.tGroup = theTarget:getGroup()
-	theItem.tID = theItem.tGroup:getID()
-	
+	if theTarget.getGroup then -- some targets may not have a group
+		theItem.tGroup = theTarget:getGroup()
+		theItem.tID = theItem.tGroup:getID()
+	else 
+		theItem.tGroup = nil 
+		theItem.tID = nil 
+	end 
 	theItem.targetName = theTarget:getName()
 	theItem.launchTimeStamp = timer.getTime()
 	theItem.lastDistance = math.huge 
@@ -244,24 +249,10 @@ function guardianAngel.monitorItem(theItem)
 	local ID = theItem.tID
 	if not w then return false end
 	if not w:isExist() then 
-		--if (not theItem.missed) and (not theItem.lostTrack) then 
-			
-			--[[--
-			if guardianAngel.announcer and theItem.threat then 
-				local desc  = theItem.weaponName .. ": DISAPPEARED"
-				if guardianAngel.private then 
-					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
-				else 
-					trigger.action.outText(desc, guardianAngel.msgTime) 
-				end
-			end 
-			--]]--
-			if guardianAngel.verbose then
-				trigger.action.outText("+++gA: missile disappeared: <" .. theItem.weaponName .. ">, aimed at <" .. theItem.targetName .. ">",30)
-			end
-			
-			guardianAngel.invokeCallbacks("disappear", theItem.targetName, theItem.weaponName)
-		-- end 
+		if guardianAngel.verbose then
+			trigger.action.outText("+++gA: missile disappeared: <" .. theItem.weaponName .. ">, aimed at <" .. theItem.targetName .. ">",30)
+		end
+		guardianAngel.invokeCallbacks("disappear", theItem.targetName, theItem.weaponName)
 		return false 
 	end 
 	
@@ -302,7 +293,7 @@ function guardianAngel.monitorItem(theItem)
 			
 			if isThreat and guardianAngel.announcer and guardianAngel.active then 
 				local desc = "Missile, missile, missile - now heading for " .. ctName .. "!"
-				if guardianAngel.private then 
+				if guardianAngel.private and ID then 
 					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 					if guardianAngel.launchSound then 
 						local fileName = "l10n/DEFAULT/" .. guardianAngel.launchSound
@@ -364,7 +355,7 @@ function guardianAngel.monitorItem(theItem)
 		then 
 			desc = desc .. " ANGEL INTERVENTION"
 			
-			if guardianAngel.announcer then 
+			if guardianAngel.announcer and ID then 
 				if guardianAngel.private then 
 					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 					if guardianAngel.interventionSound then 
@@ -399,7 +390,7 @@ function guardianAngel.monitorItem(theItem)
 			--if theItem.lostTrack then desc = desc .. " (little sneak!)" end 
 			--if theItem.missed then desc = desc .. " (missed you!)" end 
 			
-			if guardianAngel.announcer then 
+			if guardianAngel.announcer and ID then 
 				if guardianAngel.private then 
 					trigger.action.outTextForGroup(ID, desc, guardianAngel.msgTime) 
 				else 

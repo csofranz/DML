@@ -1,5 +1,5 @@
 jtacGrpUI = {}
-jtacGrpUI.version = "2.0.0"
+jtacGrpUI.version = "3.0.0"
 jtacGrpUI.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", 
@@ -11,6 +11,8 @@ jtacGrpUI.requiredLibs = {
 		 - eliminated cfxPlayer dependence 
 		 - clean-up 
 		 - jtacSound 
+   3.0.0 - support for attachTo: 
+   
 --]]--
 -- find & command cfxGroundTroops-based jtacs
 -- UI installed via OTHER for all groups with players
@@ -143,6 +145,11 @@ function jtacGrpUI.setCommsMenu(theGroup)
 	if not Group.isExist(theGroup) then return end 
 	if not jtacGrpUI.isEligibleForMenu(theGroup) then return end
 	
+	local mainMenu = nil 
+	if jtacGrpUI.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(jtacGrpUI.mainMenu) -- nilling both next params will return menus[0]
+	end 
+	
 	local conf = jtacGrpUI.getConfigForGroup(theGroup) 
 	conf.id = theGroup:getID(); -- we always do this ALWAYS
 	
@@ -151,7 +158,7 @@ function jtacGrpUI.setCommsMenu(theGroup)
 		if not conf.myMainMenu then 
 			local commandTxt = "jtac Lasing Report"
 			local theCommand =  missionCommands.addCommandForGroup(
-				conf.id, commandTxt, nil, jtacGrpUI.redirectCommandX, {conf, "lasing report"})
+				conf.id, commandTxt, mainMenu, jtacGrpUI.redirectCommandX, {conf, "lasing report"})
 			conf.myMainMenu = theCommand
 		end
 		
@@ -160,7 +167,7 @@ function jtacGrpUI.setCommsMenu(theGroup)
 		
 	-- ok, first, if we don't have an F-10 menu, create one 
 	if not (conf.myMainMenu) then 
-		conf.myMainMenu = missionCommands.addSubMenuForGroup(conf.id, 'jtac') 
+		conf.myMainMenu = missionCommands.addSubMenuForGroup(conf.id, 'jtac', mainMenu) 
 	end
 	
 	-- clear out existing commands
@@ -317,12 +324,27 @@ function jtacGrpUI.readConfigZone()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("jtacGrpUIConfig") 
 	end 
-		
+	jtacGrpUI.name = "jtacGrpUI"
+	
 	jtacGrpUI.jtacTypes = theZone:getStringFromZoneProperty("jtacTypes", "all")
 	jtacGrpUI.jtacTypes = string.lower(jtacGrpUI.jtacTypes)
 	
 	jtacGrpUI.jtacSound = theZone:getStringFromZoneProperty("jtacSound", "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
-	
+
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu then 
+			local mainMenu = radioMenu.mainMenus[attachTo]
+			if mainMenu then 
+				jtacGrpUI.mainMenu = mainMenu 
+			else 
+				trigger.action.outText("+++jtacGrpUI: cannot find super menu <" .. attachTo .. ">", 30)
+			end
+		else 
+			trigger.action.outText("+++jtacGrpUI: REQUIRES radioMenu to run before jtacGrpUI. 'AttachTo:' ignored.", 30)
+		end 
+	end
+
 	jtacGrpUI.verbose = theZone.verbose 
 
 end

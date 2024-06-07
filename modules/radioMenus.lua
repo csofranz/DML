@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "2.3.0"
+radioMenu.version = "3.0.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -7,6 +7,7 @@ radioMenu.requiredLibs = {
 	"cfxZones", -- Zones, of course 
 }
 radioMenu.menus = {}
+radioMenu.mainMenus = {} -- dict 
 
 --[[--
 	Version History 
@@ -21,11 +22,18 @@ radioMenu.menus = {}
 	2.2.1 - corrected ackD 
 	2.3.0 - added wildcard "*" ability for group name match 
 		  - added ackASnd .. ackDSnd sounds as options 
+	3.0.0 - new radioMainMenu and attachTo: mechanics 
+			cascading radioMainMenu support 
+			detect cyclic references 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
 	table.insert(radioMenu.menus, theZone)
 end
+
+function radioMenu.addRadioMainMenu(theZone)
+	radioMenu.mainMenus[theZone.name] = theZone 
+end 
 
 function radioMenu.getRadioMenuByName(aName) 
 	for idx, aZone in pairs(radioMenu.menus) do 
@@ -36,6 +44,10 @@ function radioMenu.getRadioMenuByName(aName)
 	end 
 	
 	return nil 
+end
+
+function radioMenu.getRadioMainMenuByName(theName)
+	return radioMenu.mainMenus[theName]
 end
 
 --
@@ -169,6 +181,9 @@ function radioMenu.installMenu(theZone)
 	end
 	
 	theZone.rootMenu = {}
+	theZone.mainRoot = nil -- can be altered with attachTo
+	-- see if this menu has an attachTo attribute 
+	
 	theZone.mcdA = {}
 	theZone.mcdB = {}
 	theZone.mcdC = {}
@@ -179,8 +194,12 @@ function radioMenu.installMenu(theZone)
 	theZone.mcdD[0] = 0
 		
 	if theZone.menuGroup or theZone.menuTypes then 
-		for idx, grp in pairs(gID) do 
-			local aRoot = missionCommands.addSubMenuForGroup(grp, theZone.rootName, nil) 
+		for idx, grp in pairs(gID) do  
+			if theZone.attachTo then 
+				local mainMenu = theZone.attachTo
+				theZone.mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+			end 
+			local aRoot = missionCommands.addSubMenuForGroup(grp, theZone.rootName, theZone.mainRoot) 
 			theZone.rootMenu[grp] = aRoot
 			theZone.mcdA[grp] = 0
 			theZone.mcdB[grp] = 0
@@ -188,9 +207,17 @@ function radioMenu.installMenu(theZone)
 			theZone.mcdD[grp] = 0
 		end
 	elseif theZone.coalition == 0 then 
-		theZone.rootMenu[0] = missionCommands.addSubMenu(theZone.rootName, nil) 
+		if theZone.attachTo then 
+			local mainMenu = theZone.attachTo
+			theZone.mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, 0)
+		end 
+		theZone.rootMenu[0] = missionCommands.addSubMenu(theZone.rootName, theZone.mainRoot) 
 	else 
-		theZone.rootMenu[0] = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, nil)		
+		if theZone.attachTo then 
+			local mainMenu = theZone.attachTo
+			theZone.mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, 0)
+		end
+		theZone.rootMenu[0] = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, theZone.mainRoot)		
 	end
 	
 	if theZone:hasProperty("itemA") then 
@@ -252,6 +279,18 @@ end
 
 function radioMenu.createRadioMenuWithZone(theZone)
 	theZone.rootName = theZone:getStringFromZoneProperty("radioMenu", "<No Name>")
+	
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu.verbose or theZone.verbose then 
+			trigger.action.outText("Menu <" .. theZone.name .. "> will attach to <" .. attachTo .. ">", 30)
+		end 
+		if not radioMenu.mainMenus[attachTo] then 
+			trigger.action.outText("+++rdoM: menu <" .. theZone.name .. "> tries to attachTo unknown radioMainMenu <" .. attachTo .. "> - cancelled.", 30)
+		else 
+			theZone.attachTo = radioMenu.mainMenus[attachTo]
+		end
+	end 
 	
 	theZone.coalition = theZone:getCoalitionFromZoneProperty("coalition", 0)
 	-- groups / types 
@@ -350,6 +389,116 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	end
 	
 end
+function radioMenu.getMainMenuFor(mainMenu, theZone, idx)
+	if not idx then idx = 0 end 
+	if not mainMenu.rootMenu[idx] then 
+--		trigger.action.outText("main <" .. mainMenu.name .. "> for zone <" .. theZone.name .. ">: forcing idx to 0", 30)
+		return mainMenu.rootMenu[0] 
+	end 
+--	trigger.action.outText("good main <" .. mainMenu.name .. "> for zone <" .. theZone.name .. ">", 30)
+	return mainMenu.rootMenu[idx]
+end
+
+function radioMenu.installMainMenu(theZone)
+	local gID = nil -- set of all groups this menu applies to 
+	if theZone.menuGroup then 
+		if not cfxMX then 
+			trigger.action.outText("WARNING: radioMenu's group attribute requires the 'cfxMX' module", 30)
+			return 
+		end
+		-- access cfxMX player info for group ID
+		gID = radioMenu.filterPlayerIDForGroup(theZone)
+	elseif theZone.menuTypes then 
+		if not cfxMX then 
+			trigger.action.outText("WARNING: radioMenu's type attribute requires the 'cfxMX' module", 30)
+			return 
+		end
+		-- access cxfMX player infor with type match for ID
+		gID = radioMenu.filterPlayerIDForType(theZone)
+	end
+	
+	theZone.rootMenu = {} -- roots by many different things
+	local mainRoot = nil 
+			
+	if theZone.menuGroup or theZone.menuTypes then 
+		for idx, grp in pairs(gID) do 
+			if theZone.attachTo then 
+				local mainMenu = theZone.attachTo
+				mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+			end 
+			local aRoot = missionCommands.addSubMenuForGroup(grp, theZone.rootName, mainRoot) 
+			theZone.rootMenu[grp] = aRoot
+		end
+	elseif theZone.coalition == 0 then 
+		if theZone.attachTo then 
+			local mainMenu = theZone.attachTo
+			mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+		end 
+		theZone.rootMenu[0] = missionCommands.addSubMenu(theZone.rootName, mainRoot) 
+	else 
+		if theZone.attachTo then 
+			local mainMenu = theZone.attachTo
+			mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+		end 
+		theZone.rootMenu[0] = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, mainRoot)		
+	end
+	
+end 
+
+function radioMenu.createRadioMainMenuWithZone(theZone)
+	theZone.rootName = theZone:getStringFromZoneProperty("radioMainMenu", "<No Name>")
+
+	if theZone:hasProperty("radioMenu") then 
+		trigger.action.outText("+++radM: ERROR: main menu <" .. theZone.name .. "> also has conflicting 'radioMenu' entry", 30)
+	end 
+	
+	-- CASCADING SUPPORT. LOOP DETECTION
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu.verbose or theZone.verbose then 
+			trigger.action.outText("MAIN Menu <" .. theZone.name .. "> wants to attach to <" .. attachTo .. ">", 30)
+		end 
+		if not radioMenu.mainMenus[attachTo] then
+			trigger.action.outText("+++radioMM: MAIN menu <" .. theZone.name .. "> tries to 'attachTo:' unknown radioMainMenu <" .. attachTo .. "> - cancelled.", 30)
+		else 
+			-- make sure that this zone has been processed 
+			local super = radioMenu.mainMenus[attachTo]
+			if super.mainDone then 
+				theZone.attachTo = super
+			else 
+				-- we need other zones to be processed before 
+				if radioMenu.verbose or theZone.verbose then 
+					trigger.action.outText("Main menu <" .. theZone.name .. "> refers to unprocessed zone <" .. attachTo .. ">, deferring.", 30)
+				end 
+				return false 
+			end 
+		end
+	end 
+	
+	-- we now create the ROOT menu that all other menu 
+	-- items attach to that have this as main menu 
+	theZone.coalition = theZone:getCoalitionFromZoneProperty("coalition", 0)
+	-- groups / types 
+	if theZone:hasProperty("group") then 
+		theZone.menuGroup = theZone:getStringFromZoneProperty("group", "<none>")
+		theZone.menuGroup = dcsCommon.trim(theZone.menuGroup)
+	elseif theZone:hasProperty("groups") then 
+		theZone.menuGroup = theZone:getStringFromZoneProperty("groups", "<none>")
+		theZone.menuGroup = dcsCommon.trim(theZone.menuGroup)
+	elseif theZone:hasProperty("type") then 
+		theZone.menuTypes = theZone:getStringFromZoneProperty("type", "none")
+	elseif theZone:hasProperty("types") then
+		theZone.menuTypes = theZone:getStringFromZoneProperty("types", "none")
+	end	
+	
+	-- always install this one 
+	radioMenu.installMainMenu(theZone)
+	theZone.mainDone = true 
+	if radioMenu.verbose or theZone.verbose then 
+		trigger.action.outText("Main menu <" .. theZone.name .. "> processed", 30)
+	end 
+	return true 
+end 
 
 --
 -- Output processing 
@@ -546,17 +695,9 @@ end
 function radioMenu.readConfigZone()
 	local theZone = cfxZones.getZoneByName("radioMenuConfig") 
 	if not theZone then 
-		if radioMenu.verbose then 
-			trigger.action.outText("+++radioMenu: NO config zone!", 30)
-		end 
 		theZone = cfxZones.createSimpleZone("radioMenuConfig") 
 	end 
-	
 	radioMenu.verbose = theZone:getBoolFromZoneProperty("verbose", false)
-	
-	if radioMenu.verbose then 
-		trigger.action.outText("+++radioMenu: read config", 30)
-	end 
 end
 
 function radioMenu.start()
@@ -572,10 +713,45 @@ function radioMenu.start()
 	-- read config 
 	radioMenu.readConfigZone()
 	
+	-- process radioMainMenu top-level zones 
+	--local filtered = {}
+	local tries = 0 
+	local attrZones = cfxZones.getZonesWithAttributeNamed("radioMainMenu")
+	-- set up all zones so they can 'reach up' even if not yet procced 
+	for k, aZone in pairs (attrZones) do 
+		radioMenu.addRadioMainMenu(aZone)
+	end 
+	
+	-- now process, and detect/break cyclic references 
+	repeat 
+		local filtered = {}
+		for k, aZone in pairs(attrZones) do 
+			radioMenu.createRadioMainMenuWithZone(aZone) -- process attributes
+			if aZone.mainDone then 
+				-- all good
+			else 
+				-- wait for next round 
+				table.insert(filtered, aZone)
+			end 
+		end
+		done = dcsCommon.getSizeOfTable(filtered) < 1 
+		tries = tries + 1 
+		attrZones = filtered
+	until done or tries > 20
+	if tries > 20 then 
+		local msg = "+++radioMenu: ERROR: Cyclic references in menu structure, can't fully process main menus. Unresolved main menus are:\n "
+		local c = 0
+		for idx, theZone in pairs(attrZones) do 
+			if c > 0 then msg = msg .. ", " else c = 1 end
+			msg = msg .. theZone.name 
+		end 
+		trigger.action.outText(msg .. ".", 30)
+	end 
+		
 	-- process radioMenu Zones 
 	-- old style
-	local attrZones = cfxZones.getZonesWithAttributeNamed("radioMenu")
-	for k, aZone in pairs(attrZones) do 
+	local rmZones = cfxZones.getZonesWithAttributeNamed("radioMenu")	
+	for k, aZone in pairs(rmZones) do 
 		radioMenu.createRadioMenuWithZone(aZone) -- process attributes
 		radioMenu.addRadioMenu(aZone) -- add to list
 	end
@@ -595,4 +771,8 @@ end
 
 --[[--
 	check CD/standby code for multiple groups 
+
+	add/remove for mainmenu 
+	visible/invisible for main menus 
+	
 --]]--

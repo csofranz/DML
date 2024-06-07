@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "3.4.0"
+csarManager.version = "4.0.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -45,7 +45,8 @@ csarManager.ups = 1
   3.3.0  - persistence support 
   3.4.0  - global timeLimit option in config zone 
          - fixes expiration bug when persisting data 
-
+  4.0.0  - support for mainMenu 
+  
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
@@ -713,8 +714,13 @@ function csarManager.setCommsMenu(theUnit)
 	-- reset all coms now
 	csarManager.removeCommsFromConfig(conf)
 	
+	local mainMenu = nil 
+	if csarManager.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(csarManager.mainMenu) -- nilling both next params will return menus[0]
+	end 
+	
 	-- ok, first, if we don't have an F-10 menu, create one 
-	conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'CSAR Missions') 
+	conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'CSAR Missions', mainMenu) 
 	
 	-- now we have a menu without submenus. 
 	-- add our own submenus
@@ -1618,7 +1624,22 @@ function csarManager.readConfigZone()
 	else 
 		csarManager.timeLimit = nil 
 	end 
-		
+	
+	
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu then 
+			local mainMenu = radioMenu.mainMenus[attachTo]
+			if mainMenu then 
+				csarManager.mainMenu = mainMenu 
+			else 
+				trigger.action.outText("+++csarManager: cannot find super menu <" .. attachTo .. ">", 30)
+			end
+		else 
+			trigger.action.outText("+++csarManager: REQUIRES radioMenu to run before csarManager. 'AttachTo:' ignored.", 30)
+		end 
+	end 
+	
 	if csarManager.verbose then 
 		trigger.action.outText("+++csar: read config", 30)
 	end 

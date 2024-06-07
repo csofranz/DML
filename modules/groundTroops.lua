@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "2.2.0"
+cfxGroundTroops.version = "2.2.1"
 cfxGroundTroops.ups = 0.25 -- every 4 seconds 
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -34,6 +34,7 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
    2.0.1 - small fiex ti checkPileUp()
    2.1.0 - captureandhold - oneshot attackowned 
    2.2.0 - moveFormation support 
+   2.2.1 - reduced verbosity 
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -926,7 +927,7 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormatio
 	if orders:lower() == "lase" then 
 		orders = "laze" -- we use WRONG spelling here, cause we're cool. yeah, right.
 	end
-	trigger.action.outText("Enter createGT group <" .. inGroup:getName() .. "> with o=<" .. orders .. ">, mf=<" .. moveFormation .. ">", 30)
+--	trigger.action.outText("Enter createGT group <" .. inGroup:getName() .. "> with o=<" .. orders .. ">, mf=<" .. moveFormation .. ">", 30)
 	newTroops.insideDestination = false
 	newTroops.unscheduleCount = 0 -- will count up as we aren't scheduled
 	newTroops.speedWarning = 0

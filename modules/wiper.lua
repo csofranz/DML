@@ -1,5 +1,5 @@
 wiper = {}
-wiper.version = "1.2.0"
+wiper.version = "1.3.0"
 wiper.verbose = false 
 wiper.ups = 1 
 wiper.requiredLibs = {
@@ -15,6 +15,9 @@ wiper.wipers = {}
 		  - categories can now be a list 
 		  - declutter opetion
 		  - if first category is 'none', zone will not wipe at all but may declutter 
+	1.3.0 - now warns when wiper zone is polygonal 
+		  - enhanced verbosity for dictionary setups 
+		  - now warns of possible incompatibility with cloners 
 
 --]]--
 
@@ -38,6 +41,11 @@ end
 -- 
 function wiper.createWiperWithZone(theZone)
 	theZone.triggerWiperFlag = theZone:getStringFromZoneProperty("wipe?", "*<none>")
+	
+	-- see if the zone also has a 'cloner' attribute, and warn 
+	if theZone:hasProperty("cloner") then 
+		trigger.action.outText("+++Wpr: Zone <" .. theZone.name .. "> is also a CLONER - check usage of 'wipe?' attribute.", 30)
+	end 
 	
 	-- triggerWiperMethod
 	theZone.triggerWiperMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
@@ -98,13 +106,17 @@ function wiper.createWiperWithZone(theZone)
 			end
 			theDict[shortName] = ew  
 			if wiper.verbose or theZone.verbose then 
-				trigger.action.outText("+++wpr: dict [".. shortName .."], '*' = " .. dcsCommon.bool2Text(ew) .. " for <" .. theZone:getName() .. ">",30)
+				trigger.action.outText("+++wpr: dict [".. shortName .."], '*' = " .. dcsCommon.bool2Text(ew) .. " successful for <" .. theZone:getName() .. ">",30)
 			end 
 		end		
 		theZone.wipeNamed = theDict
 	end 
 	
 	theZone.wipeInventory = theZone:getBoolFromZoneProperty("wipeInventory", false)
+	
+	if theZone.isPoly then 
+		trigger.action.outText("+++wpr: WARNING: wiper zone <" .. theZone.name .. "> is NOT CIRCULAR, but quad-based. Expect erratic behavior!", 30)
+	end 
 	
 	if wiper.verbose or theZone.verbose then 
 		trigger.action.outText("+++wpr: new wiper zone <".. theZone.name ..">", 30)

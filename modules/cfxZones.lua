@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.2"
+cfxZones.version = "4.3.4"
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -51,7 +51,8 @@ cfxZones.version = "4.3.2"
 - 4.3.1   - new drawText() for zones 
 		  - dmlZones:getClosestZone() bridge 
 - 4.3.2   - new getListFromZoneProperty()
-
+- 4.3.3   - hardened calculateZoneBounds
+- 4.3.4   - rewrote zone bounds for poly zones 
 --]]--
 
 --
@@ -221,7 +222,7 @@ function cfxZones.calculateZoneBounds(theZone)
 	if not (theZone) then return 
 	end
 	
-	local bounds = theZone.bounds -- copy ref!
+	local bounds = theZone.bounds -- copy ref! -- DON'T BELIEVE THIS! 
 	
 	if theZone.isCircle then 
 		-- aabb are easy: center +/- radius 
@@ -234,38 +235,32 @@ function cfxZones.calculateZoneBounds(theZone)
 		bounds.ll = dcsCommon.createPoint(center.x - radius, 0, center.z + radius)
 		bounds.lr = dcsCommon.createPoint(center.x + radius, 0, center.z + radius)
 		
+		-- write back 
+		theZone.bounds = bounds 
 	elseif theZone.isPoly then
 		local poly = theZone.poly -- ref copy!
 		-- create the four points
-		local ll = cfxZones.createPointFromPoint(poly[1])
-		local lr = cfxZones.createPointFromPoint(poly[1])
-		local ul = cfxZones.createPointFromPoint(poly[1])
-		local ur = cfxZones.createPointFromPoint(poly[1])
-		
+		local p = cfxZones.createPointFromPoint(poly[1])
 		local pRad = dcsCommon.dist(theZone.point, poly[1]) -- rRad is radius for polygon from theZone.point 
 		
 		-- now iterate through all points and adjust bounds accordingly 
-		for v=2, #poly do 
-			local vertex = poly[v]
-			if (vertex.x < ll.x) then ll.x = vertex.x; ul.x = vertex.x end 
-			if (vertex.x > lr.x) then lr.x = vertex.x; ur.x = vertex.x end 
-			if (vertex.z < ul.z) then ul.z = vertex.z; ur.z = vertex.z end
-			--if (vertex.z > ll.z) then ll.z = vertex.z; lr.z = vertex.z end
-			if (vertex.z > ur.z) then ur.z = vertex.z; ul.z = vertex.z end 			
-			local dp = dcsCommon.dist(theZone.point, vertex)
+		local lx, ly, mx, my = p.x, p.z, p.x, p.z  
+		for vtx=1, #poly do 
+			local v = poly[vtx]
+			if v.x < lx then lx = v.x end 
+			if v.x > mx then mx = v.x end 
+			if v.z < ly then ly = v.z end 
+			if v.z > my then my = v.z end 	
+			local dp = dcsCommon.dist(theZone.point, v)
 			if dp > pRad then pRad = dp end -- find largst distance to vertex
 		end
 		
-		-- now keep the new point references
-		-- and store them in the zone's bounds
-		bounds.ll = ll
-		bounds.lr = lr
-		bounds.ul = ul
-		bounds.ur = ur 
-		-- we may need to ascertain why we need ul, ur, ll, lr instead of just ll and ur 
+		theZone.bounds.ul = dcsCommon.createPoint(lx, 0, my)
+		theZone.bounds.ur = dcsCommon.createPoint(mx, 0, my)
+		theZone.bounds.ll = dcsCommon.createPoint(lx, 0, ly)
+		theZone.bounds.lr = dcsCommon.createPoint(mx, 0, ly)
 		-- store pRad 
 		theZone.pRad = pRad -- not sure we'll ever need that, but at least we have it
-
 	else 
 		-- huston, we have a problem
 		if cfxZones.verbose then 

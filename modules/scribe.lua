@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "1.1.0"
+scribe.version = "2.0.0"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -12,6 +12,7 @@ VERSION HISTORY
 	1.0.0 Initial Version 
 	1.0.1 postponed land, postponed takeoff, unit_lost 
 	1.1.0 supports persistence's SHARED ability to share data across missions
+	2.0.0 support for main menu 
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
@@ -488,6 +489,12 @@ function scribe.startPlayerGUI()
 	-- note: currently assumes single-player groups
 	-- in preparation of single-player 'commandForUnit'
 	-- ASSUMES SINGLE-UNIT PLAYER GROUPS!
+	local mainMenu = nil 
+	if scribe.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(scribe.mainMenu) -- nilling both next params will return menus[0]
+	end 
+
+
 	for uName, uData in pairs(cfxMX.playerUnitByName) do 
 		local unitInfo = {}
 		-- try and access each unit even if we know that the 
@@ -508,7 +515,7 @@ function scribe.startPlayerGUI()
 		unitInfo.uID = uData.unitId
 		unitInfo.theType = theType
 		unitInfo.cat = cfxMX.groupTypeByName[gName]
-		unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu)
+		unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu, mainMenu)
 		unitInfo.checkData = missionCommands.addCommandForGroup(unitInfo.gID, "Get Pilot's Statistics", unitInfo.root, scribe.redirectCheckData, unitInfo)
 	end
 end
@@ -524,6 +531,24 @@ function scribe.readConfigZone()
 	scribe.verbose = theZone.verbose 
 	scribe.hasGUI = theZone:getBoolFromZoneProperty("hasGUI", true) 
 	scribe.uiMenu = theZone:getStringFromZoneProperty("uiMenu", "Mission Logbook")
+	
+	scribe.name = "scribeConfig" -- zones comaptibility 
+	
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu then 
+			local mainMenu = radioMenu.mainMenus[attachTo]
+			if mainMenu then 
+				scribe.mainMenu = mainMenu 
+			else 
+				trigger.action.outText("+++scribe: cannot find super menu <" .. attachTo .. ">", 30)
+			end
+		else 
+			trigger.action.outText("+++scribe: REQUIRES radioMenu to run before scribe. 'AttachTo:' ignored.", 30)
+		end 
+	end 	
+	
+	
 	scribe.greetPlayer = theZone:getBoolFromZoneProperty("greetPlayer", true)
 	scribe.byePlayer = theZone:getBoolFromZoneProperty("byebyePlayer", true) 
 	scribe.landings = theZone:getBoolFromZoneProperty("landings", true) 

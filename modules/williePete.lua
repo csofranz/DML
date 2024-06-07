@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "2.0.2"
+williePete.version = "2.0.3"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -19,6 +19,7 @@ williePete.requiredLibs = {
 		  - getFirstLivingPlayerInGroupNamed()
 	2.0.1 - added Harrier's FFAR M156 WP
 	2.0.2 - hardened playerUpdate() 
+	2.0.3 - further hardened playerUpdate()
 --]]--
 
 williePete.willies = {}
@@ -635,7 +636,7 @@ function williePete.playerUpdate()
 					end
 				end
 			else 
-				trigger.action.outText("+++wp: strange issues with group <" .. gName .. ">, does not exist. Skipped in playerUpdate()", 30)
+				trigger.action.outText("+++wp: strange issues with group <" .. unitInfo.gName .. ">, does not exist. Skipped in playerUpdate()", 30)
 			end
 			if dropUnit then 
 				-- all outside, remove from zone check-in 

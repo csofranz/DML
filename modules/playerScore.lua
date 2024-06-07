@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "3.2.0"
+cfxPlayerScore.version = "3.3.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -15,6 +15,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	3.0.2 - interface with ObjectDestructDetector for scoring scenery objects
 	3.1.0 - shared data for persistence
 	3.2.0 - integration with bank 
+	3.3.0 - case INsensitivity for all typeScore objects 
 --]]--
 
 cfxPlayerScore.requiredLibs = {
@@ -34,7 +35,7 @@ cfxPlayerScore.killZones = {} -- when set, kills only count here
 -- typeScore: dictionary sorted by typeString for score 
 -- extend to add more types. It is used by unitType2score to 
 -- determine the base unit score  
-cfxPlayerScore.typeScore = {}
+cfxPlayerScore.typeScore = {} -- ALL UPPERCASE NOW!!!
 cfxPlayerScore.lastPlayerLanding = {} -- timestamp, by player name  
 cfxPlayerScore.delayBetweenLandings = 30 -- seconds to count as separate landings, also set during take-off to prevent janky t/o to count. 
 cfxPlayerScore.aircraft = 50 
@@ -214,9 +215,14 @@ function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
 	if not inVictim then return 0 end
 	if not killSide then killSide = -1 end 
 	local inName = inVictim:getName()
+	if cfxPlayerScore.verbose then 
+		trigger.action.outText("+++PScr: ob2sc entry to resolve name <" .. inName .. ">", 30)
+	end 
 	if dcsCommon.isSceneryObject(inVictim) then 
 		local desc = inVictim:getDesc() 
-		if not desc then return 0 end 
+		if not desc then
+			return 0 
+		end 
 		-- same as object destruct detector to 
 		-- avoid ID changes 
 		inName = desc.typeName 
@@ -231,14 +237,19 @@ function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
 	if type(inName) == "number" then 
 		inName = tostring(inName)
 	end
-	
+	if cfxPlayerScore.verbose then 
+		trigger.action.outText("+++PScr: stage II inName: <" .. inName .. ">", 30)
+	end
+
 	-- since 2.7x DCS turns units into static objects for 
 	-- cooking off, so first thing we need to do is do a name check 
-	local objectScore = cfxPlayerScore.typeScore[inName]
+	local objectScore = cfxPlayerScore.typeScore[inName:upper()]
 	if not objectScore then 
 		-- try the type desc 
 		local theType = inVictim:getTypeName()
-		objectScore = cfxPlayerScore.typeScore[theType]
+		if theType then 
+			objectScore = cfxPlayerScore.typeScore[theType:upper()]
+		end 
 	end
 	
 	if type(objectScore) == "string" then 
@@ -272,17 +283,17 @@ function cfxPlayerScore.unit2score(inUnit)
 	-- simply extend by adding items to the typescore table.concat
 	-- we first try by unit name. This allows individual
 	-- named hi-value targets to have individual scores 
-	local uScore = cfxPlayerScore.typeScore[vicName]
+	local uScore = cfxPlayerScore.typeScore[vicName:upper()]
 
 	-- see if all members of group score 
-	if not uScore then 
+	if (not uScore) and vicGroup then 
 		local grpName = vicGroup:getName()
-		uScore = cfxPlayerScore.typeScore[grpName]
+		uScore = cfxPlayerScore.typeScore[grpName:upper()]
 	end
 	
-	if uScore == nil then 
+	if not uScore then 
 		-- WE NOW TRY TO ACCESS BY VICTIM'S TYPE STRING		
-		uScore = cfxPlayerScore.typeScore[vicType]
+		uScore = cfxPlayerScore.typeScore[vicType:upper()]
 	else 
 
 	end 
@@ -291,7 +302,7 @@ function cfxPlayerScore.unit2score(inUnit)
 		uScore = tonumber(uScore)
 	end
 
-	if uScore == nil then uScore = 0 end 
+	if not uScore then uScore = 0 end 
 	if uScore > 0 then return uScore end 
 	
 	-- only apply base scores when the lookup did not give a result
@@ -546,13 +557,13 @@ function cfxPlayerScore.isNamedUnit(theUnit)
 	local theName = "(cfx_none)"
 	if type(theUnit) == "string" then 
 		theName = theUnit -- direct name assignment
-		-- WARNING: NO EXIST CHECK DONE!
 	else 
+		-- WARNING: NO EXIST CHECK DONE!
 		-- after kill, unit is dead, so will no longer exist!
 		theName = theUnit:getName() 
 		if not theName then return false end 
 	end
-	if cfxPlayerScore.typeScore[theName] then 
+	if cfxPlayerScore.typeScore[theName:upper()] then 
 		return true
 	end
 	return false 
@@ -743,6 +754,9 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- we are only getting called when and if 
 	-- a kill occured and killer was a player 
 	-- and target exists
+	if cfxPlayerScore.verbose then 
+		trigger.action.outText("+++PScr: enter kill detected", 30)
+	end 
 	local killer = theEvent.initiator
 	local killerName = killer:getPlayerName()
 	if not killerName then killerName = "<nil>" end
@@ -757,6 +771,9 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- was it a scenery object? 
 	local wasBuilding = dcsCommon.isSceneryObject(victim)
 	if wasBuilding then 
+		if cfxPlayerScore.verbose then 
+			trigger.action.outText("+++PScr: killed objectz was a map/scenery object", 30)
+		end 
 		-- these objects have no coalition; we simply award the score if 
 		-- it exists in look-up table. 
 		local staticScore = cfxPlayerScore.object2score(victim, killSide)
@@ -1431,8 +1448,19 @@ function cfxPlayerScore.start()
 	-- identify and process a score table zones
 	local theZone = cfxZones.getZoneByName("playerScoreTable") 
 	if theZone then 
+--		trigger.action.outText("Reading custom player score table", 30)
 		-- read all into my types registry, replacing whatever is there
-		cfxPlayerScore.typeScore = cfxZones.getAllZoneProperties(theZone)
+		cfxPlayerScore.typeScore = theZone:getAllZoneProperties(true) -- true = get all properties in UPPER case 
+--		local n = dcsCommon.getSizeOfTable(cfxPlayerScore.typeScore)
+--		trigger.action.outText("Table has <" .. n .. "> entries:", 30)
+		if true then 
+			--trigger.action.outText("Custom PlayerScore Type Score Table:", 30)
+			for name, val in pairs (cfxPlayerScore.typeScore) do 
+--				trigger.action.outText("ps[" .. name .. "]=<" .. val .. ">", 30)
+			end 
+		end
+	else 
+		--trigger.action.outText("No custom score defined", 30)
 	end 
 	
 	-- read score tiggers and values

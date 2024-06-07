@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.7"
+dcsCommon.version = "3.0.8"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -20,7 +20,10 @@ dcsCommon.version = "3.0.7"
 	   - new pointXpercentYdegOffAB()
 3.0.6  - new arrayContainsStringCaseInsensitive()
 3.0.7  - fixed small bug in wildArrayContainsString 
-
+3.0.8  - deepCopy() and deepTableCopy() alternates to clone() to patch 
+         around a strange DCS 2.9 issue 
+		 Kiowa added to Troop Carriers
+		 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -33,7 +36,7 @@ dcsCommon.version = "3.0.7"
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P"} -- Ka-50, Apache and Gazelle can't carry troops
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D"} -- Ka-50, Apache and Gazelle can't carry troops
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
@@ -1200,6 +1203,7 @@ dcsCommon.version = "3.0.7"
 	-- clone is a recursive clone which will also clone
 	-- deeper levels, as used in units 
 	function dcsCommon.clone(orig, stripMeta)
+	--[[-- code seems to break with DCS 2.9
 		if not orig then return nil end 
 		local orig_type = type(orig)
 		local copy
@@ -1226,7 +1230,57 @@ dcsCommon.version = "3.0.7"
 			copy = orig
 		end
 		return copy
+	--]]--
+		if stripMeta then 
+			trigger.action.outText("+++common: warning: stripmetatable no longer supported.", 30)
+		end
+		return dcsCommon.deepTableCopy(orig)
 	end
+	
+	-- deepCopy from http://lua-users.org/wiki/CopyTable
+	function dcsCommon.deepcopy(orig, copies)
+		if not orig then return nil end 
+		copies = copies or {}
+		local orig_type = type(orig)
+		local copy
+		if orig_type == 'table' then
+			if copies[orig] then
+				copy = copies[orig]
+			else
+				copy = {}
+				copies[orig] = copy
+				for orig_key, orig_value in next, orig, nil do
+					copy[deepcopy(orig_key, copies)] = deepcopy(orig_value, copies)
+				end
+				setmetatable(copy, deepcopy(getmetatable(orig), copies))
+			end
+		else -- number, string, boolean, etc
+			copy = orig
+		end
+		return copy
+	end
+
+	-- deepTableCopy from Mist (thanks Grimes!)
+	function dcsCommon.deepTableCopy(object)
+		if not object then return nil end 
+		local lookup_table = {}
+		local function _copy(object)
+			if type(object) ~= "table" then
+				return object
+			elseif lookup_table[object] then
+				return lookup_table[object] -- break cycles 
+			end
+			local new_table = {}
+			lookup_table[object] = new_table
+			for index, value in pairs(object) do
+				new_table[_copy(index)] = _copy(value)
+			end
+			return setmetatable(new_table, getmetatable(object))
+		end
+		return _copy(object)
+	end
+	
+	
 
 	function dcsCommon.copyArray(inArray)
 		if not inArray then return nil end 

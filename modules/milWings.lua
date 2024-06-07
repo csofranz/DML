@@ -406,7 +406,7 @@ end
 -- Event Handler
 --
 function milWings:onEvent(theEvent)
-if not theEvent then return end 
+	if not theEvent then return end 
 	if not theEvent.initiator then return end 
 	local theUnit = theEvent.initiator 
 	if not theUnit.getGroup then return end 

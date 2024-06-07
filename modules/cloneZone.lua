@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.2.1"
+cloneZones.version = "2.3.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -52,6 +52,10 @@ cloneZones.respawnOnGroupID = true
 		  - persistence: persist oSize and set lastSize 
 	2.2.1 - verbosity updates for post-check 
 		  - if cloned group is late activation, turn it off 
+	2.3.0 - added optional cWipe? attribute to resolve possible conflict
+			(undocumented, just to provide lazy people with a migration
+			path) with wiper module
+		  - using "wipe?" will now create a warning 
 --]]--
 
 --
@@ -238,6 +242,11 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deClone?", "none")
 	elseif theZone:hasProperty("wipe?") then 
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty("wipe?", "none")
+		trigger.action.outText("+++clnZ: WARNING - Clone Zone <" .. theZone.name .. ">: attribute 'wipe?' is deprecated for clone zones!", 30)
+		-- note possible conflict with wiper module, so we add the new 
+		-- cWipe? attribute 
+	elseif theZone:hasProperty("cWipe?") then 
+		theZone.deSpawnFlag = theZone:getStringFromZoneProperty("cWipe?", "none")
 	end
 	
 	if theZone.deSpawnFlag then 

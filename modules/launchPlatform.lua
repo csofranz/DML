@@ -1,5 +1,5 @@
 launchPlatform = {}
-launchPlatform.version = "0.0.0"
+launchPlatform.version = "0.5.0"
 launchPlatform.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -55,7 +55,9 @@ function launchPlatform.launchAtTargetZone(coa, tgtZone, theType) -- gets closes
 	-- get closest launcher for target
 	local tgtPoint = tgtZone:getPoint() 
 	local src, dist = cfxZones.getClosestZone(tgtPoint, platforms)
-	trigger.action.outText("+++LP: chosen <" .. src.name .. "> as launch platform", 30)
+	if launchPlatform.verbose then 
+		trigger.action.outText("+++LP: chosen <" .. src.name .. "> as launch platform", 30)
+	end 
 	
 	local theLauncher = launchPlatform.launchForPlatform(coa, src, tgtPoint, tgtZone)
 	if not theLauncher then 
@@ -74,7 +76,9 @@ function launchPlatform.launchAtTargetZone(coa, tgtZone, theType) -- gets closes
 end 
 
 function launchPlatform.asynchRemovePlatform(args)
-	trigger.action.outText("LP: asynch remove for group <" .. args .. ">", 30)
+	if launchPlatform.verbose then 
+		trigger.action.outText("+++LP: asynch remove for group <" .. args .. ">", 30)
+	end 
 	local theGroup = Group.getByName(args)
 	if not theGroup then return end 
 	Group.destroy(theGroup)
@@ -83,11 +87,11 @@ end
 function launchPlatform.createData(thePoint, theTarget, targetZone, radius, name, num, wType)
 	-- if present, we can use targetZone with some intelligence 
 	if not thePoint then 
-		trigger.action.outText("NO POINT", 30)
+		trigger.action.outText("+++LP: NO POINT", 30)
 		return nil 
 	end 
 	if not theTarget then 
-		trigger.action.outText("NO TARGET", 30)
+		trigger.action.outText("+++LP: NO TARGET", 30)
 		return nil 
 	end 
 	
@@ -168,7 +172,9 @@ function launchPlatform.createData(thePoint, theTarget, targetZone, radius, name
 	-- if inside camp 
 	local hiPrioTargets
 	if targetZone and targetZone.cloners and #targetZone.cloners > 0 then 
-		trigger.action.outText("+++LP: detected <" .. targetZone.name .. "> is camp with <" .. #targetZone.cloners .. "> res-points, re-targeting hi-prio", 30)
+		if launchPlatform.verbose then 
+			trigger.action.outText("+++LP: detected <" .. targetZone.name .. "> is camp with <" .. #targetZone.cloners .. "> res-points, re-targeting hi-prio", 30)
+		end 
 		hiPrioTargets = targetZone.cloners 
 		radius = radius / 10 -- much smaller error 
 	end 

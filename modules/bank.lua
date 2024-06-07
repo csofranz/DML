@@ -148,3 +148,8 @@ if not bank.start() then
 	trigger.action.outText("bank aborted: missing libraries", 30)
 	bank = nil 
 end
+
+--[[--
+  Add 'creditLine' input to directly load a value into the bank?
+
+--]]--

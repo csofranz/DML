@@ -1,5 +1,5 @@
 flareZone = {}
-flareZone.version = "1.1.0"
+flareZone.version = "1.2.0"
 flareZone.verbose = false 
 flareZone.name = "flareZone" 
 
@@ -8,6 +8,7 @@ flareZone.name = "flareZone"
 	1.1.0 - improvements to verbosity 
 	      - OOP 
 		  - small bugfix in doFlare assignment 
+	1.2.0 - new rndLoc attribute 
 --]]--
 flareZone.requiredLibs = {
 	"dcsCommon", 
@@ -50,6 +51,8 @@ function flareZone.addFlareZone(theZone)
 	
 	theZone.salvoDurationL, theZone.salvoDurationH = theZone:getPositiveRangeFromZoneProperty("duration", 1)
 	
+	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", flase)
+	
 	if theZone.verbose or flareZone.verbose then 
 		trigger.action.outText("+++flrZ: new flare <" .. theZone.name .. ">, color (" .. theZone.flareColor .. ")", 30)
 	end
@@ -59,15 +62,20 @@ end
 function flareZone.launch(theZone)
 	local color = theZone.flareColor
 	if color < 0 then color = math.random(4) - 1 end 
-	
-	local loc = cfxZones.getPoint(theZone, true) -- with height 
+	local loc 
+	if theZone.rndLoc then 
+		locFlat = theZone:randomPointInZone()
+		loc = {x = locFlat.x, y = land.getHeight({x = locFlat.x, y = locFlat.z}), z = locFlat.z}
+	else 
+		loc = cfxZones.getPoint(theZone, true) -- with height 
+	end
 	loc.y = loc.y + theZone.flareAlt
 	-- calculate azimuth 
 	local azimuth = cfxZones.randomInRange(theZone.azimuthL, theZone.azimuthH)  -- in deg 
 
-	if flareZone.verbose or theZone.verbose then 
-		trigger.action.outText("+++flrZ: launching <" .. theZone.name .. ">, c = " .. color .. " (" .. dcsCommon.flareColor2Text(color) .. "), azi <" .. azimuth .. "> [" .. theZone.azimuthL .. "-" .. theZone.azimuthH .. "]", 30)
-	end
+--	if flareZone.verbose or theZone.verbose then 
+--		trigger.action.outText("+++flrZ: launching <" .. theZone.name .. ">, c = " .. color .. " (" .. dcsCommon.flareColor2Text(color) .. "), azi <" .. azimuth .. "> [" .. theZone.azimuthL .. "-" .. theZone.azimuthH .. "]", 30)
+--	end
 	azimuth = azimuth * 0.0174533 -- in rads
 	
 	trigger.action.signalFlare(loc, color, azimuth)
@@ -80,6 +88,9 @@ function flareZone.update()
 	-- launch if flag banged
 	for idx, theZone in pairs(flareZone.flares) do 
 		if cfxZones.testZoneFlag(theZone, theZone.doFlare, theZone.flareTriggerMethod, "lastDoFlare") then 
+			if flareZone.verbose or theZone.verbose then 
+				trigger.action.outText("+++flr: triggerd flares for <" .. theZone.name .. "> on input? <" .. theZone.doFlare .. ">", 30)
+			end
 			local salvo = cfxZones.randomInRange(theZone.salvoSizeL, theZone.salvoSizeH)
 			if salvo < 2 then 
 				-- one-shot
