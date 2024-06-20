@@ -114,7 +114,7 @@ function sweeper.readConfig()
 	end 
 	sweeper.name = "sweeperConfig" -- zones comaptibility 
 	sweeper.interval = theZone:getNumberFromZoneProperty("interval", 5 * 60)
-	sewwper.verbose = theZone.verbose 
+	sweeper.verbose = theZone.verbose 
 end
 
 function sweeper.start()
