@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "2.1.0" 
+autoCSAR.version = "2.2.0" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -17,7 +17,26 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 	2.0.1 - fix for coalition change when ejected player changes coas or is forced to neutral 
 	      - GC 
 	2.1.0 - persistence support 
+	2.2.0 - new noExploit option in config 
+		  - no csar mission if pilot lands too close to airbase or farp 
+		    and noExploit is on 
 --]]--
+autoCSAR.forbidden = {} -- indexed by name, contains point 
+autoCSAR.killDist = 2100 -- meters from center of forbidden 
+
+function autoCSAR.collectForbiddenZones()
+	local allYourBase = world.getAirbases()
+	for idx, aBase in pairs(allYourBase) do 
+		-- collect airbases and farps, ignore ships 
+		local desc = aBase:getDesc() 
+		local cat = desc.category 
+		if cat == 0 or cat == 1 then 
+			local name = aBase:getName() 
+			local p = aBase:getPoint()
+			autoCSAR.forbidden[name] = p 
+		end 
+	end 
+end 
 
 function autoCSAR.removeGuy(args)
 	local theGuy = args.theGuy
@@ -53,6 +72,28 @@ function autoCSAR.createNewCSAR(theUnit, coa)
 	if coa == 2 and not autoCSAR.blueCSAR then 
 		return -- no blue rescue
 	end
+	-- noExploit burnup 
+	if autoCSAR.noExploit then 
+		local p = theUnit:getPoint()
+		local burned = false 
+		for name, aPoint in pairs(autoCSAR.forbidden) do
+			local d = dcsCommon.distFlat(p, aPoint) 
+			if  d < autoCSAR.killDist then 
+				if autoCSAR.verbose then 
+					trigger.action.outText("+++aCSAR: BURNED ejection touchdown: too close to <" .. name .. ">", 30)
+				end
+				burned = true
+			end
+		end 
+		if burned then 
+			trigger.action.outText("Pilot made it safely to ground, and was taken into custody immediately", 30)
+			-- try and remove the guy now 
+			Unit.destroy(theUnit)
+			return 
+		end 
+	end	
+	
+	-- end burnup code 
 	
 	-- for later expansion
 	local theGroup = theUnit:getGroup()
@@ -130,7 +171,6 @@ function autoCSAR:onEvent(event)
 
 	if event.id == 6 then -- eject, start tracking, remember coa 
 		local coa = event.initiator:getCoalition()
-
 		-- see if pilot has ejector seat and prepare to connect one with the other 
 		local info = nil 
 		if event.target and event.target:isExist() then 
@@ -160,10 +200,7 @@ end
 function autoCSAR.readConfigZone()
 	local theZone = cfxZones.getZoneByName("autoCSARConfig") 
 	if not theZone then 
-		theZone = cfxZones.createSimpleZone("autoCSARConfig")
-		if autoCSAR.verbose then 
-			trigger.action.outText("+++aCSAR: NO config zone!", 30)
-		end 
+		theZone = cfxZones.createSimpleZone("autoCSARConfig") 
 	end 
 	autoCSAR.verbose = theZone.verbose 
 	autoCSAR.redCSAR = theZone:getBoolFromZoneProperty("red", true)
@@ -178,6 +215,9 @@ function autoCSAR.readConfigZone()
 
 	autoCSAR.seaCSAR = theZone:getBoolFromZoneProperty("seaCSAR", true)
 
+	autoCSAR.noExploit = theZone:getBoolFromZoneProperty("noExploit", false)
+	autoCSAR.killDist = theZone:getNumberFromZoneProperty("killDist", 2100)
+	
 	if autoCSAR.verbose then 
 		trigger.action.outText("+++aCSAR: read config", 30)
 	end 
@@ -248,6 +288,9 @@ function autoCSAR.start()
 		-- now load my data 
 		autoCSAR.loadData()
 	end
+	
+	-- collect forbidden zones if noExploit is active 
+	autoCSAR.collectForbiddenZones()
 	
 	-- start GC
 	timer.scheduleFunction(autoCSAR.GC, {}, timer.getTime() + 1)

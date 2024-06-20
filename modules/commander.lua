@@ -4,7 +4,7 @@
 -- *** EXTENDS ZONES: 'pathing' attribute 
 --
 cfxCommander = {}
-cfxCommander.version = "2.0.0"
+cfxCommander.version = "2.0.1"
 --[[-- VERSION HISTORY
  - 1.0.5 - createWPListForGroupToPointViaRoads: detect no road found 
  - 1.0.6 - build in more group checks in assign wp list 
@@ -35,6 +35,7 @@ cfxCommander.version = "2.0.0"
 		 - hardened performCommands() 
          - createWPListForGroupToPoint() supports moveFormation 
          - makeGroupGoTherePreferringRoads() supports moveFormation 
+- 2.0.1  - hardened createBasicWaypoint when no formation given (default to echelonR
 --]]--
 
 cfxCommander.requiredLibs = {
@@ -259,6 +260,8 @@ function cfxCommander.createBasicWaypoint(point, speed, formation)
 	
 	if not speed then speed = 6 end -- 6 m/s = 20 kph
 	wp.speed = speed 
+	
+	if not formation then formation = "EchelonR" end 
 	
 	if cfxCommander.forceOffRoad then 
 		formation = "Off Road"

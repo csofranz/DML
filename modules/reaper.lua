@@ -1,5 +1,5 @@
 reaper = {}
-reaper.version = "1.0.0"
+reaper.version = "1.1.0"
 reaper.requiredLibs = {
 	"dcsCommon",
 	"cfxZones",  
@@ -8,8 +8,21 @@ reaper.requiredLibs = {
 VERSION HISTORY
 
  1.0.0 - Initial Version 
- 
-
+ 1.1.0 - Individual status 
+	   - cycle target method
+	   - cycle? attribute 
+	   - restructured menus
+	   - added cycle target 
+	   - single status reprots full group 
+	   - drones have AFAC task instead of Reconnaissance
+	   - Setting enroute task for group once target spotted 
+	   - compatible with Kiowa's L2MUM 
+	   - (undocumented) freq attribute for drones (in MHz)
+	   - completely rewrote scanning method (performance)  
+	   - added FAC task 
+	   - split task generation from wp generation 
+	   - updated reaper naming, uniqueNames attribute (undocumented)
+	   
 --]]--
 
 reaper.zones = {}-- all zones 
@@ -17,6 +30,12 @@ reaper.scanning = {} -- zones that are scanning (looking for tgt). by zone name
 reaper.tracking = {} -- zones that are tracking tgt. by zone name
 reaper.scanInterval = 10 -- seconds 
 reaper.trackInterval = 0.3 -- seconds 
+reaper.uuidCnt = 0
+
+function reaper.uuid(instring)
+	reaper.uuidCnt = reaper.uuidCnt + 1
+	return instring .. "-R" .. reaper.uuidCnt
+end
 
 -- reading reaper zones 
 function reaper.readReaperZone(theZone)
@@ -25,6 +44,7 @@ function reaper.readReaperZone(theZone)
 	if theZone.myType == "MQ-9 Reaper" then 
 		theZone.alt = 9500 
 	else theZone.alt = 7500 end theZone.alt = theZone:getNumberFromZoneProperty("alt", theZone.alt)
+	theZone.freq = theZone:getNumberFromZoneProperty("freq", 133) * 1000000 -- in MHz 
 	theZone.coa = theZone:getCoalitionFromZoneProperty("coalition", 2)
 	if theZone.coa == 0 then 
 		trigger.action.outText("+++Reap: Zone <" .. theZone.name .. "> is of coalition NEUTRAL. Switched to BLUE", 30)
@@ -44,6 +64,7 @@ function reaper.readReaperZone(theZone)
 	theZone.autoRespawn = theZone:getBoolFromZoneProperty("autoRespawn", false) 
 	theZone.launchUI = theZone:getBoolFromZoneProperty("launchUI", true)
 	theZone.statusUI = theZone:getBoolFromZoneProperty("statusUI", true)
+	theZone.uniqueNames = theZone:getBoolFromZoneProperty("uniqueNames", true) -- undocumented, leave true 
 	if theZone:hasProperty("launch?") then 
 		theZone.launch = theZone:getStringFromZoneProperty("launch?", "<none>")
 		theZone.launchVal = theZone:getFlagValue(theZone.launch)
@@ -51,7 +72,12 @@ function reaper.readReaperZone(theZone)
 	if theZone:hasProperty("status?") then 
 		theZone.status = theZone:getStringFromZoneProperty("status?", "<none>")
 		theZone.statusVal = theZone:getFlagValue(theZone.status)
+	end
+	if theZone:hasProperty("cycle?") then 
+		theZone.cycle = theZone:getStringFromZoneProperty("cycle?", "<none>")
+		theZone.cycleVal = theZone:getFlagValue(theZone.cycle)
 	end 
+	
 	theZone.hasSpawned = false 
 	
 	if theZone.onStart then 
@@ -61,10 +87,24 @@ end
 
 -- spawn a drone from a zone 
 function reaper.spawnForZone(theZone, ack)
+	-- delete any group with the same name 
+	if not theZone.uniqueNames then 
+		local exister = Group.getByName(theZone.name)
+		if exister then Group.destroy(exister) end 
+	end 
+	
 	-- create spawn data
-	local gdata = dcsCommon.createEmptyGroundGroupData (dcsCommon.uuid(theZone.name))
-	gdata.task = "Reconnaissance"
+	local rName
+	if theZone.uniqueNames then 
+		rName = reaper.uuid(theZone.name)
+	else 
+		rName = theZone.name
+	end 
+	
+	local gdata = dcsCommon.createEmptyGroundGroupData (rName) -- warning: non-unique unit names, will replace previous 
+	gdata.task = "AFAC"
 	gdata.route = {} 
+	
 	-- calculate left and right 
 	local p = theZone:getPoint() 
 	local left, right 
@@ -78,22 +118,30 @@ function reaper.spawnForZone(theZone, ack)
 	end 
 	gdata.x = left.x 
 	gdata.y = left.z 
+	gdata.frequency = theZone.freq 
 
 	-- build the unit data
 	local unit = {}
-	unit.name = dcsCommon.uuid(theZone.name)
+	unit.name = rName -- same as group 
 	unit.x = left.x 
 	unit.y = left.z 
 	unit.type = theZone.myType 
 	unit.skill = "High"
 	if theZone.myType == "MQ-9 Reaper" then 
 		unit.speed = 55
---		unit.alt = 9500 
 	else 
---		unit.alt = 7500
 		unit.speed = 33 
 	end 
 	unit.alt = theZone.alt 
+	
+	if theZone.uniqueNames then
+	else 
+		if theZone.reaperGID and theZone.reaperUID then -- also re-use groupID
+			gdata.groupId = theZone.reaperGID
+			unit.unitId = theZone.reaperUID 
+			trigger.action.outText("re-using data from old <" .. theZone.name .. ">", 30)
+		end
+	end 
 	
 	-- add to group 
 	gdata.units[1] = unit 
@@ -112,7 +160,8 @@ function reaper.spawnForZone(theZone, ack)
 		trigger.action.outText("+++Reap: failed to spawn for zone <" .. theZone.name .. ">", 30)
 		return 
 	end  
-	
+	theZone.reaperGID = theGroup:getID()
+	theZone.reaperUID = theGroup:getUnit(1):getID() 
 	if theZone.verbose or reaper.verbose then 
 		trigger.action.outText("+++reap: Spawned <" .. theGroup:getName() .. "> reaper", 30)
 	end
@@ -145,7 +194,75 @@ function reaper.cleanUp(theZone)
 	theZone.theSpot = nil 
 end
 
-function reaper.createInitialWP(p, alt, speed)
+function reaper.createReaperTask(alt, speed, target, theZone)
+local task = {
+		["id"] = "ComboTask",
+		["params"] = {
+			["tasks"] = {
+				[1] = {
+					["enabled"] = true,
+					["auto"] = true,
+					["id"] = "FAC",
+					["number"] = 1,
+					["params"] = 
+					{}, -- end of ["params"]
+				}, -- end of [1]
+
+				[2] = {
+					["enabled"] = true,
+					["auto"] = true,
+					["id"] = "WrappedAction",
+					["number"] = 2,
+					["params"] = {
+						["action"] = {
+							["id"] = "EPLRS",
+							["params"] = {
+								["value"] = true,
+								["groupId"] = 1,
+							}, -- end of ["params"]
+						}, -- end of ["action"]
+					}, -- end of ["params"]
+				}, -- end of [2]
+				[3] = {
+					["enabled"] = true,
+					["auto"] = false,
+					["id"] = "Orbit",
+					["number"] = 3,
+					["params"] = {
+						["altitude"] = alt,
+						["pattern"] = "Race-Track",
+						["speed"] = speed,
+					}, -- end of ["params"]
+				}, -- end of [3]
+			}, -- end of ["tasks"]
+		}, -- end of ["params"]
+	} -- end of ["task"]
+	if theTarget and theZone then 
+--		local gID = theTarget:getGroup():getID() 
+		local gID = theTarget:getID() -- NOTE: theTarget is a GROUP!!!!
+		local task4 = {
+			["enabled"] = true,
+			["auto"] = false,
+			["id"] = "FAC_AttackGroup",
+			["number"] = 4,
+			["params"] = 
+			{
+				["number"] = 1,
+				["designation"] = "No",
+				["modulation"] = 0,
+				["groupId"] = gID,
+--				["callname"] = 1,
+--				["datalink"] = true,
+				["weaponType"] = 0, -- 9663676414,
+				["frequency"] = theZone.freq, -- 133000000,
+			}, -- end of ["params"]
+		} -- end of [4]
+		task.params.tasks[4] = task4 
+	end 
+	return task 
+end
+
+function reaper.createInitialWP(p, alt, speed) -- warning: target must be a GROUP 
 	local wp = {
 		["alt"] = alt,
 		["action"] = "Turning Point",
@@ -154,39 +271,7 @@ function reaper.createInitialWP(p, alt, speed)
 			["addopt"] = {}, -- end of ["addopt"]
 		}, -- end of ["properties"]
 		["speed"] = speed,
-		["task"] = {
-			["id"] = "ComboTask",
-			["params"] = {
-				["tasks"] = {
-					[1] = {
-						["enabled"] = true,
-						["auto"] = true,
-						["id"] = "WrappedAction",
-						["number"] = 1,
-						["params"] = {
-							["action"] = {
-								["id"] = "EPLRS",
-								["params"] = {
-									["value"] = true,
-									["groupId"] = 1,
-								}, -- end of ["params"]
-							}, -- end of ["action"]
-						}, -- end of ["params"]
-					}, -- end of [1]
-					[2] = {
-						["enabled"] = true,
-						["auto"] = false,
-						["id"] = "Orbit",
-						["number"] = 2,
-						["params"] = {
-							["altitude"] = alt,
-							["pattern"] = "Race-Track",
-							["speed"] = speed,
-						}, -- end of ["params"]
-					}, -- end of [2]
-				}, -- end of ["tasks"]
-			}, -- end of ["params"]
-		}, -- end of ["task"]
+		["task"] = {}, -- will construct later 
 		["type"] = "Turning Point",
 		["ETA"] = 0,
 		["ETA_locked"] = true,
@@ -195,69 +280,84 @@ function reaper.createInitialWP(p, alt, speed)
 		["speed_locked"] = true,
 		["formation_template"] = "",
 	} -- end of wp
+
+	wp.task = reaper.createReaperTask(alt, speed) -- no zone, no target 
 	return wp 
 end
 
--- scanning & tracking 
--- scanning looks for vehicles to track, and exectues much less often
--- tracking tracks a single vehicle and places a pointer on it 
-function reaper.findFirstEnemyUnitVisible(enemies, theZone)
-	local p = theZone.theUav:getPoint()
-	-- we assume a flat altitude of 7000m 
-	local visRange = theZone.alt * 1 -- based on tan(45) = 1 --> range = alt 
-	for idx, aGroup in pairs(enemies) do 
-		local theUnits = aGroup:getUnits()
-		-- optimization: only scan the first vehicle in group if it's in range	local theUnit = theUnits[1]
-		local theUnit = theUnits[1]
-		if theUnit and Unit.isExist(theUnit) then 
-			up = theUnit:getPoint()
-			d = dcsCommon.distFlat(up, p)
-			if d < visRange then 
-				-- try each unit if it is visible from drone 
-				for idy, aUnit in pairs(theUnits) do 
-					local up = aUnit:getPoint()
-					up.y = up.y + 2 
-					if land.isVisible(p, up) then return aUnit end 
-				end 
+function reaper.setTarget(theZone, theTarget, cycled)
+-- add a laser tracker to this unit 
+	local lp = theTarget:getPoint()
+	local lat, lon, alt = coord.LOtoLL(lp)
+	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	
+	local theSpot = Spot.createLaser(theZone.theUav, {0, 2, 0}, lp, theZone.code)
+	if theZone.doSmoke then 
+		trigger.action.smoke(lp , theZone.smokeColor )
+	end 
+	trigger.action.outTextForCoalition(theZone.coa, "Drone <" .. theZone.name .. "> is tracking a <" .. theTarget:getTypeName() .. "> at " .. lat .. " " .. lon .. ", code " .. theZone.code, 30)
+	trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
+	theZone.theTarget = theTarget
+	if theZone.theSpot then 
+		theZone.theSpot:destroy()
+	end
+	theZone.theSpot = theSpot
+	-- put me in track mode 
+	reaper.tracking[theZone.name] = theZone		
+
+	if cycled then return end -- cycling inside group, no new tasking 
+	
+	-- now make tracking the group the drone's task 
+	local theGroup = theTarget:getGroup()
+	local theTask = reaper.createReaperTask(theZone.alt, theZone.speed, theGroup, theZone) -- create full FAC task with orbit and group engage
+	local theController = theZone.theUav:getController()
+	if not theController then 
+		trigger.action.outText("+++Rpr: UAV has no controller, getting group")
+		return 
+	end 
+	theController:setTask(theTask) -- replace with longer task  
+end
+
+function reaper.selectFromDetectedTargets(visTargets, theZone)
+	-- use (permanent?) detectedTargetList 
+	for idx, tData in pairs(visTargets) do 
+		if tData then
+			local theTarget = tData.object 
+			local nn = theTarget:getName()
+			if not nn or nn == "" then 
+				trigger.action.outText("+++reaper: shortcut on startup", 30)
+				return nil 
+			end  
+			if theTarget and theTarget.getGroup then -- it's not a group or static object
+				local d = theTarget:getDesc() 
+				if d.category == 2 then 
+					if theZone.verbose then 
+						trigger.action.outText("+++reap: identified <" .. tData.object:getName() .. "> as target for <" .. theZone.name .. ">")
+					end 
+					return tData.object
+				end
 			end
 		end
 	end
+	
+	return nil 
 end
 
-function reaper.scan()
-	-- how far can the drone see? we calculate with a 120 degree opening 
-	-- camera lens, making half angle = 45 --> tan(45) = 1
-	-- so the radius of the visible circle on the ground is 1 * altidude
-	timer.scheduleFunction(reaper.scan, {}, timer.getTime() + reaper.scanInterval)
-	filtered = {}
-	local redEnemies = coalition.getGroups(2, 2) -- blue ground vehicles 
-	local blueEnemeis = coalition.getGroups(1, 2) -- get ground vehicles 
+function reaper.scanALT() -- alternative, more efficient (?) method using unit's controller 
+	timer.scheduleFunction(reaper.scanALT, {}, timer.getTime() + reaper.scanInterval)
+	local filtered = {}
 	for name, theZone in pairs(reaper.scanning) do 
-		local enemies = redEnemies 
-		if theZone.coa == 2 then enemies = blueEnemeis end 
-		if Unit.isExist(theZone.theUav) then 
-			local theTarget = reaper.findFirstEnemyUnitVisible(enemies, theZone)
+		local theUAV = theZone.theUav
+		if Unit.isExist(theUAV) then 
+			-- get the controller 
+			local theController = theUAV:getController()
+			local visTargets = theController:getDetectedTargets(1, 2) 
+			local theTarget = reaper.selectFromDetectedTargets(visTargets, theZone)
 			if theTarget then 
 				-- add a laser tracker to this unit 
-				local lp = theTarget:getPoint()
-				local lat, lon, alt = coord.LOtoLL(lp)
-				lat, lon = dcsCommon.latLon2Text(lat, lon)
-				
-				local theSpot = Spot.createLaser(theZone.theUav, {0, 2, 0}, lp, theZone.code)
-				if theZone.doSmoke then 
-					trigger.action.smoke(lp , theZone.smokeColor )
-				end 
-				trigger.action.outTextForCoalition(theZone.coa, "Drone <" .. theZone.name .. "> is tracking a <" .. theTarget:getTypeName() .. "> at " .. lat .. " " .. lon .. ", code " .. theZone.code, 30)
-				trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
-				theZone.theTarget = theTarget
-				if theZone.theSpot then 
-					theZone.theSpot:destroy()
-				end
-				theZone.theSpot = theSpot
-				-- put me in track mode 
-				reaper.tracking[name] = theZone				
+				reaper.setTarget(theZone, theTarget)
 			else 
-				-- will scan again 
+				-- will scan again next round 
 				filtered[name] = theZone 
 			end 
 		else 
@@ -275,6 +375,7 @@ function reaper.scan()
 	end 
 	reaper.scanning = filtered 
 end
+
 
 function reaper.track()
 	local filtered = {}
@@ -310,27 +411,73 @@ function reaper.track()
 	timer.scheduleFunction(reaper.track, {}, timer.getTime() + reaper.trackInterval)
 end 
 
+function reaper.cycleTarget(theZone)
+	local coa = theZone.coa 
+	-- try and advance to the next target 
+	if not theZone.theUav or not Unit.isExist(theZone.theUav) then 
+		trigger.action.outTextForCoalition(coa, "Reaper <" .. theZone.name .. "> not on station, requries launch first", 30)
+		trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
+		return 
+	end 
+	if not theZone.theSpot or 
+	   not theZone.theUav or 
+	   not theZone.theTarget then 
+		trigger.action.outTextForCoalition(coa, "Reaper <" .. theZone.name .. "> is not tracking a target", 30)
+		trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
+		return 
+	end 
+	--when we get here, the reaper is tracking a target. get it's group 
+	local theUnit = theZone.theTarget
+	if not theUnit.getGroup then return end -- safety first 
+	local theGroup = theUnit:getGroup() 
+	local allTargets = theGroup:getUnits()
+	local filtered = {}
+	local i = 1
+	local tIndex = 1
+	-- filter and find the target with it's index 
+	for idx, aTgt in pairs(allTargets) do 
+		if Unit.isExist(aTgt) then 
+			if theUnit == aTgt then 
+				if theZone.verbose then 
+					trigger.action.outText("+++ reaper <" .. theZone.target .. ">: target index found : <" .. i .. ">", 30)
+				end
+				tIndex = i
+			end 
+			table.insert(filtered, aTgt)
+			i = i + 1
+		end 
+	end 
+	
+	local num = #filtered
+	if num < 2 then 
+		-- nothing to do, simply ack 
+		trigger.action.outTextForCoalition(coa, "<" .. theZone.name .. ">: Only one target left.", 30)
+		trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
+		return 
+	end 	
+	
+	-- increase tIndex 
+	tIndex = tIndex + 1
+	if tIndex > #filtered then tIndex = 1 end 
+	local newTarget = filtered[tIndex]
+	-- tell zone to target this new target 
+	reaper.setTarget(theZone, newTarget, true) -- also outputs text and action sound, true = cycled  
+end
+
 function reaper.update()
 	timer.scheduleFunction(reaper.update, {}, timer.getTime() + 1)
 
 	-- go through all my zones, and respawn those that have no 
 	-- uav but have autoRespawn active 
-	
 	for name, theZone in pairs(reaper.zones) do 
 		if theZone.autoRespawn and not theZone.theUav and theZone.hasSpawned then 
 			-- auto-respawn needs to kick in
 			reaper.scanning[name] = nil 
 			reaper.tracking[name] = nil 
-			if reaper.verbose or theZone.verbose then 
-				trigger.action.outText("+++reap: respawning for <" .. name .. ">", 30)
-			end 
 			reaper.spawnForZone(theZone)
 		end 
 		
 		if theZone.status and theZone:testZoneFlag(theZone.status, "change", "statusVal") then 
-			if theZone.verbose then 
-				trigger.action.outText("+++reap: Triggered status for zone <" .. name .. "> on <" .. theZone.status .. ">", 30)
-			end 
 			reaper.doSingleDroneStatus(theZone)
 		end 
 		
@@ -339,6 +486,10 @@ function reaper.update()
 			args[1] = theZone.coa -- = args[1]
 			args[2] = name -- = args[2] 
 			reaper.doLaunch(args)
+		end 
+		
+		if theZone.cycle and theZone:testZoneFlag(theZone.cycle, "change", "cycleVal") then 
+			reaper.cycleTarget(theZone)
 		end 
 	end
 	
@@ -356,45 +507,48 @@ end
 --
 function reaper.installFullUIForCoa(coa)
 	-- install "Drone Control" as root for red and blue 
-	
 	local mainMenu = nil 
 	if reaper.mainMenu then 
 		mainMenu = radioMenu.getMainMenuFor(reaper.mainMenu) -- nilling both next params will return menus[0]
 	end 
-	
 	local root = missionCommands.addSubMenuForCoalition(coa, reaper.menuName, mainMenu)
 	-- now install submenus 
-		local c1 = missionCommands.addCommandForCoalition(coa, "Drone Status", root, reaper.redirectDroneStatus, {coa,})
-		local r2 = missionCommands.addSubMenuForCoalition(coa, "Launch Drones", root)
-		reaper.installLaunchersForCoa(coa, r2)
+	reaper.installDCForCoa(coa, root)
 end
 
-function reaper.installLaunchersForCoa(coa, root)
-	-- WARNING: we currently install commands, may overflow!
---	trigger.action.outText("enter launchers builder", 30)
+function reaper.installDCForCoa(coa, root)
 	local filtered = {}
 	for name, theZone in pairs(reaper.zones) do 
-		if theZone.coa == coa and theZone.launchUI then 
+		if theZone.coa == coa and (theZone.statusUI or theZone.launchUI) then  
 			filtered[name] = theZone 
 		end 
 	end 
 	local n = dcsCommon.getSizeOfTable(filtered)
 	if n > 10 then 
-		trigger.action.outText("+++reap: WARNING too many (" .. n .. ") launchers for coa <" .. coa .. ">", 30)
+		trigger.action.outText("+++reap: WARNING too many (" .. n .. ") drones for coa <" .. coa .. ">", 30)
 		return 
 	end 
 	
 	for name, theZone in pairs(filtered) do 
---		trigger.action.outText("proccing " .. name, 30)
-		mnu = theZone.name .. ": " .. theZone.myType 
-		if bank and reaper.useCost then 
-			-- requires bank module
-			mnu = mnu .. "(§" .. theZone.cost .. ")" 
-		end 
+		local mnu = theZone.name .. ": " .. theZone.myType 
+		-- install menu for this drone
+		local r1 = missionCommands.addSubMenuForCoalition(coa, mnu, root)
+		-- install status and cycle target commands for this drone
 		local args = {coa, name, }
-		local r3 = missionCommands.addCommandForCoalition(coa, mnu, root, reaper.redirectLaunch, args)
+		if theZone.launchUI then 
+			mnu = "Launch " .. theZone.myType 
+			if bank and reaper.useCost then 
+				-- requires bank module
+				mnu = mnu .. " (§" .. theZone.cost .. ")" 
+			end
+			local r3 = missionCommands.addCommandForCoalition(coa, mnu, r1, reaper.redirectLaunch, args)
+		end 
+		if theZone.statusUI then 
+			local r2 = missionCommands.addCommandForCoalition(coa, "Status Update", r1, reaper.redirectSingleStatus, args)
+		end 
+		local r2 = missionCommands.addCommandForCoalition(coa, "Cycle target", r1, reaper.redirectCycleTarget, args)
 	end
-end
+end 
 
 function reaper.redirectDroneStatus(args)
 	timer.scheduleFunction(reaper.doDroneStatus, args, timer.getTime() + 0.1)
@@ -404,6 +558,13 @@ function reaper.redirectLaunch(args)
 	timer.scheduleFunction(reaper.doLaunch, args, timer.getTime() + 0.1)
 end 
 
+function reaper.redirectSingleStatus(args)
+	timer.scheduleFunction(reaper.doSingleStatusM, args, timer.getTime() + 0.1)
+end
+
+function reaper.redirectCycleTarget(args)
+	timer.scheduleFunction(reaper.doCylcleTarget, args, timer.getTime() + 0.1)
+end  
 --
 -- DML API for UI
 --
@@ -483,14 +644,12 @@ function reaper.doDroneStatus(args)
 	else
 		msg = msg .. "\n\n(All drones have launched)\n"
 	end 
-	
 	trigger.action.outTextForCoalition(coa, msg, 30)
 	trigger.action.outSoundForCoalition(coa, reaper.actionSound)
 end
 
 function reaper.doSingleDroneStatus(theZone)
 	local coa = theZone.coa 
---	trigger.action.outText("enter SINGLE drone status for coa " .. coa, 30)
 	local msg = ""
 	local name = theZone.name 
 	-- see if drone is tracking 
@@ -503,9 +662,31 @@ function reaper.doSingleDroneStatus(theZone)
 			lat, lon = dcsCommon.latLon2Text(lat, lon)
 			local ut = theTarget:getTypeName()
 			msg = msg .. ut .. " at " .. lat .. ", " .. lon .. " code " .. theZone.code 
+
+			-- now add full group intelligence 
+			local collector = {}
+			local theGroup = theTarget:getGroup() 
+			local allTargets = theGroup:getUnits()
+			for idx, aTgt in pairs(allTargets) do 
+				if Unit.isExist(aTgt) then 
+					local tn = aTgt:getTypeName()
+					if collector[tn] then collector[tn] = collector[tn] + 1 
+					else collector[tn] = 1 end 
+				end 
+			end 
+			msg = msg .."\nGroup consists of: "
+			local i = 1
+			for name, count in pairs(collector) do 
+				if i > 1 then msg = msg .. ", " end 
+				msg = msg .. name 
+				if count > 1 then msg = msg .. " (x" .. count .. ")" end
+				i = 2 
+			end
+			msg = msg .. ".\n"
 		else 
-			msg = msg .. "[signal failure, please try later]"
+			msg = msg .. "[signal failure, please try again later]"
 		end
+		
 		trigger.action.outTextForCoalition(coa, msg, 30)
 		trigger.action.outSoundForCoalition(coa, reaper.actionSound)
 		return 
@@ -528,9 +709,25 @@ function reaper.doSingleDroneStatus(theZone)
 	trigger.action.outSoundForCoalition(coa, reaper.actionSound)
 end
 
+function reaper.doSingleStatusM(args)
+	local coa = args[1]
+	local name = args[2] 
+	local theZone = reaper.zones[name]
+	if not theZone then end return 
+	reaper.doSingleDroneStatus(theZone)
+end
+
+function reaper.doCylcleTarget(args)
+	local coa = args[1]
+	local name = args[2] 
+	local theZone = reaper.zones[name]
+	if not theZone then end return 
+	reaper.cycleTarget(theZone)
+end 
+
 function reaper.doLaunch(args)
-	coa = args[1]
-	name = args[2] 
+	local coa = args[1]
+	local name = args[2] 
 	-- check if we can launch 
 	local theZone = reaper.zones[name] 
 	if not theZone then 
@@ -581,7 +778,7 @@ function reaper.readConfigZone()
 	end 
 	reaper.name = "reaperConfig" -- zones comaptibility 
 	reaper.actionSound = theZone:getStringFromZoneProperty("actionSound", "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
-	reaper.UI = theZone:getBoolFromZoneProperty("UI", true)
+	reaper.hasUI = theZone:getBoolFromZoneProperty("UI", true)
 	reaper.menuName = theZone:getStringFromZoneProperty("menuName", "Drone Command")
 	reaper.useCost = theZone:getBoolFromZoneProperty("useCost", true)
 	if theZone:hasProperty("blueStatus?") then 
@@ -668,7 +865,7 @@ function reaper.start()
 	end
 
 	-- install UI if desired 
-	if reaper.UI then 
+	if reaper.hasUI then 
 		local coas = {1, 2}
 		for idx, coa in pairs(coas) do 
 			reaper.installFullUIForCoa(coa)
@@ -689,9 +886,9 @@ function reaper.start()
 	timer.scheduleFunction(reaper.update, {}, timer.getTime() + 1)
 	
 	-- schedule scan and track loops 
-	timer.scheduleFunction(reaper.scan, {}, timer.getTime() + 1)
+--	timer.scheduleFunction(reaper.scan, {}, timer.getTime() + 1)
+	timer.scheduleFunction(reaper.scanALT, {}, timer.getTime() + 1)
 	timer.scheduleFunction(reaper.track, {}, timer.getTime() + 1) 
-	
 	trigger.action.outText("reaper v " .. reaper.version .. " running.", 30)
 	return true 
 end
@@ -702,7 +899,5 @@ end
 
 --[[--
 	Idea: mobile launch vehicle, zone follows apc around. Can even be hauled along with hook
-	idea: prioritizing targets in a group 
-	fix quad zone waypoints 
-	filter targets for lasing by list?
+	
 --]]--

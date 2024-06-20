@@ -2189,4 +2189,6 @@ end
 	
 	nameTest - optional safety / debug feature that will name-test each unit that is about to be spawned for replacement. Maybe auto turn on when verbose is set?
 	make example where transport can be different plane types but have same name 
+	
+	support 'orders' to complete replace routes, and pass to groundCommander like spawner. only for ground troops 
 --]]--

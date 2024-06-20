@@ -1,11 +1,16 @@
 sweeper = {}
-sweeper.version = "1.0.0" 
+sweeper.version = "1.0.1" 
 sweeper.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
 }
 -- remove all units that are detected twice in a row in the same 
 -- zone after a time interval. Used to remove deadlocked units.
+--[[--
+	VERSION HISTORY
+	1.0.1 - Initial version 
+	
+--]]--
 
 sweeper.zones = {}
 sweeper.interval = 5 * 60 -- 5 mins (max 10 mins) in zone will kill you
@@ -18,7 +23,7 @@ end
 
 function sweeper.readSweeperZone(theZone)
 	theZone.aircraft = theZone:getBoolFromZoneProperty("aircraft", true)
-	theZone.helos = theZone:getBoolFromZoneProperty("helos", false)
+	theZone.helos = theZone:getBoolFromZoneProperty("helos", true)
 end
 
 function sweeper.update()
@@ -102,6 +107,16 @@ function sweeper.update()
 	sweeper.flights = newFlights
 end
 
+function sweeper.readConfig()
+	local theZone = cfxZones.getZoneByName("sweeperConfig") 
+	if not theZone then 
+		theZone = cfxZones.createSimpleZone("sweeperConfig") 
+	end 
+	sweeper.name = "sweeperConfig" -- zones comaptibility 
+	sweeper.interval = theZone:getNumberFromZoneProperty("interval", 5 * 60)
+	sewwper.verbose = theZone.verbose 
+end
+
 function sweeper.start()
 	-- lib check
 	if not dcsCommon.libCheck then 
@@ -111,7 +126,9 @@ function sweeper.start()
 	if not dcsCommon.libCheck("cfx sweeper", sweeper.requiredLibs) then
 		return false 
 	end
-		
+	
+	sweeper.readConfig()
+	
 	-- process sweeper Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("sweeper")
 	for k, aZone in pairs(attrZones) do 
@@ -119,7 +136,7 @@ function sweeper.start()
 		sweeper.addSweeperZone(aZone) -- add to list
 	end
 		
-	-- start update in 5 seconds
+	-- start update in (interval)
 	timer.scheduleFunction(sweeper.update, {}, timer.getTime() + sweeper.interval)
 		
 	-- say hi 

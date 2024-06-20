@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.2.1"
+cfxReconMode.version = "2.2.2"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -22,38 +22,6 @@ cfxReconMode.name = "cfxReconMode" -- to be compatible with test flags
 
 --[[--
 VERSION HISTORY
- 1.0.0 - initial version 
- 1.0.1 - removeScoutByName()
- 1.0.2 - garbage collection 
- 1.1.0 - autoRecon - any aircraft taking off immediately
-         signs up, no message when signing up or closing down
-		 standalone - copied common procs lerp, agl, dist, distflat
-		 from dcsCommon
-		 report numbers 
-		 verbose flag 
- 1.2.0 - queued recons. One scout per second for more even
-         performance
-		 removed gc since it's now integrated into 
-		 update queue
-		 removeScout optimization when directly passing name
-		 playerOnlyRecon for autoRecon 
-		 red, blue, grey side filtering on auto scout
- 1.2.1 - parametrized report sound 
- 1.3.0 - added black list, prio list functionality 
- 1.3.1 - callbacks now also push name, as group can be dead
-       - removed bug when removing dead groups from map
- 1.4.0 - import dcsCommon, cfxZones etc 
-       - added lib check 
-	   - config zone 
-	   - prio+
-	   - detect+
- 1.4.1 - invocation no longer happen twice for prio. 
-	   - recon sound 
-	   - read all flight groups at start to get rid of the 
-	   - late activation work-around 
- 1.5.0 - removeWhenDestroyed()
-	   - autoRemove()
-	   - readConfigZone creates default config zone so we get correct defaulting 
  2.0.0 - DML integration prio+-->prio! detect+ --> detect! 
          and method
 	   - changed access to prio and blacklist to hash
@@ -90,24 +58,9 @@ VERSION HISTORY
 	   - new marksFadeAfter config attribute to control mark time 
 	   - dmlZones OOP upgrade 
  2.2.1 - fixed "cfxReconSMode" typo 
- 
+ 2.2.2 - added groupNames attribute 
+       - clean-up
 	   
- cfxReconMode is a script that allows units to perform reconnaissance
- missions and, after detecting units, marks them on the map with 
- markers for their coalition and some text 
- Also, a callback is initiated for scouts as follows
-   signature: (reason, theSide, theSout, theGroup) with  
-   reason a string 
-	 'detected' a group was detected
-     'removed' a mark for a group timed out
-	 'priority' a member of prio group was detected 
-	 'start' a scout started scouting
-	 'end' a scout stopped scouting
-	 'dead' a scout has died and was removed from pool 
-   theSide - side of the SCOUT that detected units
-   theScout - the scout that detected the group 
-   theGroup - the group that is detected  
-   theName - the group's name    
 --]]--
 
 cfxReconMode.detectionMinRange = 3000 -- meters at ground level
@@ -137,9 +90,6 @@ cfxReconMode.marksFadeAfter = 30*60 -- after detection, marks disappear after
 cfxReconMode.callbacks = {} -- sig: cb(reason, side, scout, group)
 cfxReconMode.uuidCount = 0 -- for unique marks 
 
-
--- end standalone dcsCommon extract 
-
 function cfxReconMode.uuid()
 	cfxReconMode.uuidCount = cfxReconMode.uuidCount + 1
 	return cfxReconMode.uuidCount
@@ -163,7 +113,6 @@ function cfxReconMode.addToPrioList(aGroup, dynamic)
 		aGroup = aGroup:getName()
 	end
 	if type(aGroup) == "string" then 
---		table.insert(cfxReconMode.prioList, aGroup)
 		cfxReconMode.prioList[aGroup] = aGroup
 		cfxReconMode.dynamics[aGroup] = dynamic 
 	end
@@ -176,7 +125,6 @@ function cfxReconMode.addToBlackList(aGroup, dynamic)
 		aGroup = aGroup:getName()
 	end
 	if type(aGroup) == "string" then 
-		--table.insert(cfxReconMode.blackList, aGroup)
 		cfxReconMode.blackList[aGroup] = aGroup
 		cfxReconMode.dynamics[aGroup] = dynamic
 	end
@@ -230,15 +178,9 @@ function cfxReconMode.isStringInList(theString, theList)
 end
 
 
--- addScout directly adds a scout unit. Use from external 
--- to manually add a unit (e.g. via GUI when autoscout isExist
--- off, or to force a scout unit (e.g. when scouts for a side
--- are not allowed but you still want a unit from that side 
--- to scout
 -- since we use a queue for scouts, also always check the 
 -- processed queue before adding to make sure a scout isn't 
 -- entered multiple times 
-
 function cfxReconMode.addScout(theUnit)
 	if not theUnit then 
 		trigger.action.outText("+++cfxRecon: WARNING - nil Unit on add", 30)
@@ -350,9 +292,9 @@ end
 
 function cfxReconMode.placeMarkForUnit(location, theSide, theGroup) 
 	local theID = cfxReconMode.uuid()
-	local theDesc = "Contact: "..theGroup:getName()
+	local theDesc = "Contact" 
+	if cfxReconMode.groupNames then theDesc = theDesc .. ": " ..theGroup:getName() end 
 	if cfxReconMode.reportNumbers then 
---		theDesc = theDesc .. " (" .. theGroup:getSize() .. " units)"
 		theDesc = theDesc .. " - " .. cfxReconMode.getSit(theGroup) .. ", " .. cfxReconMode.getAction(theGroup) .. "."
 	end
 	trigger.action.markToCoalition(
@@ -466,7 +408,9 @@ function cfxReconMode.getTimeData()
 end
 
 function cfxReconMode.generateSALT(theScout, theGroup)
-	local msg = theScout:getName() .. " reports new ground contact " .. theGroup:getName() .. ":\n"
+	local msg = theScout:getName() .. " reports new ground contact" 
+	if cfxReconMode.groupNames then msg = msg .. " " .. theGroup:getName() end 
+	msg = msg .. ":\n"
 	-- SALT: S = Situation or number of units A = action they are doing L = Location T = Time 
 	msg = msg .. cfxReconMode.getSit(theGroup) .. ", "-- S 
 	msg = msg .. cfxReconMode.getAction(theGroup) .. ", " -- A 
@@ -559,7 +503,6 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	
 	-- see if it was a prio target 
 	if inList then 
---		if cfxReconMode.announcer then 
 		if cfxReconMode.verbose then 
 			trigger.action.outText("+++rcn: Priority target spotted",	30)
 		end 
@@ -1049,7 +992,7 @@ function cfxReconMode.readConfigZone()
 	if theZone:hasProperty("imperialUnits") then 
 		cfxReconMode.imperialUnits = theZone:getBoolFromZoneProperty( "imperialUnits", false)
 	end
-	
+	cfxReconMode.groupNames = theZone:getBoolFromZoneProperty( "groupNames", true)
 	cfxReconMode.theZone = theZone -- save this zone 
 end
 
@@ -1199,9 +1142,6 @@ end
 if not cfxReconMode.start() then 
 	cfxReconMode = nil
 end
-
--- debug: wire up my own callback
--- cfxReconMode.addCallback(cfxReconMode.demoReconCB)
 
 
 --[[--
