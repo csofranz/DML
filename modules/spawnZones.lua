@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.0.2"
+cfxSpawnZones.version = "2.0.3"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -28,6 +28,7 @@ cfxSpawnZones.spawnedGroups = {}
          - spawnWithSpawner direct link in spawner to spawnZones
    2.0.1 - fix in verifySpawnOwnership() when not master zone found 
    2.0.2 - new "moveFormation" attribute 
+   2.0.3 - corrected type in spawnUnits? attribute 
    
   --]]--
   
@@ -76,7 +77,7 @@ function cfxSpawnZones.createSpawner(inZone)
 		theSpawner.triggerFlag = inZone:getStringFromZoneProperty("spawn?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	elseif inZone:hasProperty("spawnUnits?") then 
-		theSpawner.triggerFlag = inZone:getStringFromZoneProperty( "spawnObject?", "none")
+		theSpawner.triggerFlag = inZone:getStringFromZoneProperty( "spawnUnits?", "none")
 		theSpawner.lastTriggerValue = trigger.misc.getUserFlag(theSpawner.triggerFlag)
 	end
 	

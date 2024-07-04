@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.8"
+dcsCommon.version = "3.0.9"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -20,9 +20,12 @@ dcsCommon.version = "3.0.8"
 	   - new pointXpercentYdegOffAB()
 3.0.6  - new arrayContainsStringCaseInsensitive()
 3.0.7  - fixed small bug in wildArrayContainsString 
-3.0.8  - deepCopy() and deepTableCopy() alternates to clone() to patch 
+3.0.9  - deepCopy() and deepTableCopy() alternates to clone() to patch 
          around a strange DCS 2.9 issue 
 		 Kiowa added to Troop Carriers
+3.0.9  - new getOrigPositionByID()
+       - unitName2ID[] reverse lookup 
+	   - unitName2Heading
 		 
 --]]--
 
@@ -45,6 +48,8 @@ dcsCommon.version = "3.0.8"
 	dcsCommon.unitID2Name = {}
 	dcsCommon.unitID2X = {}
 	dcsCommon.unitID2Y = {}
+	dcsCommon.unitName2ID = {}
+	dcsCommon.unitName2Heading = {}
 
 	-- verify that a module is loaded. obviously not required
 	-- for dcsCommon, but all higher-order modules
@@ -97,15 +102,18 @@ dcsCommon.version = "3.0.8"
 											local aID = group_data.groupId
 											-- store this reference 
 											dcsCommon.groupID2Name[aID] = aName 
-											
+--											trigger.action.outText("cmn: group <" .. aName .. "> has id <" .. aID .. ">", 30)
 											-- now iterate all units in this group 
 											-- for player into 
 											for unit_num, unit_data in pairs(group_data.units) do
 												if unit_data.name and unit_data.unitId then 
 													-- store this reference 
 													dcsCommon.unitID2Name[unit_data.unitId] = unit_data.name
+--													trigger.action.outText("cmn: unit/obj <" .. unit_data.name .. "> has id <" .. unit_data.unitId .. ">", 30)
+													dcsCommon.unitName2Heading[unit_data.name] = unit_data.heading
 													dcsCommon.unitID2X[unit_data.unitId] = unit_data.x
 													dcsCommon.unitID2Y[unit_data.unitId] = unit_data.y
+													dcsCommon.unitName2ID[unit_data.name] = unit_data.unitId
 												end
 											end -- for all units
 										end -- for all groups 
@@ -121,8 +129,13 @@ dcsCommon.version = "3.0.8"
 
 	function dcsCommon.getUnitNameByID(theID)
 		-- accessor function for later expansion
-		return dcsCommon.unitID2Name[theID]
+		return dcsCommon.unitID2Name[theID] -- warning: can be unit or static object 
 	end
+	
+	function dcsCommon.getOrigPositionByID(theID)
+		local p = {x=dcsCommon.unitID2X[theID], y=0, z=dcsCommon.unitID2Y[theID]}
+		return p 
+	end 
 	
 	function dcsCommon.getGroupNameByID(theID)
 		-- accessor function for later expansion 

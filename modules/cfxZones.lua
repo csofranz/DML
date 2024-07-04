@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.4"
+cfxZones.version = "4.3.6" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -53,6 +53,11 @@ cfxZones.version = "4.3.4"
 - 4.3.2   - new getListFromZoneProperty()
 - 4.3.3   - hardened calculateZoneBounds
 - 4.3.4   - rewrote zone bounds for poly zones 
+- 4.3.5   - hardened getStringFromZoneProperty against number value returns (WebEd bug)
+- 4.3.6   - tiny optimization in isPointInsideQuad 
+          - moving zone - hardening code for static objects 
+		  - moving zones - now deriving dx, dy,uHeading from dcsCommon xref for linked zones 
+		  
 --]]--
 
 --
@@ -208,7 +213,7 @@ function cfxZones.readFromDCS(clearfirst)
 
 			-- add to my table
 			cfxZones.zones[upperName] = newZone -- WARNING: UPPER ZONE!!!
-			--trigger.action.outText("znd: procced " .. newZone.name .. " with radius " .. newZone.radius, 30)
+
 		else
 			if cfxZones.verbose then 
 				trigger.action.outText("cf/x zones: malformed zone #" .. i .. " dropped", 10)
@@ -706,7 +711,7 @@ function cfxZones.isPointInsideQuad(thePoint, A, B, C, D)
 	
 	-- so all we need to do is make sure all results of isLeft for all
 	-- four sides are the same
-	mustMatch = isLeftXZ(A, B, thePoint) -- all test results must be the same and we are ok
+	local mustMatch = isLeftXZ(A, B, thePoint) -- all test results must be the same and we are ok
 									   -- they just must be the same side.
 	if (cfxZones.isLeftXZ(B, C, thePoint ~= mustMatch)) then return false end -- on other side than all before
 	if (cfxZones.isLeftXZ(C, D, thePoint ~= mustMatch)) then return false end 
@@ -2220,6 +2225,9 @@ function cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
 -- OOP heavy duty test here
 	local p = theZone:getZoneProperty(theProperty)
 	if not p then return default end
+	if type(p) == "number" then 
+		p = tostring(p)
+	end 
 	if type(p) == "string" then 
 		p = dcsCommon.trim(p)
 		if p == "" then p = default end 
@@ -2232,6 +2240,9 @@ function dmlZone:getStringFromZoneProperty(theProperty, default)
 	if not default then default = "" end
 	local p = self:getZoneProperty(theProperty)
 	if not p then return default end
+	if type(p) == "number" then 
+		p = tostring(p)
+	end 
 	if type(p) == "string" then 
 		p = dcsCommon.trim(p)
 		if p == "" then p = default end 
@@ -3341,7 +3352,9 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	theZone.dx = dx
 	theZone.dy = dy 
 	theZone.rxy = math.sqrt(dx * dx + dy * dy) -- radius 
-	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local uName = theUnit:getName()
+--	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local unitHeading = dcsCommon.unitName2Heading[uName] -- get original unit's heading from ME 
 	local bearingOffset = math.atan2(dy, dx) -- rads 
 	if bearingOffset < 0 then bearingOffset = bearingOffset + 2 * 3.141592 end 
 
@@ -3431,8 +3444,9 @@ function cfxZones.updateMovingZones()
 				cfxZones.initLink(aZone)
 			else --if aZone.linkName then  
 				-- always re-acquire linkedUnit via Unit.getByName()
-				-- this way we gloss over any replacements via spawns
+				-- this way we gloss over any replacements via spawns/clones 
 				aZone.linkedUnit = Unit.getByName(aZone.linkName)
+				if not aZone.linkUnit then aZone.linkUnit = StaticObject.getByName(aZone.linkName) end 
 			end
 			
 			if aZone.linkedUnit then 
@@ -3465,14 +3479,15 @@ end
 function cfxZones.initLink(theZone)
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 
-	theUnit = Unit.getByName(theZone.linkName)
+	theUnit = Unit.getByName(theZone.linkName) -- unit or static
+	if not theUnit then theUnit = StaticObject.getByName(theZone.linkName) end 
 	if theUnit then
-
 		local dx = 0
 		local dz = 0
 		if theZone.useOffset or theZone.useHeading then 
 			local A = cfxZones.getDCSOrigin(theZone)
-			local B = theUnit:getPoint()
+			local B = dcsCommon.getOrigPositionByID(theZone.linkedUID)
+
 			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
@@ -3483,7 +3498,6 @@ function cfxZones.initLink(theZone)
 			trigger.action.outText("Link established for zone <" .. theZone.name .. "> to unit <" .. theZone.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		theZone.linkBroken = nil 
-
 	else 
 		if theZone.verbose then 
 			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
@@ -3494,14 +3508,14 @@ end
 function dmlZone:initLink()
 	self.linkBroken = true 
 	self.linkedUnit = nil 
-	theUnit = Unit.getByName(self.linkName)
+	theUnit = Unit.getByName(self.linkName) -- unit or static 
+	if not theUnit then theUnit = StaticObject.getByName(self.linkName) end 
 	if theUnit then
-
 		local dx = 0
 		local dz = 0
 		if self.useOffset or self.useHeading then 
 			local A = self:getDCSOrigin()
-			local B = theUnit:getPoint()
+			local B = dcsCommon.getOrigPositionByID(self.linkedUID)
 			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
@@ -3509,7 +3523,7 @@ function dmlZone:initLink()
 		self:linkUnitToZone(theUnit, dx, dz) -- also sets theZone.linkedUnit
 
 		if self.verbose then 
-			trigger.action.outText("Link established for zone <" .. self.name .. "> to unit <" .. self.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
+			trigger.action.outText("DML:Link established for zone <" .. self.name .. "> to unit <" .. self.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		self.linkBroken = nil 
 
@@ -3531,27 +3545,33 @@ function cfxZones.startMovingZones()
 		-- late 2022 with 2.8
 		if aZone.dcsZone.linkUnit then 
 			local theID = aZone.dcsZone.linkUnit 
-			lU = dcsCommon.getUnitNameByID(theID)
+			lU = dcsCommon.getUnitNameByID(theID) -- can be unit OR STATIC OBJECT 
 			if not lU then 
 				trigger.action.outText("WARNING: Zone <" .. aZone.name .. ">: cannot resolve linked unit ID <" .. theID .. ">", 30)
 				lU = "***DML link err***"
 			end
-		elseif cfxZones.hasProperty(aZone, "linkedUnit") then 
-			lU = cfxZones.getZoneProperty(aZone, "linkedUnit")
+			aZone.linkedUID = lU
+		elseif aZone:hasProperty("linkedUnit") then 
+			lU = aZone:getZoneProperty("linkedUnit") -- getString: name of unit
+			local luid = dcsCommon.unitName2ID[lU]
+			if luid then
+				aZone.linkedUID = luid 
+			else 
+				trigger.action.outText("WARNING: zone <" .. aZone.name .. "> linked unit (by attribute) <" .. lU .. "> does not exist!", 30)
+				lU = nil 
+			end 
 		end
 		
 		-- sanity check 
-		if aZone.dcsZone.linkUnit and cfxZones.hasProperty(aZone, "linkedUnit") then 
+		if aZone.dcsZone.linkUnit and aZone:hasProperty("linkedUnit") then 
 			trigger.action.outText("WARNING: Zone <" .. aZone.name .. "> has dual unit link definition. Will use link to unit <" .. lU .. ">", 30)
 		end
 		
 		if lU then 
 			aZone.linkName = lU
-			aZone.useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
-			aZone.useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading", false)
-			
+			aZone.useOffset = aZone:getBoolFromZoneProperty("useOffset", false)
+			aZone.useHeading = aZone:getBoolFromZoneProperty("useHeading", false)
 			cfxZones.initLink(aZone)
-
 		end
 		
 	end

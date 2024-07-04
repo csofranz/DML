@@ -1,5 +1,5 @@
 milHelo = {}
-milHelo.version = "1.0.0"
+milHelo.version = "1.0.2"
 milHelo.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -31,10 +31,10 @@ end
 function milHelo.addMilTargetZone(theZone)
 	milHelo.targets[theZone.name] = theZone -- overwrite if duplicate
 end
-
+--[[--
 function milHelo.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
-	local zP = cfxZones.getPoint(theZone)
-	zP = theZone:getDCSOrigin() -- don't use getPoint now.
+	--local zP --= cfxZones.getPoint(theZone)
+	local zP = theZone:getDCSOrigin() -- don't use getPoint now.
 	zP.y = 0
 	
 	for idx, aUnit in pairs(theUnits) do 
@@ -63,6 +63,7 @@ function milHelo.allGroupsInZoneByData(theZone) -- move to MX?
 	end
 	return theGroupsInZone, count 
 end
+--]]--
 
 function milHelo.readMilHeloZone(theZone) -- process attributes
 	-- get mission type. part of milHelo 
@@ -88,7 +89,7 @@ function milHelo.readMilHeloZone(theZone) -- process attributes
 	end
 	
 	-- get all groups inside me	
-	local myGroups, count = milHelo.allGroupsInZoneByData(theZone) 
+	local myGroups, count = cfxMX.allGroupsInZoneByData(theZone) 
 	theZone.myGroups = myGroups 
 	theZone.groupCount = count 
 	theZone.hGroups = {}
@@ -662,7 +663,7 @@ end
 -- update and event 
 --
 function milHelo.update()
-	timer.scheduleFunction(milHelo.update, {}, timer.getTime() + 1)
+	timer.scheduleFunction(milHelo.update, {}, timer.getTime() + 1/milHelo.ups)
 	-- update all master owners 
 	for idx, theZone in pairs (milHelo.zones) do 
 		local mo = theZone.masterOwner
@@ -791,6 +792,7 @@ function milHelo.readConfigZone()
 	end 
 	milHelo.verbose = theZone.verbose 
 	milHelo.landingDuration = theZone:getNumberFromZoneProperty("landingDuration", 180) -- seconds = 3 minutes
+	milHelo.ups = theZone:getNumberFromZoneProperty("ups", 1)
 end
 
 		

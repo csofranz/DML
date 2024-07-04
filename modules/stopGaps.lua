@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.1.1"
+stopGap.version = "1.1.2"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -51,6 +51,7 @@ stopGap.requiredLibs = {
 	1.0.10 - some more verbosity for spIgnore and sgIgnore zones (DML only)
 	1.1.0 - kickTheDead option 
 	1.1.1 - filter "from runway" clients 
+	1.1.2 - allNeutral (DML only) 
 	
 --]]--
 
@@ -76,6 +77,10 @@ function stopGap.staticMXFromUnitMX(theGroup, theUnit)
 	theStatic.type = theUnit.type 
 	theStatic.name = theUnit.name  -- will magically be replaced with player unit 
 	theStatic.cty = cfxMX.countryByName[theGroup.name]
+	-- DML only: allNeutral 
+	if stopGap.allNeutral then 
+		theStatic.cty = dcsCommon.getACountryForCoalition(0)
+	end
 	return theStatic 
 end
 
@@ -432,6 +437,7 @@ function stopGap.readConfigZone(theZone)
 	
 	stopGap.refreshInterval = theZone:getNumberFromZoneProperty("refresh", -1) -- default: no refresh
 	stopGap.kickTheDead = theZone:getBoolFromZoneProperty("kickDead", true)
+	stopGap.allNeutral = theZone:getBoolFromZoneProperty("allNeutral", false)
 end
 
 --
@@ -493,3 +499,6 @@ if not stopGap.start() then
 	trigger.action.outText("+++ aborted stopGap v" .. stopGap.version .. "  -- startup failed", 30)
 	stopGap = nil 
 end
+--[[-- TODO
+	- allNeutral: spawn all player aircraft as neutral
+--]]--

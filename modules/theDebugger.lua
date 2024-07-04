@@ -1,6 +1,5 @@
--- theDebugger 2.x
 debugger = {}
-debugger.version = "2.1.1"
+debugger.version = "3.0.0"
 debugDemon = {}
 debugDemon.version = "2.1.0"
 
@@ -40,6 +39,13 @@ debugger.log = ""
 			readback verification of flag set 
 			fixed getProperty() in debugger with zone 
 	2.1.1 - removed bug that skipped events? when zone not verbose 
+	3.0.0 - xref module added 
+		  - x <zone/flag>
+		  - x * 
+		  - x *f 
+		  - x *z 
+		  - x ? 
+
 			
 --]]--
 
@@ -138,6 +144,263 @@ debugger.spawnTypes = {
  ["manpad"] = "Soldier stinger",
  ["obj"] = "house2arm"
 }
+
+
+--
+-- XREF MODULE
+--
+xref = {}
+xref.version = "1.0.0"
+xref.dmlObjects = {} -- dict by zone name:upper() 
+-- has inputs: dict of string for each '?' input, contains input flag name 
+-- has output: dict of array for each output '!', contains output flag names as array 
+xref.flags = {} -- dict by flag name 
+-- has froms: dict of zone of attributes that can write to this flags 
+-- has tos: dict of zones of attributes that read from flag 
+
+function xref.getDmlObject(name)
+	name = name:upper() 
+	local theObject = xref.dmlObjects[name]
+	if not theObject then 
+		theObject = {}
+		theObject.inputs = {} -- dict of string 
+		theObject.outputs = {} -- dict of array 
+		xref.dmlObjects[name] = theObject 
+	end 
+	return theObject 
+end
+
+function xref.getFlag(name, theZone)
+	if theZone and dcsCommon.stringStartsWith(name, "*") then 
+		-- local name conversion 
+		name = theZone.name .. name 
+	end 
+	local theFlag = xref.flags[name]
+	if not theFlag then 
+		theFlag = {}
+		theFlag.froms = {} -- dict by zone name/output that write to this flag
+		theFlag.tos = {} -- dict by zone name / inputs that reads from this flag
+		xref.flags[name] = theFlag
+	end
+	return theFlag 
+end
+
+function xref.flagTo(flagName, inputName, theZone) -- connect flag to input in zone. Flag can connect to multiple inputs in same zone 
+	local theFlag = xref.getFlag(flagName, theZone)
+	if not theFlag.tos[theZone.name] then 
+		theFlag.tos[theZone.name] = {} 
+	end 
+	table.insert(theFlag.tos[theZone.name],inputName)
+end
+
+function xref.flagFrom(flagName, outputName, theZone) -- connect flag to output in zone. multiple outputs per zone 
+	local theFlag = xref.getFlag(flagName, theZone)
+	if not theFlag.froms[theZone.name] then 
+		theFlag.froms[theZone.name] = {} 
+	end 
+	table.insert(theFlag.froms[theZone.name], outputName)
+end
+
+function xref.addInput(theZone, inputName, inputFlagName)
+	local theObject = xref.getDmlObject(theZone.name)
+	local inputs = theObject.inputs 
+	if not inputs then inputs = {} end 
+	inputs[inputName] = inputFlagName -- each input connects one flag 
+	xref.flagTo(inputFlagName, inputName, theZone)
+	theObject.inputs = inputs
+end
+
+function xref.addOutput(theZone, outputName, outputFlags)
+	local theObject = xref.getDmlObject(theZone.name)
+	local outputs = theObject.outputs 
+	if not outputs then outputs = {} end 
+	if dcsCommon.containsString(outputFlags, ",") then 
+		local theArray = dcsCommon.splitString(outputFlags, ',')
+		theArray = dcsCommon.trimArray(theArray)
+		for idx, aFlagName in pairs(theArray) do 
+			xref.flagFrom(aFlagName, outputName, theZone)
+		end 
+		outputs[outputName] = theArray
+	else 
+		local outputFlagName = dcsCommon.trim(outputFlags) 
+		outputs[outputName] = {outputFlagName}
+		xref.flagFrom(outputFlagName, outputName, theZone)
+	end
+
+	theObject.outputs = outputs
+end
+
+function xref.scanMissionZones()
+	-- iterate all trigger zones 
+	for idx, theZone in pairs(cfxZones.zones) do 
+		-- iterate all properties
+		local attributes = theZone:getAllZoneProperties()
+		for name, value in pairs(attributes) do 
+			-- find inputs 
+			if dcsCommon.stringEndsWith(name, "?") then 
+				xref.addInput(theZone, name, value)
+			end
+		
+			-- find outputs
+			if dcsCommon.stringEndsWith(name, "!") then 
+				xref.addOutput(theZone, name, value)
+			end
+		 
+			-- other stuff, e.g. "#"
+			-- find outputs
+			if dcsCommon.stringEndsWith(name, "#") then 
+				xref.addOutput(theZone, name, value)
+			end
+		end
+	end
+end
+
+function xref.xrefFlag(name) 
+	local msg = "\n<" .. name .. "> flag cross reference:"
+	local theFlag = xref.flags[name]
+	local tos = theFlag.tos 
+	if dcsCommon.getSizeOfTable(tos) < 1 then 
+		msg = msg .. "\n (NO INPUTS CONNECTED)"
+	else 
+		msg = msg .. "\n  '?' These zones/inputs? look at <" .. name .. ">:"
+		for zName, attributes in pairs (tos) do 
+			msg = msg .. "\n    " .. zName .. " - "
+			local c = 0 
+			for idx, anInput in pairs(attributes) do 
+				if c > 0 then msg = msg .. ", " end 
+				c = 1 
+				msg = msg .. anInput 
+			end 
+		end 
+	end 
+	
+	local froms = theFlag.froms 
+	if dcsCommon.getSizeOfTable(froms) < 1 then 
+		msg = msg .. "\n (NO OUTPUTS CONNECTED)"
+	else 
+		msg = msg .. "\n  '!' These zones/outputs! change <" .. name .. ">:"
+		for zName, attributes in pairs (froms) do 
+			msg = msg .. "\n    " .. zName .." - "
+			local c = 0 
+			for idx, anOutput in pairs(attributes) do 
+				if c > 0 then msg = msg .. ", " end 
+				c = 1 
+				msg = msg .. anOutput 
+			end 
+		end 
+	end 
+	
+--	trigger.action.outText(msg, 30)
+	return msg 
+	
+end
+
+function xref.xrefZone(name, theObject)
+	local msg = "\nZone <" .. name .. "> :"
+	local ins = theObject.inputs 
+	if dcsCommon.getSizeOfTable(ins) < 1 then 
+		msg = msg .. "\n  (NO INPUTS)"
+	else 
+		msg = msg .. "\n  has the following inputs:"
+		for iName, flagName in pairs (ins) do 
+			msg = msg .. "\n    " .. iName .. " : " .. flagName			 
+		end 
+	end 
+
+	local outs = theObject.outputs 
+	if dcsCommon.getSizeOfTable(outs) < 1 then 
+		msg = msg .. "\n  (NO OUTPUTS)"
+	else 
+		msg = msg .. "\n  has the following outputs:"
+		for oName, flagList in pairs (outs) do 
+			msg = msg .. "\n    " .. oName .." - "
+			local c = 0 
+			for idx, anOutput in pairs(flagList) do 
+				if c > 0 then msg = msg .. ", " end 
+				c = 1 
+				msg = msg .. anOutput 
+			end
+		end 
+	end 
+
+--	trigger.action.outText(msg, 30)
+	return msg 
+	
+end 
+
+function xref.xrefName(name)
+	if not name then name = "" end 
+	if xref.flags[name] then 
+		return xref.xrefFlag(name) 
+	end
+	if xref.dmlObjects[name:upper()] then 
+		return xref.xrefZone(name, xref.dmlObjects[name:upper()])
+	end
+	return "*** xref: <" .. name .. "> NOT USED WITH DML"
+end 
+
+function xref.allFlags()
+	local msg = "xref: all flags used with DML in this mission:\n"
+	local c = 0 
+	for name, data in pairs(xref.flags) do 
+		if c > 0 then msg = msg .. ", " end
+		c = 1 
+		msg = msg .. "<" .. name .. ">"
+	end 
+	return msg 
+end 
+
+function xref.allZones()
+	local msg = "xref: all DML Zones in this mission:\n"
+	local c = 0 
+	for name, data in pairs(xref.dmlObjects) do 
+		if c > 0 then msg = msg .. ", " end
+		c = 1
+		msg = msg .. "<" .. name .. ">"
+	end 
+	return msg 
+end 
+
+function xref.xall()
+	msg = ""
+	-- now dump all flags 
+	for flagName, data in pairs (xref.flags) do 
+		-- msg = msg .. xref.xrefFlag(flagName) 
+		msg = msg .. xref.xrefName(flagName)
+	end 
+	
+	-- dump all zones 
+	for zoneName, data in pairs(xref.dmlObjects) do 
+--		msg = msg .. xref.xrefZone(zoneName, data)
+		msg = msg .. xref.xrefName(zoneName)
+	end 
+	return msg
+--	trigger.action.outText(msg, 30)
+end
+
+function xref.start()
+	xref.scanMissionZones()
+	local flagNum = dcsCommon.getSizeOfTable(xref.flags)
+	local dmlObNum = dcsCommon.getSizeOfTable(xref.dmlObjects)
+	trigger.action.outText("XRef v" .. xref.version .. " full DML object scan on mission complete:\n<" .. flagNum .. "> flags are referenced in <" .. dmlObNum .. "> DML zones", 30)
+	
+--	trigger.action.outText(xref.xall(), 30)
+end
+
+-- run the xref 
+xref.start()
+
+--[[--
+	to do
+		scan messenger and wildcards for flag access 
+		
+--]]--
+
+
+--
+-- DEBUGGER MAIn
+--
+
 --
 -- Logging & saving 
 --
@@ -823,6 +1086,9 @@ debugger.outText("*** debugger: commands are:" ..
 	"\n  " .. debugDemon.markOfDemon .. "set <flagname> <number> -- set flag to value <number>" ..
 	"\n  " .. debugDemon.markOfDemon .. "inc <flagname> -- increase flag by 1, changing it" ..
 	"\n  " .. debugDemon.markOfDemon .. "flip <flagname> -- when flag's value is 0, set it to 1, else to 0" ..	
+
+	"\n\n  " .. debugDemon.markOfDemon .. "x <zone/flagname> -- cross reference DML zone or flag" ..
+
 
 	"\n\n  " .. debugDemon.markOfDemon .. "observe <flagname> [with <observername>] -- observe a flag for change" ..
 	"\n  " .. debugDemon.markOfDemon .. "o <flagname> [with <observername>] -- observe a flag for change" ..
@@ -1610,6 +1876,36 @@ function debugDemon.processBoomCommand(args, event)
 end 
 
 --
+-- xref
+--
+function debugDemon.processXrefCommand(args, event)
+	-- syntax: -x <name> | "*" | "*f" "*z"
+	local larg = args[1]
+	if not larg or larg == "" then larg = "?" end 
+	larg = larg:lower() 
+	if larg == "?" then 
+		debugger.outText("*** xRef: ? = help (this), * = xref all, *f = list all DML flags, *z = list all DML zones, <name> xref flag or zone", 30) 
+		return true -- leave up 
+	elseif larg == "*" then 
+		debugger.outText(xref.xall(), 30)
+		return true 
+	elseif larg == "*f" then 
+		debugger.outText(xref.allFlags(), 30)
+		return true
+	elseif larg == "*z" then 
+		debugger.outText(xref.allZones(), 30)
+		return true 
+	else 
+		larg = event.remainder
+		larg = dcsCommon.trim(larg)
+		if not larg then larg = "" end 
+		local msg = xref.xrefName(larg)
+		debugger.outText(msg, 30)
+		return true 
+	end
+
+end 
+--
 -- spawning units at the location of the mark 
 --
 
@@ -1965,6 +2261,7 @@ function debugDemon.init()
 	debugDemon.addCommndProcessor("a", debugDemon.processAnalyzeCommand)
 	debugDemon.addCommndProcessor("smoke", debugDemon.processSmokeCommand)
 	debugDemon.addCommndProcessor("boom", debugDemon.processBoomCommand)
+	debugDemon.addCommndProcessor("x", debugDemon.processXrefCommand)
 	return true 
 end
 

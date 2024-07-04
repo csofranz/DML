@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.0.1"
+cfxMX.version = "2.0.2"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -12,7 +12,7 @@ cfxMX.verbose = false
    2.0.0 - clean-up 
          - harmonized with cfxGroups 
    2.0.1 - groupHotByName
-   
+   2.0.2 - partOfGroupDataInZone(), allGroupsInZoneByData() from milHelo
    
 --]]--
 cfxMX.groupNamesByID = {}
@@ -342,6 +342,38 @@ function cfxMX.catText2ID(inText)
 	if c == "static" then outCat = -1 end 
 
 	return outCat
+end
+
+function cfxMX.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
+	--local zP --= cfxZones.getPoint(theZone)
+	local zP = theZone:getDCSOrigin() -- don't use getPoint now.
+	zP.y = 0
+	
+	for idx, aUnit in pairs(theUnits) do 
+		local uP = {}
+		uP.x = aUnit.x 
+		uP.y = 0
+		uP.z = aUnit.y -- !! y-z
+		if theZone:pointInZone(uP) then return true end 
+	end 
+	return false 
+end
+
+function cfxMX.allGroupsInZoneByData(theZone) -- returns groups indexed by name and count 
+	local theGroupsInZone = {}
+	local count = 0
+	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
+		if groupData.units then 
+			if cfxMX.partOfGroupDataInZone(theZone, groupData.units) then 
+				theGroupsInZone[groupName] = groupData -- DATA! work on clones!
+				count = count + 1 
+				if theZone.verbose then 
+					trigger.action.outText("+++cfxMX: added group <" .. groupName .. "> for zone <" .. theZone.name .. ">", 30)
+				end 
+			end
+		end
+	end
+	return theGroupsInZone, count 
 end
  
 function cfxMX.start()
