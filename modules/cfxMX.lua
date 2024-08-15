@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.0.2"
+cfxMX.version = "2.1.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -13,7 +13,12 @@ cfxMX.verbose = false
          - harmonized with cfxGroups 
    2.0.1 - groupHotByName
    2.0.2 - partOfGroupDataInZone(), allGroupsInZoneByData() from milHelo
-   
+   2.0.3 - allGroupsInZoneByData supports type filtering 
+   2.1.0 - support for dynamically spawning player unit detection 
+		 - new isDynamicPlayer()
+		 - new isMEPlayer() 
+		 - new isMEPlayerGroup()
+		 
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
@@ -37,16 +42,14 @@ cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
 cfxMX.groups = {} -- all groups indexed b yname, cfxGroups folded into cfxMX 
 --[[-- group objects are 
-	{
-		name= "", 
-		coalition = "" (red, blue, neutral), 
-		coanum = # (0, 1, 2 for neutral, red, blue)
-		category = "" (helicopter, ship, plane, vehicle, static),
-		hasPlayer = true/false,
-		playerUnits = {} (for each player unit in group: name, point, action)
-		
-	}
-	
+{
+	name= "", 
+	coalition = "" (red, blue, neutral), 
+	coanum = # (0, 1, 2 for neutral, red, blue)
+	category = "" (helicopter, ship, plane, vehicle, static),
+	hasPlayer = true/false,
+	playerUnits = {} (for each player unit in group: name, point, action)
+}
 --]]--
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -359,11 +362,14 @@ function cfxMX.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
 	return false 
 end
 
-function cfxMX.allGroupsInZoneByData(theZone) -- returns groups indexed by name and count 
+function cfxMX.allGroupsInZoneByData(theZone, cat) -- returns groups indexed by name and count 
+	if not cat then cat = {"helicopter", "ship", "plane", "vehicle" } end 
+	if type(cat) == "string" then cat = {cat} end 
 	local theGroupsInZone = {}
 	local count = 0
 	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
-		if groupData.units then 
+		local gType = cfxMX.groupTypeByName[groupName]
+		if dcsCommon.arrayContainsString(cat, gType) and groupData.units then 
 			if cfxMX.partOfGroupDataInZone(theZone, groupData.units) then 
 				theGroupsInZone[groupName] = groupData -- DATA! work on clones!
 				count = count + 1 
@@ -375,7 +381,36 @@ function cfxMX.allGroupsInZoneByData(theZone) -- returns groups indexed by name 
 	end
 	return theGroupsInZone, count 
 end
- 
+
+function cfxMX.isDynamicPlayer(theUnit)
+	if not theUnit then return false end 
+	if not theUnit.getName then return false end 
+	if not theUnit.getPlayerName then return false end 
+	if not theUnit:getPlayerName() then return false end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return false end 
+	return true 
+end
+
+function cfxMX.isMEPlayer(theUnit) 
+	if not theUnit then return false end 
+	if not theUnit.getName then return false end 
+	if not theUnit.getPlayerName then return false end 
+	if not theUnit:getPlayerName() then return false end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return true end 
+	return false 
+end
+
+function cfxMX.isMEPlayerGroup(theUnit) 
+	if not theUnit then return false end 
+	if not theUnit.getName then return end 
+	if not theUnit.getPlayerName then return end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return true end 
+	return false 
+end
+
 function cfxMX.start()
 	cfxMX.createCrossReferences()
 	if cfxMX.verbose then 

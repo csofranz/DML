@@ -1,16 +1,18 @@
 cfxReconGUI = {}
-cfxReconGUI.version = "1.0.0"
+cfxReconGUI.version = "2.0.0"
 --[[-- VERSION HISTORY
  - 1.0.0 - initial version 
-		 
+ - 2.0.0 - removed dependence on cfxPlayer 
+         - compatible with dynamically spawning players 
+		 - cleanup
 --]]--
--- find & command cfxGroundTroops-based jtacs
--- UI installed via OTHER for all groups with players
--- module based on xxxGrpUI
- 
+
 cfxReconGUI.groupConfig = {} -- all inited group private config data 
 cfxReconGUI.simpleCommands = true -- if true, f10 other invokes directly
-
+cfxReconGUI.requiredLibs = {
+	"dcsCommon", -- always
+	"cfxZones", -- Zones, of course 
+}
 --
 -- C O N F I G   H A N D L I N G 
 -- =============================
@@ -38,7 +40,6 @@ function cfxReconGUI.createDefaultConfig(theGroup)
 	local groupUnits = theGroup:getUnits()
 	conf.unit = groupUnits[1] -- WARNING: ASSUMES ONE-UNIT GROUPS
 	cfxReconGUI.resetConfig(conf)
-
 	conf.mainMenu = nil; -- this is where we store the main menu if we branch
 	conf.myCommands = nil; -- this is where we store the commands if we branch 
 	
@@ -81,11 +82,9 @@ function cfxReconGUI.getConfigForUnit(theUnit)
 end
 
 --
---
 -- M E N U   H A N D L I N G 
--- =========================
 --
---
+
  function cfxReconGUI.clearCommsSubmenus(conf)
 	if conf.myCommands then 
 		for i=1, #conf.myCommands do
@@ -96,16 +95,14 @@ end
 end
 
 function cfxReconGUI.removeCommsFromConfig(conf)
-	cfxReconGUI.clearCommsSubmenus(conf)
-	
+	cfxReconGUI.clearCommsSubmenus(conf)	
 	if conf.myMainMenu then 
 		missionCommands.removeItemForGroup(conf.id, conf.myMainMenu) 
 		conf.myMainMenu = nil
 	end
 end
 
--- this only works in single-unit groups. may want to check if group 
--- has disappeared
+-- this only works in single-unit groups
 function cfxReconGUI.removeCommsForUnit(theUnit)
 	if not theUnit then return end
 	if not theUnit:isExist() then return end 	
@@ -121,9 +118,6 @@ function cfxReconGUI.removeCommsForGroup(theGroup)
 	cfxReconGUI.removeCommsFromConfig(conf)
 end
 
---
--- set main root in F10 Other. All sub menus click into this 
---
 function cfxReconGUI.isEligibleForMenu(theGroup)
 	return true
 end
@@ -144,7 +138,7 @@ end
 
 function cfxReconGUI.setCommsMenu(theGroup)
 	-- depending on own load state, we set the command structure
-	-- it begins at 10-other, and has 'jtac' as main menu with submenus
+	-- it begins at F10-Other, and has 'Recon' as main menu with submenus
 	-- as required 
 	if not theGroup then return end
 	if not theGroup:isExist() then return end 
@@ -154,8 +148,7 @@ function cfxReconGUI.setCommsMenu(theGroup)
 	if not cfxReconGUI.isEligibleForMenu(theGroup) then return end
 	
 	local conf = cfxReconGUI.getConfigForGroup(theGroup) 
-	conf.id = theGroup:getID(); -- we do this ALWAYS so it is current even after a crash 
---	trigger.action.outText("+++ setting group <".. conf.theGroup:getName() .. "> jtac command", 30)
+	conf.id = theGroup:getID(); -- we ALWAYSdo this 
 	
 	if cfxReconGUI.simpleCommands then 
 		-- we install directly in F-10 other 
@@ -190,26 +183,17 @@ function cfxReconGUI.setCommsMenu(theGroup)
 		return 
 	end
 	
-	
-	-- ok, first, if we don't have an F-10 menu, create one 
+	-- if we don't have an F-10 menu, create one 
 	if not (conf.myMainMenu) then 
 		conf.myMainMenu = missionCommands.addSubMenuForGroup(conf.id, 'Recon') 
 	end
-	
 	-- clear out existing commands
 	cfxReconGUI.clearCommsSubmenus(conf)
-	
-	-- now we have a menu without submenus. 
 	-- add our own submenus
-	cfxReconGUI.addSubMenus(conf)
-	
+	cfxReconGUI.addSubMenus(conf)	
 end
 
 function cfxReconGUI.addSubMenus(conf)
-	-- add menu items to choose from after 
-	-- user clickedf on MAIN MENU. In this implementation
-	-- they all result invoked methods
-	
 	local commandTxt = "Recon"
 	local unitName = "bogus"
 	if conf.unit and conf.unit:getName()then
@@ -219,31 +203,9 @@ function cfxReconGUI.addSubMenus(conf)
 		commandTxt = commandTxt .. "***"
 	end
 	
-	local theCommand =  missionCommands.addCommandForGroup(
-				conf.id, 
-				commandTxt,
-				conf.myMainMenu,
-				cfxReconGUI.redirectCommandX, 
-				{conf, "recon", unitName}
-				)
+	local theCommand =  missionCommands.addCommandForGroup(conf.id, commandTxt, conf.myMainMenu, cfxReconGUI.redirectCommandX, {conf, "recon", unitName})
 	table.insert(conf.myCommands, theCommand)
---[[--
-	commandTxt = "This is another important command"
-	theCommand =  missionCommands.addCommandForGroup(
-				conf.id, 
-				commandTxt,
-				conf.myMainMenu,
-				cfxReconGUI.redirectCommandX, 
-				{conf, "Sub2"}
-				)
-	table.insert(conf.myCommands, theCommand)
---]]--
 end
-
---
--- each menu item has a redirect and timed invoke to divorce from the
--- no-debug zone in the menu invocation. Delay is .1 seconds
---
 
 function cfxReconGUI.redirectCommandX(args)
 	timer.scheduleFunction(cfxReconGUI.doCommandX, args, timer.getTime() + 0.1)
@@ -260,10 +222,8 @@ function cfxReconGUI.doCommandX(args)
 		trigger.action.outText("+++ reconUI: doCommand: BOGUS unitName!", 30)
 	end
 	
-	local theGroup = conf.theGroup
---	trigger.action.outTextForGroup(conf.id, "+++ groupUI: processing comms menu for <" .. what .. ">", 30)
-	
-	-- whenever we get here, we toggle the recon mode
+	local theGroup = conf.theGroup	
+	-- when we get here, we toggle the recon mode
 	local theUnit = conf.unit 
 	local message = "Scout ".. unitName .. " has stopped reporting."
 	local theSide = conf.coalition
@@ -285,94 +245,50 @@ function cfxReconGUI.doCommandX(args)
 		end 
 	end
 	trigger.action.outTextForCoalition(theSide, message, 30)
-
 	-- reset comms 
 	cfxReconGUI.removeCommsForGroup(theGroup)
 	cfxReconGUI.setCommsMenu(theGroup)
 end
 
-
-
---
--- G R O U P   M A N A G E M E N T 
---
--- Group Management is required to make sure all groups
--- receive a comms menu and that they receive a clean-up 
--- when required 
---
--- Callbacks are provided by cfxPlayer module to which we
--- subscribe during init 
---
-function cfxReconGUI.playerChangeEvent(evType, description, player, data)
-	--trigger.action.outText("+++ groupUI: received <".. evType .. "> Event", 30)
-	if evType == "newGroup" then 
-		-- initialized attributes are in data as follows
-		--   .group - new group 
-		--   .name - new group's name 
-		--   .primeUnit - the unit that trigggered new group appearing 
-		--   .primeUnitName - name of prime unit 
-		--   .id group ID 
-		--theUnit = data.primeUnit
-		-- ensure group data exists and is updated
-		local conf = cfxReconGUI.getConfigForGroup(data.group)
-		conf.unit = data.primeUnit
-		conf.unitName = conf.unit:getName() -- will break if no exist
-		
-		cfxReconGUI.setCommsMenu(data.group)
---		trigger.action.outText("+++ groupUI: added " .. theUnit:getName() .. " to comms menu", 30)
-		return 
+function cfxReconGUI:onEvent(theEvent)
+	if not theEvent then return end 
+	if not theEvent.initiator then return end 
+	local theUnit = theEvent.initiator 
+	if not Unit.isExist(theUnit) then return end 
+	if not theUnit.getName then return end 
+	if not theUnit.getGroup then return end 
+	if not theUnit.getPlayerName then return end 
+	if not theUnit:getPlayerName() then return end 
+	local theGroup = theUnit:getGroup() 
+	if theEvent.id == 15 then 
+		-- BIRTH EVENT PLAYER 
+		local conf = cfxReconGUI.getConfigForGroup(theGroup)
+		conf.unit = theUnit --data.primeUnit
+		conf.unitName = theUnit:getName()
+		cfxReconGUI.setCommsMenu(theGroup)
 	end
-	
-	if evType == "removeGroup" then 
-		-- data is the player record that no longer exists. it consists of
-		--  .name 
-		-- we must remove the comms menu for this group else we try to add another one to this group later
-		local conf = cfxReconGUI.getConfigByGroupName(data.name)
-		
-		if conf then 
-			cfxReconGUI.removeCommsFromConfig(conf) -- remove menus 
-			cfxReconGUI.resetConfig(conf) -- re-init this group for when it re-appears
-		else 
-			trigger.action.outText("+++ reconUI: can't retrieve group <" .. data.name .. "> config: not found!", 30)
-		end
-		
-		return
-	end
-	
-	if evType == "leave" then
-		-- player unit left. we don't care since we only work on group level
-		-- if they were the only, this is followed up by group disappeared 
-		
-	end
-	
-	if evType == "unit" then 
-		-- player changed units. almost never in MP, but possible in solo
-		-- because of 1 seconds timing loop 
-		-- will result in a new group appearing and a group disappearing, so we are good
-		-- may need some logic to clean up old configs and/or menu items 
-
-	end
-	
 end
 
 --
 -- Start 
 --
 function cfxReconGUI.start()
-
-	-- iterate existing groups so we have a start situation
-	-- now iterate through all player groups and install the Assault Troop Menu
-	allPlayerGroups = cfxPlayerGroups -- cfxPlayerGroups is a global, don't fuck with it! 
-	-- contains per group player record. Does not resolve on unit level!
-	for gname, pgroup in pairs(allPlayerGroups) do 
-		local theUnit = pgroup.primeUnit -- get any unit of that group
-		cfxReconGUI.setCommsMenuForUnit(theUnit) -- set up
+	-- lib check 
+	if not dcsCommon.libCheck("cfx Recon Mode", 
+		cfxReconMode.requiredLibs) then
+		return false 
 	end
-	-- now install the new group notifier to install Assault Troops menu
 	
-	cfxPlayer.addMonitor(cfxReconGUI.playerChangeEvent)
+	-- iterate existing groups so we have a start situation
+	local allPlayerUnits = dcsCommon.getAllExistingPlayerUnitsRaw()
+	for idx, theUnit in pairs(allPlayerUnits) do 
+		cfxReconGUI.setCommsMenuForUnit(theUnit) 
+	end 
+
+	world.addEventHandler(cfxReconGUI)
+	
 	trigger.action.outText("cf/x cfxReconGUI v" .. cfxReconGUI.version .. " started", 30)
-	
+	return true 
 end
 
 --

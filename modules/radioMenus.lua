@@ -1,30 +1,23 @@
 radioMenu = {}
-radioMenu.version = "3.0.0"
+radioMenu.version = "4.0.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
+-- note: cfxMX is optional unless using types or groups attributes 
 radioMenu.menus = {}
 radioMenu.mainMenus = {} -- dict 
+radioMenu.lateGroups = {} -- dict by ID 
 
 --[[--
 	Version History 
-	2.1.0 - valA/valB/valC/valD attributes 
-			OOP cfxZones
-			corrected CD setting for "D"
-			ackA, ackB, ackC, ackD attributes 
-			valA-D now define full method, not just values 
-			full wildcard support for ack and cooldown 
-	2.1.1 - outMessage now works correctly 
-	2.2.0 - clean-up
-	2.2.1 - corrected ackD 
-	2.3.0 - added wildcard "*" ability for group name match 
-		  - added ackASnd .. ackDSnd sounds as options 
 	3.0.0 - new radioMainMenu and attachTo: mechanics 
 			cascading radioMainMenu support 
-			detect cyclic references 
+			detect cyclic references
+	4.0.0 - added infrastructure for dynamic players (DCS 2.9.6)
+		  - added dynamic player support 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -53,15 +46,33 @@ end
 --
 -- read zone 
 -- 
+function radioMenu.lateFilterPlayerForType(theUnit, theZone)
+	-- returns true if theUnit matches zone's group criterium 
+	-- false otherwise 
+	if not theUnit then return false end 
+	local theGroup = theUnit:getGroup() 
+	local theCat = theGroup:getCategory() -- 0 == aircraft 1 = plance 
+	local lateGroupName = theGroup:getName()
+	local lateType = theUnit:getTypeName() 
+	local allTypes = theZone.menuTypes -- {}
+	for idx, aType in pairs(allTypes) do 
+		local lowerType = string.lower(aType)
+		if dcsCommon.stringStartsWith(lowerType, "helo") or dcsCommon.stringStartsWith(lowerType, "heli") or 
+		aType == "helicopter" then 
+			if theCat == 1 then return true end 
+		elseif lowerType == "plane" or lowerType == "planes" then 
+			if theCat == 0 then return true end 
+		else 
+			if aType == lateType then return true end 
+		end 
+	end
+	return false 
+end
+
 function radioMenu.filterPlayerIDForType(theZone)
 	-- note: we currently ignore coalition 
 	local theIDs = {}
-	local allTypes = {}
-	if dcsCommon.containsString(theZone.menuTypes, ",") then 
-		allTypes = dcsCommon.splitString(theZone.menuTypes, ",")
-	else 
-		table.insert(allTypes, theZone.menuTypes)
-	end
+	local allTypes = theZone.menuTypes -- {}
 	
 	-- now iterate all types, and include any player that matches
 	-- note that players may match twice, so we use a dict  
@@ -116,16 +127,47 @@ function radioMenu.filterPlayerIDForType(theZone)
 	return theIDs
 end
 
+function radioMenu.lateFilterPlayerForGroup(theUnit, theZone) 
+	-- returns true if theUnit matches zone's group criterium 
+	-- false otherwise. NO COA CHECK 
+	if not theUnit then return false end 
+	local theGroup = theUnit:getGroup() 
+	local lateGroupName = theGroup:getName()
+	for idx, gName in pairs(theZone.menuGroup) do 
+		if dcsCommon.stringEndsWith(gName, "*") then 
+			-- we must check all group names if they start with the 
+			-- the same root. WARNING: CASE-SENSITIVE!!!! 
+			gName = dcsCommon.removeEnding(gName, "*")
+			if dcsCommon.stringStartsWith(lateGroupName, gName) then 
+				-- group match, install menu 
+				if theZone.verbose or radioMenu.verbose then 
+					trigger.action.outText("+++menu: WILDCARD Player Group <" .. gName .. "*> matched with <" .. mxName .. ">: gID = <" .. gID .. ">", 30)
+				end
+				return true 
+			end
+		else 
+			if lateGroupName == gName then 
+				if theZone.verbose or radioMenu.verbose then 
+					trigger.action.outText("+++menu: Player Group <" .. gName .. "> found: <" .. gID .. ">", 30)
+				end
+				return true 
+			end
+		end 
+	end
+	return false 
+end
+
+function radioMenu.lateFilterCoaForUnit(theUnit, theZone) 
+	if theZone.coalition == 0 then return true end 
+	if theZone.coalition == theUnit:getCoalition() then return true end 
+	return false
+end 
+
 function radioMenu.filterPlayerIDForGroup(theZone)
 	-- create an iterable list of groups, separated by commas 
 	-- note that we could introduce wildcards for groups later
 	local theIDs = {}
-	local allGroups = {}
-	if dcsCommon.containsString(theZone.menuGroup, ",") then 
-		allGroups = dcsCommon.splitString(theZone.menuGroup, ",")
-	else 
-		table.insert(allGroups, theZone.menuGroup)
-	end
+	local allGroups = theZone.menuGroup
 
 	for idx, gName in pairs(allGroups) do 
 		-- if gName ends in wildcard "*" we process differently 
@@ -161,6 +203,45 @@ function radioMenu.filterPlayerIDForGroup(theZone)
 
 	return theIDs
 end
+
+function radioMenu.lateInstallMenu(theUnit, theZone)
+	-- we only add the group-individual menus (type/group).
+	-- all higher-level menus have been installed already 
+	local theGroup = theUnit:getGroup()
+	local grp = theGroup:getID()
+	local gName = theGroup:getName()
+	radioMenu.lateGroups[grp] = gName 
+	if not theZone.rootMenu then theZone.rootMenu = {} end 
+	if theZone.attachTo then 
+		local mainMenu = theZone.attachTo
+		theZone.mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+	end 
+	if theZone.menuGroup or theZone.menuTypes then
+		-- install menu, drop through to below 
+	else 
+		--trigger.action.outText("late-skipped menu for <" .. theZone.name .. ">, no group or type dependency", 30)
+		return 
+	end 
+	local aRoot = missionCommands.addSubMenuForGroup(grp, theZone.rootName, theZone.mainRoot) 
+	theZone.rootMenu[grp] = aRoot
+	theZone.mcdA[grp] = 0
+	theZone.mcdB[grp] = 0
+	theZone.mcdC[grp] = 0
+	theZone.mcdD[grp] = 0
+	if theZone.itemA then 
+		theZone.menuA[grp] = missionCommands.addCommandForGroup(grp, theZone.itemA, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "A", grp})
+	end
+	if theZone.itemB then 
+		theZone.menuB[grp] = missionCommands.addCommandForGroup(grp, theZone.itemB, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "B", grp})
+	end 
+	if theZone.itemC then 
+		theZone.menuC[grp] = missionCommands.addCommandForGroup(grp, theZone.itemC, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "C", grp})
+	end 
+	if theZone.itemD then 
+		theZone.menuD[grp] = missionCommands.addCommandForGroup(grp, theZone.itemD, theZone.rootMenu[grp], radioMenu.redirectMenuX, {theZone, "D", grp})
+	end 
+	--trigger.action.outText("completed late-add menu for <" .. theZone.name .. "> to <" .. theUnit:getName() .. ">", 30)
+end 
 
 function radioMenu.installMenu(theZone)
 	local gID = nil 
@@ -220,8 +301,8 @@ function radioMenu.installMenu(theZone)
 		theZone.rootMenu[0] = missionCommands.addSubMenuForCoalition(theZone.coalition, theZone.rootName, theZone.mainRoot)		
 	end
 	
-	if theZone:hasProperty("itemA") then 
-		local menuA = theZone:getStringFromZoneProperty("itemA", "<no A submenu>")
+	if theZone.itemA then -- :hasProperty("itemA") then 
+		local menuA = theZone.itemA -- theZone:getStringFromZoneProperty("itemA", "<no A submenu>")
 		if theZone.menuGroup or theZone.menuTypes then
 			theZone.menuA = {}
 			for idx, grp in  pairs(gID) do  
@@ -234,8 +315,8 @@ function radioMenu.installMenu(theZone)
 		end 
 	end 
 	
-	if theZone:hasProperty("itemB") then 
-		local menuB = theZone:getStringFromZoneProperty("itemB", "<no B submenu>")
+	if theZone.itemB then --:hasProperty("itemB") then 
+		local menuB = theZone.itemB -- :getStringFromZoneProperty("itemB", "<no B submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuB = {}
 			for idx, grp in  pairs(gID) do 
@@ -248,8 +329,8 @@ function radioMenu.installMenu(theZone)
 		end
 	end
 
-	if theZone:hasProperty("itemC") then 
-		local menuC = theZone:getStringFromZoneProperty("itemC", "<no C submenu>")
+	if theZone.itemC then --:hasProperty("itemC") then 
+		local menuC = theZone.itemC -- :getStringFromZoneProperty("itemC", "<no C submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuC = {}
 			for idx, grp in  pairs(gID) do 
@@ -262,8 +343,8 @@ function radioMenu.installMenu(theZone)
 		end
 	end
 	
-	if theZone:hasProperty("itemD") then 
-		local menuD = theZone:getStringFromZoneProperty("itemD", "<no D submenu>")
+	if theZone.itemD then  -- :hasProperty("itemD") then 
+		local menuD = theZone.itemD -- :getStringFromZoneProperty("itemD", "<no D submenu>")
 		if theZone.menuGroup or theZone.menuTypes then 
 			theZone.menuD = {}
 			for idx, grp in  pairs(gID) do 
@@ -292,6 +373,20 @@ function radioMenu.createRadioMenuWithZone(theZone)
 		end
 	end 
 	
+	-- read items and their stuff 
+	if theZone:hasProperty("itemA") then 
+		theZone.itemA = theZone:getStringFromZoneProperty("itemA")
+	end 
+	if theZone:hasProperty("itemB") then 
+		theZone.itemB = theZone:getStringFromZoneProperty("itemB")
+	end
+	if theZone:hasProperty("itemC") then 
+		theZone.itemC = theZone:getStringFromZoneProperty("itemC")
+	end
+	if theZone:hasProperty("itemD") then 
+		theZone.itemD = theZone:getStringFromZoneProperty("itemD")
+	end
+	
 	theZone.coalition = theZone:getCoalitionFromZoneProperty("coalition", 0)
 	-- groups / types 
 	if theZone:hasProperty("group") then 
@@ -305,6 +400,27 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	elseif theZone:hasProperty("types") then
 		theZone.menuTypes = theZone:getStringFromZoneProperty("types", "none")
 	end	
+	
+	-- now process menugroups and create sets to improve later speed 
+	if theZone.menuGroup then 
+		if dcsCommon.containsString(theZone.menuGroup, ",") then 
+			local allGroups = dcsCommon.splitString(theZone.menuGroup, ",")
+			allGroups = dcsCommon.trimArray(allGroups)
+			theZone.menuGroup = allGroups
+		else 
+			theZone.menuGroup = {theZone.menuGroup} --table.insert(allGroups, theZone.menuGroup)
+		end
+	end
+	
+	if theZone.menuTypes then 
+		if dcsCommon.containsString(theZone.menuTypes, ",") then 
+			local allTypes = dcsCommon.splitString(theZone.menuTypes, ",")
+			allTypes = dcsCommon.trimArray(allTypes)
+			theZone.menuTypes = allTypes
+		else 
+			theZone.menuTypes = {theZone.menuTypes}
+		end
+	end
 	
 	theZone.menuVisible = theZone:getBoolFromZoneProperty("menuVisible", true)
 	
@@ -392,11 +508,23 @@ end
 function radioMenu.getMainMenuFor(mainMenu, theZone, idx)
 	if not idx then idx = 0 end 
 	if not mainMenu.rootMenu[idx] then 
---		trigger.action.outText("main <" .. mainMenu.name .. "> for zone <" .. theZone.name .. ">: forcing idx to 0", 30)
 		return mainMenu.rootMenu[0] 
 	end 
---	trigger.action.outText("good main <" .. mainMenu.name .. "> for zone <" .. theZone.name .. ">", 30)
 	return mainMenu.rootMenu[idx]
+end
+
+function radioMenu.lateInstallMainMenu(theUnit, theZone)
+	local theGroup = theUnit:getGroup() 
+	local grp = theGroup:getID() 
+	local mainRoot = nil 
+	if not theZone.rootMenu then theZone.rootMenu = {} end
+	if theZone.attachTo then 
+		local mainMenu = theZone.attachTo
+		mainRoot = radioMenu.getMainMenuFor(mainMenu, theZone, grp)
+	end 
+	local aRoot = missionCommands.addSubMenuForGroup(grp, theZone.rootName, mainRoot) 
+	theZone.rootMenu[grp] = aRoot 
+	--trigger.action.outText("menu: late-attached main menu <" .. theZone.name .. "> for unit <" .. theUnit:getName() .. ">", 30)
 end
 
 function radioMenu.installMainMenu(theZone)
@@ -490,6 +618,27 @@ function radioMenu.createRadioMainMenuWithZone(theZone)
 	elseif theZone:hasProperty("types") then
 		theZone.menuTypes = theZone:getStringFromZoneProperty("types", "none")
 	end	
+
+	-- now process menugroups and create sets to improve later speed 
+	if theZone.menuGroup then 
+		if dcsCommon.containsString(theZone.menuGroup, ",") then 
+			local allGroups = dcsCommon.splitString(theZone.menuGroup, ",")
+			allGroups = dcsCommon.trimArray(allGroups)
+			theZone.menuGroup = allGroups
+		else 
+			theZone.menuGroup = {theZone.menuGroup} --table.insert(allGroups, theZone.menuGroup)
+		end
+	end
+	
+	if theZone.menuTypes then 
+		if dcsCommon.containsString(theZone.menuTypes, ",") then 
+			local allTypes = dcsCommon.splitString(theZone.menuTypes, ",")
+			allTypes = dcsCommon.trimArray(allTypes)
+			theZone.menuTypes = allTypes
+		else 
+			theZone.menuTypes = {theZone.menuTypes}
+		end
+	end
 	
 	-- always install this one 
 	radioMenu.installMainMenu(theZone)
@@ -523,6 +672,8 @@ function radioMenu.radioOutMsg(ack, gid, theZone)
 	local theMsg = ack
 	if (gid > 0) and cfxMX then 
 		local gName = cfxMX.groupNamesByID[gid]
+		if not gName then gName = radioMenu.lateGroups[gid] end 
+		if not gName then gName = "?*?*?" end 
 		theMsg = theMsg:gsub("<group>", gName)
 	end
 
@@ -566,9 +717,9 @@ function radioMenu.setCDByGID(cd, theZone, gID, newVal)
 end
 
 function radioMenu.doMenuX(args)
-	theZone = args[1]
-	theItemIndex = args[2] -- A, B , C .. ?
-	theGroup = args[3] -- can be nil or groupID 
+	local theZone = args[1]
+	local theItemIndex = args[2] -- A, B , C .. ?
+	local theGroup = args[3] -- can be nil or groupID 
 	if not theGroup then theGroup = 0 end 
 	
 	local cd = radioMenu.cdByGID(theZone.mcdA, theZone, theGroup) --theZone.mcdA
@@ -688,6 +839,74 @@ function radioMenu.update()
 	end
 end
 
+--
+-- onEvent - late dynamic spawns
+--
+function radioMenu.lateMenuAddForUnit(theUnit)
+	-- iterate all menu zones and determine if this menu is to 
+	-- install 
+	local uName = theUnit:getName()
+	for zName, theZone in pairs(radioMenu.mainMenus) do 
+		-- determine if this applies to us, and if so, install 
+		-- for unit. only do this if menuGroups or menuTypes present
+		-- all others are set on coa level or higher 
+		--trigger.action.outText("late-proccing MAIN menu <" .. zName ..">", 30)
+		if theZone.menuGroup then 
+			if radioMenu.lateFilterCoaForUnit(theUnit, theZone) and 
+			radioMenu.lateFilterPlayerForGroup(theUnit, theZone) then 
+				radioMenu.lateInstallMainMenu(theUnit, theZone)
+			else 
+				--trigger.action.outText("menu: skipped GROUP main menu <" .. zName .. "> add for <" .. uName .. ">", 30)
+			end
+		elseif theZone.menuTypes then 
+			if radioMenu.lateFilterCoaForUnit(theUnit, theZone) and 
+			radioMenu.lateFilterPlayerForType(theUnit, theZone) then 
+				radioMenu.lateInstallMainMenu(theUnit, theZone)
+			else 
+				--trigger.action.outText("menu: skipped TYPE main menu <" .. zName .. "> add for <" .. uName .. ">", 30)
+			end 
+		else 
+			-- nothing to do, was attached for coalition or higher 
+			--trigger.action.outText("menu: did not late-install main menu <" .. zName .. ">, no group or type restrictions", 30)
+		end
+	end 
+	
+	for idx, theZone in pairs(radioMenu.menus) do 
+		-- again, does this apply to us?
+		--trigger.action.outText("late-proccing menu <" .. theZone.name ..">", 30)
+		if theZone.menuGroup then 
+			if radioMenu.lateFilterCoaForUnit(theUnit, theZone) and 
+			radioMenu.lateFilterPlayerForGroup(theUnit, theZone) then 
+				radioMenu.lateInstallMenu(theUnit, theZone)
+			else 
+				--trigger.action.outText("menu: skipped GROUP main menu <" .. theZone.name .. "> add for <" .. uName .. ">", 30)
+			end
+		elseif theZone.menuTypes then 
+			if radioMenu.lateFilterCoaForUnit(theUnit, theZone) and 
+			radioMenu.lateFilterPlayerForType(theUnit, theZone) then 
+				radioMenu.lateInstallMenu(theUnit, theZone)
+			else 
+				--trigger.action.outText("menu: skipped TYPE main menu <" .. theZone.name .. "> add for <" .. uName .. ">", 30)
+			end 
+		else 
+			-- nothing to do, was attached for coalition or higher 
+			--trigger.action.outText("menu: did not late-install STD menu <" .. theZone.name .. ">, no group or type restrictions", 30)
+		end
+	end 
+end 
+
+
+function radioMenu:onEvent(event)
+	if not event then return end 
+	if not event.initiator then return end 
+	local theUnit = event.initiator
+	if event.id == 15 then 
+		if not cfxMX.isDynamicPlayer(theUnit) then return end 
+		-- we have a dynamic unit spawn 
+		--trigger.action.outText("menu: detected dynamic spawn <" .. theUnit:getName() .. ">", 30)
+		radioMenu.lateMenuAddForUnit(theUnit)
+	end
+end
 
 --
 -- Config & Start
@@ -755,6 +974,9 @@ function radioMenu.start()
 		radioMenu.createRadioMenuWithZone(aZone) -- process attributes
 		radioMenu.addRadioMenu(aZone) -- add to list
 	end
+	
+	-- install late spawn detector 
+	world.addEventHandler(radioMenu) 
 	
 	-- start update 
 	radioMenu.update()

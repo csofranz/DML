@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.0.4"
+cfxHeloTroops.version = "3.1.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -8,31 +8,6 @@ cfxHeloTroops.requestRange = 500 -- meters
 --
 --[[--
  VERSION HISTORY
- 1.1.3 - repaired forgetting 'wait-' when loading/disembarking
- 1.1.4 - corrected coalition bug in deployTroopsFromHelicopter 
- 2.0.0 - added weight change when troops enter and leave the helicopter 
-       - idividual troop capa max per helicopter 
- 2.0.1 - lib loader verification
-       - uses dcsCommon.isTroopCarrier(theUnit)
- 2.0.2 - can now deploy from spawners with "requestable" attribute
- 2.1.0 - supports config zones
-       - check spawner legality by types  
-       - updated types to include 2.7.6 additions to infantry
-       - updated types to include stinger/manpads 
- 2.2.0 - minor maintenance (dcsCommon)
-       - (re?) connected readConfigZone (wtf?)
-       - persistence support
-       - made legalTroops entrirely optional and defer to dcsComon else
- 2.3.0 - interface with owned zones and playerScore when 
-       - combat-dropping troops into non-owned owned zone.
-       - prevent auto-load from pre-empting loading csar troops 
- 2.3.1 - added ability to self-define troopCarriers via config
- 2.4.0 - added missing support for attackZone orders (destination)
-	   - eliminated cfxPlayer module import and all dependencies
-	   - added support for groupTracker / limbo 
-	   - removed restriction to only apply to helicopters in anticipation of the C-130 Hercules appearing in the game
- 2.4.1 - new actionSound attribute, sound plays to group whenever 
-         troops have boarded or disembarked
  3.0.0 - added requestable cloner support 
 	   - harmonized spawning invocations across cloners and spawners 
 	   - dmlZones 
@@ -41,14 +16,10 @@ cfxHeloTroops.requestRange = 500 -- meters
  3.0.2 - fixed a typo in in-air menu 
  3.0.3 - pointInZone check for insertion rather than radius 
  3.0.4 - also handles picking up troops with orders "captureandhold"
+ 3.0.5 - worked around a new issues accessing a unit's name 
+ 3.1.0 - compatible with DCS 2.9.6 dynamic spawning 
  
 --]]--
---
--- cfxHeloTroops -- a module to pick up and drop infantry. 
--- Can be used with ANY aircraft, configured by default to be 
--- restricted to troop-carrying helicopters.
--- might be configure to apply to any type you want using the 
--- configuration zone.
 
 
 cfxHeloTroops.requiredLibs = {
@@ -284,9 +255,8 @@ function cfxHeloTroops.addConfigMenu(conf)
 end
 
 function cfxHeloTroops.setCommsMenu(theUnit)
-	-- depending on own load state, we set the command structure
-	-- it begins at 10-other, and has 'Assault Troops' as main menu with submenus
-	-- as required 
+	-- compatible with DCS 2.9.6 dynamic spawns 
+	-- set F10 Other.. menu for group 
 	if not theUnit then return end
 	if not theUnit:isExist() then return end 
 	
@@ -301,7 +271,7 @@ function cfxHeloTroops.setCommsMenu(theUnit)
 	local group = theUnit:getGroup() 
 	local id = group:getID()
 	local conf = cfxHeloTroops.getUnitConfig(theUnit)
-	conf.id = id; -- we do this ALWAYS to it is current even after a crash 
+	conf.id = id; -- we ALWAYS do this so it is current even after a crash 
 	conf.unit = theUnit -- link back
 	
 	-- ok, first, if we don't have an F-10 menu, create one 
@@ -819,10 +789,10 @@ function cfxHeloTroops:onEvent(theEvent)
 	local initiator = theEvent.initiator 
 	if not initiator then return end -- not interested 
 	local theUnit = initiator 
-	local name = theUnit:getName() 
 	-- see if this is a player aircraft 
 	if not theUnit.getPlayerName then return end -- not a player 
 	if not theUnit:getPlayerName() then return end -- not a player 
+	local name = theUnit:getName() -- moved to a later 
 	
 	-- only for helicopters -- overridedden by troop carriers
 	-- we don't check for cat any more, so any airframe 

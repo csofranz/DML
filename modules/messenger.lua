@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "3.1.0"
+messenger.version = "3.2.0"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,6 +13,8 @@ messenger.messengers = {}
 	3.0.0 - removed messenger, in?, f? attributes, harmonized on messenger?
 	3.1.0 - msgGroup supports multiple groups, separated by comma 
 		  - msgUnit supports multiple units, separated by comma
+	3.2.0 - loc and twn wildcard support (inherited from zones)
+	
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -165,7 +167,7 @@ end
 
 
 --
--- reat attributes
+-- read attributes
 --
 function messenger.createMessengerWithZone(theZone)
 	local aMessage = theZone:getStringFromZoneProperty("message", "") 

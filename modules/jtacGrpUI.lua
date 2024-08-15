@@ -1,5 +1,5 @@
 jtacGrpUI = {}
-jtacGrpUI.version = "3.0.0"
+jtacGrpUI.version = "3.1.0"
 jtacGrpUI.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", 
@@ -12,6 +12,7 @@ jtacGrpUI.requiredLibs = {
 		 - clean-up 
 		 - jtacSound 
    3.0.0 - support for attachTo: 
+   3.1.0 - support for DCS 2.0.6 dynamic player spwans 
    
 --]]--
 -- find & command cfxGroundTroops-based jtacs
@@ -151,7 +152,7 @@ function jtacGrpUI.setCommsMenu(theGroup)
 	end 
 	
 	local conf = jtacGrpUI.getConfigForGroup(theGroup) 
-	conf.id = theGroup:getID(); -- we always do this ALWAYS
+	conf.id = theGroup:getID(); -- we always do this
 	
 	if jtacGrpUI.simpleCommands then 
 		-- we install directly in F-10 other 
@@ -294,25 +295,29 @@ function jtacGrpUI:onEvent(theEvent)
 	if not theEvent then return end 
 	local theUnit = theEvent.initiator
 	if not theUnit then return end 
+	if not theUnit.getName then return end -- dcs 2.9.6 jul-11 fix 
 	local uName = theUnit:getName()
 	if not theUnit.getPlayerName then return end 
 	if not theUnit:getPlayerName() then return end 
-	-- we now have a player birth event. 
-	local pName = theUnit:getPlayerName()
-	local theGroup = theUnit:getGroup()
-	if not theGroup then return end 
-	local gName = theGroup:getName()
-	if not gName then return end 
-	if jtacGrpUI.verbose then 
-		trigger.action.outText("+++jGUI: birth player. installing JTAC for <" .. pName .. "> on unit <" .. uName .. ">", 30)
+	local id = theEvent.id 
+	if id == 15 then 
+		-- we now have a player birth event. 
+		local pName = theUnit:getPlayerName()
+		local theGroup = theUnit:getGroup()
+		if not theGroup then return end 
+		local gName = theGroup:getName()
+		if not gName then return end 
+		if jtacGrpUI.verbose then 
+			trigger.action.outText("+++jGUI: birth player. installing JTAC for <" .. pName .. "> on unit <" .. uName .. ">", 30)
+		end 
+		local conf = jtacGrpUI.getConfigByGroupName(gName)		
+		if conf then 
+			jtacGrpUI.removeCommsFromConfig(conf) -- remove menus 
+			jtacGrpUI.resetConfig(conf) -- re-init this group for when it re-appears
+		end 
+		
+		jtacGrpUI.setCommsMenu(theGroup)
 	end 
-	local conf = jtacGrpUI.getConfigByGroupName(gName)		
-	if conf then 
-		jtacGrpUI.removeCommsFromConfig(conf) -- remove menus 
-		jtacGrpUI.resetConfig(conf) -- re-init this group for when it re-appears
-	end 
-	
-	jtacGrpUI.setCommsMenu(theGroup)
 end
 
 

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.9"
+dcsCommon.version = "3.1.2"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -26,7 +26,9 @@ dcsCommon.version = "3.0.9"
 3.0.9  - new getOrigPositionByID()
        - unitName2ID[] reverse lookup 
 	   - unitName2Heading
-		 
+3.1.0  - updates to events, DCS update 7-11 2024 hardening 
+3.1.1  - added Chinook to troop carriers
+3.1.2  - isTroopCarrier() hardening against DCS sillieness
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -39,7 +41,7 @@ dcsCommon.version = "3.0.9"
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D"} -- Ka-50, Apache and Gazelle can't carry troops
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
@@ -707,7 +709,7 @@ dcsCommon.version = "3.0.9"
 	end
 	
 	function dcsCommon.compassPositionOfARelativeToB(A, B)
-		-- warning: is REVERSE in order for bearing, returns a string like 'Sorth', 'Southwest'
+		-- warning: is REVERSE in order for bearing, returns a string like 'North', 'Southwest'
 		if not A then return "***error:A***" end
 		if not B then return "***error:B***" end
 		local bearing = dcsCommon.bearingInDegreesFromAtoB(B, A) -- returns 0..360
@@ -2566,9 +2568,10 @@ end
 						"Pilot Suicide", "player cap airfield", "emergency landing", "unit create task", -- 44
 						"unit delete task", "Simulation start", "weapon rearm", "weapon drop", -- 48
 						"unit task timeout", "unit task stage", -- 50
-						"subtask score", "extra score", "mission restart", "winner", 
-						"postponed takeoff", "postponed land", -- 56
-						"max"}
+						"subtask score", "mission restart", "winner", -- 53
+						"runway takeoff", "runway touchdown", "LMS Restart", -- 56
+						"sim freeze", "sum unfreeze", "player start repair", "player end repair", --60
+						"max",} -- 61
 		if id > #events then return "Unknown (ID=" .. id .. ")" end
 		return events[id]
 	end
@@ -2839,9 +2842,9 @@ end
 function dcsCommon.isTroopCarrier(theUnit, carriers)
 	-- return true if conf can carry troups
 	if not theUnit then return false end
-
+	if not theUnit.getTypeName then return false end -- hardening against DCS sillieness
 	-- see if carriers contains "helo" and theUnit is a helo 
-	if dcsCommon.arrayContainsString(carriers, "helo") or dcsCommon.arrayContainsString(carriers, "helos")then
+	if dcsCommon.arrayContainsString(carriers, "helo") or dcsCommon.arrayContainsString(carriers, "helos") then
 		local grp = theUnit:getGroup() 
 		if grp:getCategory() == 1 then -- NOT category bug prone, is a group check 
 			return true 

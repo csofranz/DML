@@ -1,5 +1,5 @@
 airfield = {}
-airfield.version = "2.1.1"
+airfield.version = "2.2.0"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -21,7 +21,7 @@ airfield.allAirfields = {} -- inexed by af name, db entries: base, cat
 		  -- support for FARPS as well
 	2.1.0 - added support for makeNeutral? 
 	2.1.1 - bug fixing for DCS 2.9x airfield retrofit 
-	
+	2.2.0 - dmlZone:getCoalition() / masterowner adaptation for owner 
 --]]--
 
 -- init all airfields DB
@@ -109,11 +109,6 @@ function airfield.createAirFieldFromZone(theZone)
 		airfield.assumeControl(theZone)
 	end
 	
-	if theZone:hasProperty("ownedBy#") then 
-		theZone.ownedBy = theZone:getStringFromZoneProperty("ownedBy#", "<none>")
-		trigger.action.setUserFlag(theZone.ownedBy, theZone.owner)
-	end
-	
 	-- if fixed attribute, we switch to that color and keep it fixed.
 	-- can be overridden by either makeXX or autoCap.
 	if theZone:hasProperty("fixed") then 
@@ -122,6 +117,11 @@ function airfield.createAirFieldFromZone(theZone)
 		airfield.assumeControl(theZone) -- turn off capturable 
 		theAirfield:setCoalition(theFixed)
 		theZone.owner = theFixed
+	end
+	
+	if theZone:hasProperty("ownedBy#") then 
+		theZone.ownedBy = theZone:getStringFromZoneProperty("ownedBy#", "<none>")
+		trigger.action.setUserFlag(theZone.ownedBy, theZone.owner)
 	end
 	
 	-- index by name, and warn if duplicate associate 
@@ -182,7 +182,7 @@ function airfield.showAirfield(theZone)
 	
 	local lineColor = theZone.redLine -- {1.0, 0, 0, 1.0} -- red  
 	local fillColor = theZone.redFill -- {1.0, 0, 0, 0.2} -- red 
-	local owner = theZone.owner
+	local owner = theZone:getCoalition() -- .owner
 	if owner == 2 then 
 		lineColor = theZone.blueLine -- {0.0, 0, 1.0, 1.0}
 		fillColor = theZone.blueFill -- {0.0, 0, 1.0, 0.2}
@@ -315,6 +315,7 @@ function airfield.update()
 			if theZone.owner ~= 1 then -- only send cap event when capped
 				airfield.airfieldCaptured(theAirfield)
 			end 
+			theZone.owner = 1 
 		end
 		
 		if theZone.makeBlue and theZone:testZoneFlag(theZone.makeBlue, theZone.triggerMethod, "lastMakeBlue") then 
@@ -329,6 +330,7 @@ function airfield.update()
 			if theZone.owner ~= 2 then -- only send cap event when capped
 				airfield.airfieldCaptured(theAirfield)
 			end 
+			theZone.owner = 2 
 		end
 
 		if theZone.makeNeutral and theZone:testZoneFlag(theZone.makeNeutral, theZone.triggerMethod, "lastMakeNeutral") then 
@@ -343,6 +345,7 @@ function airfield.update()
 			if theZone.owner ~= 0 then -- only send cap event when capped
 				airfield.airfieldCaptured(theAirfield) -- 0 cap will not cause any signals, but we do this anyway
 			end 
+			theZone.owner = 0
 		end
 
 		

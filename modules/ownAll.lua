@@ -1,5 +1,5 @@
 ownAll = {}
-ownAll.version = "1.0.0"
+ownAll.version = "1.1.0"
 ownAll.verbose = false 
 ownAll.requiredLibs = {
 	"dcsCommon", -- always
@@ -9,7 +9,7 @@ ownAll.requiredLibs = {
 --[[--
 VERSION HISTORY
  - 1.0.0 - Initial version 
- 
+ - 1.1.0 - dml:masterOwner / getCoalition() updates 
 --]]--
 
 ownAll.zones = {}
@@ -69,13 +69,13 @@ function ownAll.calcState(theZone)
 	local blueNum = 0
 	local allSame = true 
 	if #theZone.zones < 1 then return -1, 0, 0 end 
-	local s = theZone.zones[1].owner
+	local s = theZone.zones[1]:getCoalition() -- owner
 	if not s then 
 		trigger.action.outText("+++oAll: zone <" .. theZone.zones[1].name .."> has no owner (?)", 30)
 		s = -1
 	end
 	for idx, aZone in pairs (theZone.zones) do 
-		local s2 = aZone.owner
+		local s2 = aZone:getCoalition() -- .owner
 		if not s2 then 
 			trigger.action.outText("+++oAll: zone <" .. aZone.name .."> has no owner (?)", 30)
 			s2 = -1

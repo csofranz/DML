@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.3.1"
+cfxOwnedZones.version = "2.4.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -43,6 +43,8 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - title attribute 
 	  - code clean-up
 2.3.1 - restored getNearestOwnedZoneToPoint 
+2.4.0 - dmlZones masterOwner update 
+
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -180,6 +182,7 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	aZone.neutralFill = aZone:getRGBAVectorFromZoneProperty("neutralFill", cfxOwnedZones.neutralFill)
 	
 	-- masterOwner 
+--[[--
 	if aZone:hasProperty("masterOwner") then 
 		local masterZone = aZone:getStringFromZoneProperty("masterOwner", "cfxNoneErr")
 		local theMaster = cfxZones.getZoneByName(masterZone)
@@ -193,6 +196,7 @@ function cfxOwnedZones.addOwnedZone(aZone)
 			end
 		end
 	end
+--]]--
 	
 	aZone.announcer = aZone:getBoolFromZoneProperty("announcer", cfxZones.announcer)
 	if aZone:hasProperty("announce") then 
@@ -348,7 +352,7 @@ function cfxOwnedZones.update()
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
 		theZone.numRed = 0
 		theZone.numBlue = 0 
-		local lastOwner = theZone.owner
+		local lastOwner = theZone.owner -- do NOT use dml:getCoalition()!
 		if not lastOwner then 
 			trigger.action.outText("+++owdZ: WARNING - zone <" .. theZone.name .. "> has NIL owner", 30)
 			return 
@@ -472,7 +476,7 @@ function cfxOwnedZones.update()
 			-- we do nothing
 		elseif theZone.masterOwner then 
 			-- inherit from my master 
-			newOwner = theZone.masterOwner.owner
+			newOwner = theZone:getCoalition() -- theZone.masterOwner.owner
 		elseif theZone.numRed < 1 and theZone.numBlue < 1 then 
 			-- no troops here. Become neutral?
 			if theZone.numKeep < 1 then 

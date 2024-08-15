@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.3.0"
+cloneZones.version = "2.4.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -56,6 +56,7 @@ cloneZones.respawnOnGroupID = true
 			(undocumented, just to provide lazy people with a migration
 			path) with wiper module
 		  - using "wipe?" will now create a warning 
+	2.4.0 - reworked masterOwner to fit with dmlZone 
 --]]--
 
 --
@@ -268,6 +269,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.cloneMethod = theZone:getStringFromZoneProperty("method", "inc") -- note string on number default
 	end
 	
+	--[[--
 	if theZone:hasProperty("masterOwner") then 
 		theZone.masterOwner = theZone:getStringFromZoneProperty( "masterOwner", "*")
 		theZone.masterOwner = dcsCommon.trim(theZone.masterOwner)
@@ -285,7 +287,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		if not theMaster then 
 			trigger.action.outText("clnZ: WARNING: cloner's <" .. theZone.name .. "> master owner named <" .. theZone.masterOwner .. "> does not exist!", 30)
 		end
+		theZone.masterOwner = theMaster 
 	end
+	--]]--
 	
 	theZone.turn = theZone:getNumberFromZoneProperty("turn", 0)
 	
@@ -692,7 +696,8 @@ function cloneZones.sameIDUnitData(theData)
 end
 
 function cloneZones.resolveOwnership(spawnZone, ctry)
-	if not spawnZone.masterOwner then return ctry end 
+	if not spawnZone.masterOwner then return ctry end -- old code 
+--[[--	
 	local masterZone = cfxZones.getZoneByName(spawnZone.masterOwner)
 	if not masterZone then 
 		trigger.action.outText("+++clnZ: cloner " .. spawnZone.name .. " could not find master owner <" .. spawnZone.masterOwner .. ">", 30)
@@ -702,8 +707,10 @@ function cloneZones.resolveOwnership(spawnZone, ctry)
 	if not masterZone.owner then 
 		return ctry 
 	end
+--]]--
 	
-	ctry = dcsCommon.getACountryForCoalition(masterZone.owner)
+--	ctry = dcsCommon.getACountryForCoalition(masterZone.owner)
+	ctry = dcsCommon.getACountryForCoalition(spawnZone:getCoalition())
 	return ctry 
 end
 
@@ -1694,6 +1701,8 @@ function cloneZones.hasLiveUnits(theZone)
 end
 
 function cloneZones.resolveOwningCoalition(theZone)
+	return theZone:getCoalition()
+--[[--	
 	if not theZone.masterOwner then return theZone.owner end 
 	local masterZone = cfxZones.getZoneByName(theZone.masterOwner)
 	if not masterZone then 
@@ -1701,6 +1710,7 @@ function cloneZones.resolveOwningCoalition(theZone)
 		return theZone.owner 
 	end
 	return masterZone.owner 
+--]]--
 end
 
 function cloneZones.getRequestableClonersInRange(aPoint, aRange, aSide)

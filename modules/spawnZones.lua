@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.0.3"
+cfxSpawnZones.version = "2.1.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -29,6 +29,8 @@ cfxSpawnZones.spawnedGroups = {}
    2.0.1 - fix in verifySpawnOwnership() when not master zone found 
    2.0.2 - new "moveFormation" attribute 
    2.0.3 - corrected type in spawnUnits? attribute 
+   2.1.0 - masterOwner update for dmlZones. 
+		   since spawners don't extend zones, this is still old-school 
    
   --]]--
   
@@ -111,7 +113,17 @@ function cfxSpawnZones.createSpawner(inZone)
 	theSpawner.country = inZone:getNumberFromZoneProperty("country", 0)
 	if inZone:hasProperty("masterOwner") then 
 		theSpawner.masterZoneName = inZone:getStringFromZoneProperty("masterOwner", "")
-		if theSpawner.masterZoneName == "" then theSpawner.masterZoneName = nil end 
+		if theSpawner.masterZoneName == "" then 
+			theSpawner.masterZoneName = nil 
+		else 
+			local masterZone = cfxZones.getZoneByName(theSpawner.masterZoneName)
+			if not masterZone then 		
+				trigger.action.outText("spawner " .. theSpawner.name .. " DID NOT FIND MASTER ZONE <" .. theSpawner.masterZoneName .. ">", 30)
+				theSpawner.masterZoneName = nil 
+			else 
+				theSpawner.masterZone = masterZone
+			end
+		end 
 	end 
 	
 	theSpawner.rawOwner = coalition.getCountryCoalition(theSpawner.country)
@@ -237,18 +249,18 @@ function cfxSpawnZones.verifySpawnOwnership(spawner)
 		return true 
 	end -- no master owner, all ok
 	local myCoalition = spawner.rawOwner
-	local masterZone = cfxZones.getZoneByName(spawner.masterZoneName)
-	if not masterZone then 
-		trigger.action.outText("spawner " .. spawner.name .. " DID NOT FIND MASTER ZONE <" .. spawner.masterZoneName .. ">", 30)
-		return false 
-	end
-	
-	if not masterZone.owner then 
+--	local masterZone = cfxZones.getZoneByName(spawner.masterZoneName)
+--	if not masterZone then 
+--		trigger.action.outText("spawner " .. spawner.name .. " DID NOT FIND MASTER ZONE <" .. spawner.masterZoneName .. ">", 30)
+--		return false 
+--	end
+	local masterZone = spawner.masterZone 
+--	if not masterZone.owner then 
 		--trigger.action.outText("spawner " .. spawner.name .. " - masterZone " .. masterZone.name .. " HAS NO OWNER????", 30)
-		return true 
-	end
+--		return true 
+--	end
 	
-	if (myCoalition ~= masterZone.owner) then 
+	if (myCoalition ~= masterZone:getCoalition()) then 
 		-- can't spawn, surrounding area owned by enemy
 		return false 
 	end

@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.2.2"
+cfxReconMode.version = "2.3.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -60,7 +60,8 @@ VERSION HISTORY
  2.2.1 - fixed "cfxReconSMode" typo 
  2.2.2 - added groupNames attribute 
        - clean-up
-	   
+ 2.3.0 - support for towns/twn when present 
+ 
 --]]--
 
 cfxReconMode.detectionMinRange = 3000 -- meters at ground level
@@ -394,6 +395,18 @@ function cfxReconMode.getLocation(theGroup)
 		lat, lon = dcsCommon.latLon2Text(lat, lon)
 		msg = "Lat " .. lat .. " Lon " .. lon .. " Ele " .. ele ..units
 	end
+	
+	if twn and towns then 
+		units = "km"
+		local village, data, dist = twn.closestTownTo(currPoint)
+		if cfxReconMode.imperialUnits then 
+			dist = dist * 0.539957 -- nm conversion 
+			units = "nm"
+		end 
+		dist = math.floor(dist/100) / 10 
+		local bear = dcsCommon.compassPositionOfARelativeToB(currPoint, data.p)
+		msg = msg .. ", " .. dist .. units .. " " .. bear .. " of " .. village
+	end 
 	return msg
 end
 

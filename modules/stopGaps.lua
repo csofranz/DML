@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.1.2"
+stopGap.version = "1.2.0"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
@@ -52,6 +52,9 @@ stopGap.requiredLibs = {
 	1.1.0 - kickTheDead option 
 	1.1.1 - filter "from runway" clients 
 	1.1.2 - allNeutral (DML only) 
+	1.2.0 - DCS dynamic player spawn compatibility 
+			stopGaps only works with MX data, so we are good, no changes 
+			required 
 	
 --]]--
 
@@ -77,6 +80,8 @@ function stopGap.staticMXFromUnitMX(theGroup, theUnit)
 	theStatic.type = theUnit.type 
 	theStatic.name = theUnit.name  -- will magically be replaced with player unit 
 	theStatic.cty = cfxMX.countryByName[theGroup.name]
+	theStatic.payload = theUnit.payload -- not supported (yet) by DCS 
+	theStatic.onboard_num = theUnit.onboard_num -- not supported 
 	-- DML only: allNeutral 
 	if stopGap.allNeutral then 
 		theStatic.cty = dcsCommon.getACountryForCoalition(0)
@@ -499,6 +504,4 @@ if not stopGap.start() then
 	trigger.action.outText("+++ aborted stopGap v" .. stopGap.version .. "  -- startup failed", 30)
 	stopGap = nil 
 end
---[[-- TODO
-	- allNeutral: spawn all player aircraft as neutral
---]]--
+

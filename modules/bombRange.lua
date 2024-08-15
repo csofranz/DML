@@ -1,5 +1,5 @@
 bombRange = {}
-bombRange.version = "2.0.0"
+bombRange.version = "2.0.2"
 bombRange.dh = 1 -- meters above ground level burst 
 
 bombRange.requiredLibs = {
@@ -13,7 +13,7 @@ VERSION HISTORY
         *after* impact on high-resolution scans (30fps)
 		set resolution to 30 ups by default 
 		order of events: check kills against dropping projectiles 
-		collecd dead, and compare against missing erdnance while they are fresh
+		collect dead, and compare against missing erdnance while they are fresh
 		GC 
 		interpolate hits on dead when looking at kills and projectile does 
 		not exist
@@ -26,6 +26,9 @@ VERSION HISTORY
 2.0.0 - support for radioMainMenu 
       - support for types 
 	  - types can have wild cards
+2.0.1 - says hi! on start
+	  - fixes for DCS Jul 11 bugs 
+2.0.2 - fixes for DCS Jul 22 bugs 
 
 
 --]]--
@@ -197,7 +200,7 @@ function bombRange.initCommsForUnit(theUnit)
 	if bombRange.mainMenu then 
 		mainMenu = radioMenu.getMainMenuFor(bombRange.mainMenu) -- nilling both next params will return menus[0]
 	end 
-	
+	if not theUnit.getName then return end -- Jul-22 DCS bug 
 	local uName = theUnit:getName() 
 	local pName = theUnit:getPlayerName()
 	local theGroup = theUnit:getGroup()
@@ -274,6 +277,7 @@ end
 -- Event Proccing
 --
 function bombRange.suspectedHit(weapon, target)
+	if not Object.isExist(weapon) then return end -- DCS july 11 2024 issue 
 	local wType = weapon:getTypeName()
 	if not target then return end 
 	if target:getCategory() == 5 then -- scenery
@@ -407,15 +411,19 @@ end
 function bombRange:onEvent(event)
 	if not event.initiator then return end 
 	local theUnit = event.initiator
+	if not Unit.isExist(theUnit) then return end -- DCS issue Jul-11
+	if not theUnit.getName then return end -- DCS issue Jul-22 
 	
 	if event.id == 2 then -- hit: weapon still exists
 		if not event.weapon then return end 
+		if not Object.isExist(event.weapon) then return end -- Jul-11 issue
 		bombRange.suspectedHit(event.weapon, event.target)
 		return 
 	end
 	
 	if event.id == 28 then -- kill: similar to hit, but due to new mechanics not reliable
 		if not event.weapon then return end 
+		if not Object.isExist(event.weapon) then return end -- Jul-11 issue
 		bombRange.suspectedHit(event.weapon, event.target)
 		return 
 	end
@@ -425,6 +433,7 @@ function bombRange:onEvent(event)
 		-- these events can come *before* weapon disappears
 		local killDat = {}
 		killDat.victim = event.initiator
+		if not Object.isExist(event.initiator) then return end -- Jul-11 issue
 		killDat.p = event.initiator:getPoint()
 		killDat.when = timer.getTime() 
 		killDat.name = dcsCommon.uuid("vic")
@@ -454,7 +463,8 @@ function bombRange:onEvent(event)
 		end
 		local w = event.weapon
 		local b = {}
-		local bName = w:getName()
+		local bName = "unknown"
+		if w.getName then bName = w:getName() end -- Jul-22 DCS bug 
 		b.name = bName 
 		b.type = w:getTypeName()
 		-- may need to verify type: how do we handle clusters or flares?
@@ -793,6 +803,8 @@ function bombRange.start()
 	-- start GC
 	bombRange.GC() 
 	
+	-- say hi!
+	trigger.action.outText("cf/x Bomb Range v" .. bombRange.version .. " started.", 30)
 	return true 
 end 
 

@@ -1,5 +1,5 @@
 tdz = {}
-tdz.version = "1.0.3"
+tdz.version = "1.1.0"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -18,6 +18,7 @@ VERSION HISTORY
  1.0.2 - manual placement option 
          filters FARPs 
  1.0.3 - "manual" now defaults to false 
+ 1.1.0 - now supports event 55 (runway touch) 
  
 --]]--
 
@@ -326,7 +327,7 @@ function tdz:onEvent(event)
 	if not theUnit.getPlayerName then return end 
 	local playerName = theUnit:getPlayerName() 
 	if not playerName then return end 
-	if event.id == 4 then 
+	if event.id == 4 or event.id == 55 then 
 		-- player landed 
 		tdz.playerLanded(theUnit, playerName) 
 	end

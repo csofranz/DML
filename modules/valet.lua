@@ -1,5 +1,5 @@
 valet = {}
-valet.version = "1.1.0"
+valet.version = "1.1.1"
 valet.verbose = false 
 valet.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,6 +14,7 @@ valet.valets = {}
 	1.0.2 - also scan birth events 
 	1.0.3 - outSoundFile now working correctly 
 	1.1.0 - hysteresis is now time-based (10 seconds)
+	1.1.1 - hardening against DCS July-11 update issues 
 --]]--
 
 function valet.addValet(theZone)
@@ -361,6 +362,7 @@ function valet.checkPlayerSpawn(playerName, theUnit)
 	-- see if player spawned in a valet zone
 	if not playerName then return end
 	if not theUnit then return end
+	if not theUnit.getName then return end 
 	
 	local pos = theUnit:getPoint()
 	--trigger.action.outText("+++valet: spawn event", 30)

@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.0.0"
+csarManager.version = "4.2.1"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -46,7 +46,11 @@ csarManager.ups = 1
   3.4.0  - global timeLimit option in config zone 
          - fixes expiration bug when persisting data 
   4.0.0  - support for mainMenu 
-  
+  4.0.1  - increased verbosity 
+         - fix for Jul-11 2024 DCS bugs 
+  4.1.0  - support for DCS 2.9.6 dynamic spawns  
+  4.2.0  - automatically support twn if present 
+  4.2.1  - added Chinook to csar default set (via common)
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
@@ -64,6 +68,8 @@ csarManager.requiredLibs = {
 
 -- unitConfigs contain the config data for any helicopter
 -- currently in the game. The Array is indexed by unit name 
+-- requires single-unit player groups 
+-- compatible with DCS 2.9.6 dcs dynamic spawns 
 csarManager.unitConfigs = {}
 
 --
@@ -181,7 +187,6 @@ function csarManager.createCSARMissionData(point, theSide, freq, name, numCrew, 
 	end
 	
 	if csarManager.useRanks then 
---		local ranks = csarManager.ranks -- {"Lt", "Lt", "Lt", "Col", "Cpt", "WO", "WO"}
 		local myRank = dcsCommon.pickRandom(csarManager.ranks)
 		name = myRank .. " " .. name 
 	end 
@@ -243,7 +248,6 @@ function csarManager.removeMission(theMission, pickup)
 		if aMission ~= theMission then 
 			table.insert(newMissions, aMission)
 		else 
---			csarManager.invokeRemovedMissionCallbacks(theMission)
 			if pickup then 
 				csarManager.invokePickUpCallbacks(theMission)
 			end 
@@ -296,6 +300,7 @@ end
 
 
 function csarManager.getUnitConfig(theUnit) -- will create new config if not existing
+-- compatible with dynamic spawns for DCS 2.9.6 
 	if not theUnit then
 		trigger.action.outText("+++csar: nil unit in get config!", 30)
 		return nil 
@@ -331,15 +336,22 @@ function csarManager:onEvent(event)
 		
 	if not dcsCommon.isPlayerUnit(theUnit) then return end -- not a player unit
 
+	if csarManager.verbose then 
+		trigger.action.outText("csarM: player event <" .. event.id .. "> -- (=<" .. dcsCommon.event2text(event.id)  .. ">)", 30)
+	end 
+
 	-- only proceed if troop carrier (no more helo checks, all troop carriers, so osprey and harrier can be used if so desired)
 	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end 
 
 	local ID = event.id
-	if ID == 4 then  -- landed
+	if ID == 4 or ID == 55 then  -- landed, runway touch 
+		if csarManager.verbose then 
+			trigger.action.outText("land event " .. ID .. "received.", 30)
+		end 
 		csarManager.heloLanded(theUnit)
 	end
 	
-	if ID == 3 or ID == 55 then -- take off, postponed take-off 
+	if ID == 3 or ID == 54 then -- take off, runway take-off 
 		csarManager.heloDeparted(theUnit)
 	end
 	
@@ -354,18 +366,15 @@ function csarManager:onEvent(event)
 		csarManager.setCommsMenu(theUnit)
 		-- we also need to make sure that there are no 
 		-- more troopsOnBoard
-
 		local myName = theUnit:getName()
 		local conf = csarManager.getUnitConfig(theUnit)
 		conf.unit = theUnit
 		conf.troopsOnBoard = {}
 		local totalMass = cargoSuper.calculateTotalMassFor(myName)
-
 		-- now also set cargo weight for the unit
 		cargoSuper.removeAllMassForCargo(myName, "Evacuees") -- will allocate new empty table 
 		totalMass = cargoSuper.calculateTotalMassFor(myName)
 		trigger.action.setUnitInternalCargo(myName, totalMass) -- super recalcs
-
 	end
 	
 end
@@ -698,6 +707,8 @@ end
 
 
 function csarManager.setCommsMenu(theUnit)
+	-- add menu for this aircraft/group when it spawns 
+	-- compatible with dynamic spawns for DCS 2.9.6 
 	if not theUnit then return end
 	if not theUnit:isExist() then return end 
 	
@@ -821,11 +832,19 @@ function csarManager.doListCSARRequests(args)
 					status = status .. " [" .. delta .. "]" -- remove me 
 				end 
 			end 
+			local locinfo = ""
+			if twn and towns then 
+				local village, data, dist = twn.closestTownTo(mission.zone.point)
+				dist = dist * 0.539957 -- nm conversion 
+				dist = math.floor(dist/100) / 10 
+				local bear = dcsCommon.compassPositionOfARelativeToB(mission.zone.point, data.p)
+				locinfo = ", " .. dist .. "nm " .. bear .. " of " .. village
+			end 
 			if csarManager.vectoring then 
-				report = report .. "\n".. mission.name .. ", bearing " .. b .. ", " ..mission.dist .."nm, " .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
+				report = report .. "\n".. mission.name .. locinfo .. ", bearing " .. b .. ", " ..mission.dist .."nm, " .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
 			else 
 				-- leave out vectoring 
-				report = report .. "\n".. mission.name .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
+				report = report .. "\n".. mission.name .. locinfo .. " ADF " .. mission.freq * 10 .. " kHz - " .. status
 			end
 		end
 	end

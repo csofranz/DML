@@ -75,13 +75,9 @@ function rndFlags.createRNDWithZone(theZone)
 	-- trigger flag 
 	if theZone:hasProperty("f?") then 
 		theZone.triggerFlag = theZone:getStringFromZoneProperty("f?", "none")
-	end
-	
-	if theZone:hasProperty("in?") then 
+	elseif theZone:hasProperty("in?") then 
 		theZone.triggerFlag = theZone:getStringFromZoneProperty("in?", "none")
-	end
-	
-	if theZone:hasProperty("rndPoll?") then 
+	elseif theZone:hasProperty("rndPoll?") then 
 		theZone.triggerFlag = theZone:getStringFromZoneProperty("rndPoll?", "none")
 	end
 	

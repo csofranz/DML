@@ -1,5 +1,5 @@
 cfxPlayerScoreUI = {}
-cfxPlayerScoreUI.version = "2.1.0"
+cfxPlayerScoreUI.version = "3.0.0"
 cfxPlayerScoreUI.verbose = false 
 
 --[[-- VERSION HISTORY
@@ -11,6 +11,7 @@ cfxPlayerScoreUI.verbose = false
          - score summary for side 
 		 - allowAll
  - 2.1.1 - minor cleanup 
+ - 3.0.0 - compatible with dynamic groups/units in DCS 2.9.6 
 		 
 --]]--
 cfxPlayerScoreUI.requiredLibs = {
@@ -19,7 +20,7 @@ cfxPlayerScoreUI.requiredLibs = {
 	"cfxPlayerScore",
 }
 cfxPlayerScoreUI.soundFile = "Quest Snare 3.wav"
-cfxPlayerScoreUI.rootCommands = {} -- by unit's GROUP name, for player aircraft
+cfxPlayerScoreUI.rootCommands = {} -- by unit's GROUP name, for player aircraft. stores command roots 
 cfxPlayerScoreUI.allowAll = true 
 cfxPlayerScoreUI.ranked = true 
 

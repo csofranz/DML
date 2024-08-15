@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.1.1"
+FARPZones.version = "2.2.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -24,7 +24,8 @@ FARPZones.verbose = false
   2.0.2 - clean-up 
 		  verbosity enhancements 
   2.1.0 - integration with camp: needs repairs, produceResourceVehicles()
-  2.1.1 - loading a farp from data respaws all defenders and resource vehicles 		  
+  2.1.1 - loading a farp from data respaws all defenders and resource vehicles
+  2.2.0 - changing a FARP's owner invokes SSBClient if it is loaded 
   
 --]]--
 
@@ -331,9 +332,7 @@ end
 
 function FARPZones.produceVehicles(theFarp)
 	local theZone = theFarp.zone 
---	trigger.action.outText("entering veh prod run for farp zone <" .. theZone.name .. ">, owner is <" .. theFarp.owner .. ">", 30)
-	--end
-	
+
 	-- abort production if farp is owned by neutral and 
 	-- neutralproduction is false 
 	if theFarp.owner == 0 and not theFarp.neutralProduction then 
@@ -382,18 +381,7 @@ function FARPZones.produceVehicles(theFarp)
 	
 	-- spawn resource vehicles 
 	FARPZones.produceResourceVehicles(theFarp, theCoalition) 
---[[--
-	unitTypes = FARPZones.resourceTypes
-	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
-			theCoalition, 
-			theFarp.name .. "-R" .. theFarp.count, -- must be unique 
-			theFarp.resZone,
-			unitTypes,
-			"line_v",
-			theFarp.resHeading)
-	theFarp.resources = theGroup 
-	theFarp.resourceData = theData
---]]--	
+	
 	-- update unique counter
 	theFarp.count = theFarp.count + 1
 end
@@ -508,7 +496,6 @@ function FARPZones.saveData()
 	-- iterate all farp data and put them into a container each
 	for theZone, theFARP in pairs(FARPZones.allFARPZones) do 
 		fName = theZone.name 
-		--trigger.action.outText("frpZ persistence: processing FARP <" .. fName .. ">", 30)
 		local fData = {}
 		fData.owner = theFARP.owner 
 		fData.defenderData = dcsCommon.clone(theFARP.defenderData)
@@ -527,6 +514,17 @@ function FARPZones.saveData()
 	theData.farps = farps 
 	return theData 
 end
+
+function FARPZones.delayedSSB()
+	-- invoke SSBClient to re-scan all airfields 
+	-- if it is loaded in the mission 
+	if FARPZones.verbose then 
+		trigger.action.outText("FARPz: delayed SSB invocation", 30)
+	end 
+	if cfxSSBClient then 
+		cfxSSBClient.setSlotAccessByAirfieldOwner()
+	end
+end 
 
 function FARPZones.loadMission()
 	local theData = persistence.getSavedDataForModule("FARPZones")
@@ -548,27 +546,9 @@ function FARPZones.loadMission()
 				theAB:setCoalition(theFARP.owner) -- FARP is in lockup.
 				theFARP.defenderData = dcsCommon.clone(fData.defenderData)
 
-				--[[--
-				local groupData = fData.defenderData
-				if groupData and #groupData.units > 0 then 
-					local cty = groupData.cty 
-					local cat = groupData.cat 
-					theFARP.defenders = coalition.addGroup(cty, cat, groupData)
-				end 
-				
-				groupData = fData.resourceData
-				if groupData and #groupData.units > 0 then 
-					local cty = groupData.cty 
-					local cat = groupData.cat
-					theFARP.resources = coalition.addGroup(cty, cat, groupData)
-				end 
-				--]]--
 				FARPZones.produceVehicles(theFARP) -- do full defender and resource cycle 
 				FARPZones.drawFARPCircleInMap(theFARP) -- mark in map
---				if (not theFARP.defenders) and (not theFARP.resources) then 
-					-- we instigate a resource and defender drop 
---					FARPZones.produceVehicles(theFARP)
---				end
+
 			else 
 				trigger.action.outText("frpZ: persistence: FARP <" .. fName .. "> no longer exists in mission, skipping", 30)
 			end
@@ -580,10 +560,8 @@ end
 -- Start 
 --
 function FARPZones.releaseFARPS()
---	trigger.action.outText("Releasing hold on FARPS", 30)
 	for idx, aFarp in pairs(FARPZones.lockup) do 
 		aFarp:autoCapture(true)
---		trigger.action.outText("releasing farp <" .. aFarp:getName() .. ">", 30)
 	end 
 end
 
@@ -592,13 +570,10 @@ function FARPZones.readConfig()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("farpZonesConfig")
 	end 
-	
 	FARPZones.verbose = theZone.verbose 
- 	
 	FARPZones.spinUpDelay = theZone:getNumberFromZoneProperty( "spinUpDelay", 30)
 	
 	FARPZones.refresh = theZone:getNumberFromZoneProperty("refresh", -1)
-	
 end
 
 
@@ -635,8 +610,6 @@ function FARPZones.start()
 	for k, aZone in pairs(theZones) do 
 		local aFARP = FARPZones.createFARPFromZone(aZone) -- read attributes from DCS
 		FARPZones.addFARPZone(aFARP) -- add to managed zones 
-		-- moved FARPZones.drawFARPCircleInMap(aFARP) -- mark in map 
-		-- moved FARPZones.produceVehicles(aFARP) -- allocate initial vehicles
 		if FARPZones.verbose then 
 			trigger.action.outText("processed FARP <" .. aZone.name .. "> now owned by " .. aZone.owner, 30)
 		end 
@@ -656,6 +629,7 @@ function FARPZones.start()
 	FARPZones.startingUp = false -- not needed / read anywhere
 	
 	timer.scheduleFunction(FARPZones.releaseFARPS, {}, timer.getTime() + 5)
+	timer.scheduleFunction(FARPZones.delayedSSB, {}, timer.getTime() + 10)
 	
 	if FARPZones.refresh > 0 then 
 		timer.scheduleFunction(FARPZones.refreshMap, {}, timer.getTime() + FARPZones.refresh)

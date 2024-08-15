@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "4.0.1"
+cfxSSBClient.version = "5.0.0"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -8,7 +8,7 @@ cfxSSBClient.reUseAfter = -1 -- seconds for re-use delay
   
 cfxSSBClient.requiredLibs = {
 	"dcsCommon", -- always
-	"cfxMX", --"cfxGroups", -- for slot access
+	"cfxMX", -- for ME Player data access
 	"cfxZones", -- Zones, of course 
 }
 
@@ -17,7 +17,13 @@ Version History
   4.0.0 - dmlZones 
 		- cfxMX instead of cfxGroups 
   4.0.1 - check slot availability immediately upon start 
-		- ssb autoenable option  
+		- ssb auto-enable option  
+  5.0.0 - re-write: support for DCS new dynamic spawns
+		- work-around for DCS bug that passes dead / deallocated objects 
+		- SINGLE-USE and dynamic spawns are mutually exclusive
+		  as single-use cannot cover dynamic slots, so authors must 
+		  disable or limit the amount of planes manually 
+  
 --]]--
 
 cfxSSBClient.enabledFlagValue = 0 -- DO NOT CHANGE, MUST MATCH SSB 
@@ -36,9 +42,9 @@ cfxSSBClient.slotActions = {
 cfxSSBClient.keepInAirGroups = false -- if false we only look at planes starting on the ground 
 -- setting this to true only makes sense if you plan to bind in-air starts to airfields 
 
-cfxSSBClient.playerGroups = {}
-cfxSSBClient.closedAirfields = {} -- list that closes airfields for any aircrafts
-cfxSSBClient.playerPlanes = {} -- names of units that a player is flying
+cfxSSBClient.playerGroups = {} -- indexed by groupName. group data with .airfield attribute 
+cfxSSBClient.closedAirfields = {} -- list that closes airfields for all aircrafts
+cfxSSBClient.playerPlanes = {} -- names of unit that a player is flying indexed by unit name
 cfxSSBClient.crashedGroups = {} -- names of groups to block after crash of their player-flown plane 
 cfxSSBClient.slotState = {} -- keeps a record of which slot has which value. For persistence and debugging 
 cfxSSBClient.occupiedUnits = {} -- by unit name if occupied to prevent kicking. clears after crash or leaving plane 
@@ -154,6 +160,7 @@ end
 function cfxSSBClient.setSlotAccessForGroup(theGroup)
 	if not theGroup then return end 
 	-- WARNING: theGroup is cfxGroup record  
+	-- amended for dynamic groups 
 	local theName = theGroup.name 
 	
 	-- we now check if any plane of that group is still 
@@ -163,15 +170,27 @@ function cfxSSBClient.setSlotAccessForGroup(theGroup)
 	
 	-- we now iterate all playerUnits in theGroup.
 	-- theGroup is cfxGroup 
-	for idx, playerData in pairs (theGroup.playerUnits) do 
-		local uName = playerData.name 
-		if cfxSSBClient.occupiedUnits[uName] then 
+	if theGroup.playerUnits then 
+		-- this is a ME unit
+		for idx, playerData in pairs (theGroup.playerUnits) do 
+			local uName = playerData.name 
+			if cfxSSBClient.occupiedUnits[uName] then 
+				if cfxSSBClient.verbose then 
+					trigger.action.outText("+++ssbc: unit <" .. uName .. "> of group <" .. theName .. "> is occupied, no airfield check", 30)
+				end
+				return 
+			end
+		end
+	else 
+		-- this is a dynamic unit 
+		if cfxSSBClient.occupiedUnits[theGroup.uName] then
+			local uName = theGroup.uName
 			if cfxSSBClient.verbose then 
-				trigger.action.outText("+++ssbc: unit <" .. uName .. "> of group <" .. theName .. "> is occupied, no airfield check", 30)
+				trigger.action.outText("+++ssbc: DYNAMIC unit <" .. uName .. "> of group <" .. theName .. "> is occupied, no airfield check", 30)
 			end
 			return 
 		end
-	end
+	end 
 	
 	-- when we get here, no unit in the entire group is occupied 
 	local theMatchingAirfield = theGroup.airfield 
@@ -230,8 +249,6 @@ function cfxSSBClient.setSlotAccessForGroup(theGroup)
 		end
 		trigger.action.setUserFlag(theName, blockState)
 		cfxSSBClient.slotState[theName] = blockState
-		--if cfxSSBClient.verbose then 
-		--end 
 	else 
 		if cfxSSBClient.verbose then 
 			trigger.action.outText("+++SSB: group ".. theName .. " no bound airfield: available", 30)
@@ -252,18 +269,22 @@ function cfxSSBClient.setSlotAccessForUnit(theUnit) -- calls setSlotAccessForGro
 end
 
 function cfxSSBClient.getPlayerGroupForGroupNamed(aName)
+	--is now indexed !! 
+	return cfxSSBClient.playerGroups[aName]
+	--[[--
 	local pGroups = cfxSSBClient.playerGroups
 	for idx, theGroup in pairs(pGroups) do
 		if theGroup.name == aName then return theGroup end 
 	end
-	return nil 
+	return nil
+--]]--	
 end
 
 function cfxSSBClient.setSlotAccessByAirfieldOwner()
 	-- get all groups that have a player-controlled aircraft
 	-- now uses cached, reduced set of player planes
-	local pGroups = cfxSSBClient.playerGroups 
-	for idx, theGroup in pairs(pGroups) do
+	local pGroups = cfxSSBClient.playerGroups -- indexed by name 
+	for gName, theGroup in pairs(pGroups) do
 		cfxSSBClient.setSlotAccessForGroup(theGroup)
 	end
 end
@@ -294,14 +315,8 @@ function cfxSSBClient:onEvent(event)
 			end
 			return 
 		end 
-		local curH = theUnit:getLife()
-		local maxH = theUnit:getLife0()
+		if not theUnit.getName then return end -- WTF???
 		local uName = theUnit:getName()
-		if cfxSSBClient.verbose then 
-			trigger.action.outText("+++SSB: Player leaves unit <" .. uName .. ">", 30)
-			trigger.action.outText("+++SSB: unit health check: " .. curH .. " of " .. maxH, 30)
-		end
-		
 		cfxSSBClient.occupiedUnits[uName] = nil -- forget I was occupied
 		cfxSSBClient.setSlotAccessForUnit(theUnit) -- prevent re-slotting if airfield lost
 		return 
@@ -317,9 +332,10 @@ function cfxSSBClient:onEvent(event)
 	end
 
 -- write down player names and planes
-	if event.id == 15 then -- birth
+	if event.id == 15 then -- birth / spawn 
 		if not event.initiator then return end 
 		local theUnit = event.initiator -- we know this exists
+		if not theUnit.getName then return end -- hardening 
 		local uName = theUnit:getName()
 		if not uName then return end 
 		-- player entered unit? 
@@ -336,6 +352,12 @@ function cfxSSBClient:onEvent(event)
 		end 
 		-- remember this unit as player controlled plane
 		-- because player and plane can easily disconnect
+		-- find out if this is a dynamic spawn 
+		local isDynamic = cfxMX.isDynamicPlayer(theUnit)
+		if isDynamic then 
+			trigger.action.outText("+++SSBC: detected dynamic player spawn for unit <" .. uName .. ">, id <" .. theUnit:getID() .. ">, group <" .. theUnit:getGroup():getName() .. ">, player <" .. playerName .. ">", 30)
+			cfxSSBClient.amendPlayerData(theUnit) -- get airport and add to managed slots 
+		end 
 		cfxSSBClient.playerPlanes[uName] = playerName
 		if cfxSSBClient.verbose then 
 			trigger.action.outText("+++SSBC:SU: noted " .. playerName .. " piloting player unit " .. uName, 30)
@@ -349,16 +371,21 @@ function cfxSSBClient:onEvent(event)
 	if event.id == 5 then -- crash PRE-processing 
 		if not event.initiator then return end
 		local theUnit = event.initiator 
+		if not theUnit.getName then return end 
 		local uName = theUnit:getName()
 		cfxSSBClient.occupiedUnits[uName] = nil -- no longer occupied
 		cfxSSBClient.setSlotAccessForUnit(theUnit) -- prevent re-slotting if airfield lost
+		-- DO NOT RETURN NOW!!! singleuse proccing follows 
 	end
 
 	if cfxSSBClient.singleUse and event.id == 5 then -- crash
 		--if not event.initiator then return end 
 		local theUnit = event.initiator 
+		if not theUnit then return end 
+		if not theUnit.getName then return end 
 		local uName = theUnit:getName()
 		if not uName then return end
+		if not theUnit.getGroup then return end 
 		local theGroup = theUnit:getGroup()
 		if not theGroup then return end 
 		-- see if a player plane
@@ -371,6 +398,7 @@ function cfxSSBClient:onEvent(event)
 			return 
 		end
 		-- if we get here, a player-owned plane has crashed 
+		if not theGroup.getName then return end -- better safe than sorry 
 		local gName = theGroup:getName()
 		if not gName then return end 
 		
@@ -435,27 +463,34 @@ end
 
 -- pre-process static player data to minimize 
 -- processor load on checks
-function cfxSSBClient.processPlayerData()
-	cfxSSBClient.playerGroups = cfxMX.getPlayerGroup()
-	local pGroups = cfxSSBClient.playerGroups
+function cfxSSBClient.processSSBPlayerData()
+	--cfxSSBClient.playerGroups = cfxMX.getPlayerGroup()
+	local pGroups = cfxSSBClient.SSBPlayerData -- cfxSSBClient.playerGroups
 	local filteredPlayers = {}
-	for idx, theGroup in pairs(pGroups) do
+	for gName, theGroup in pairs(pGroups) do
 		if theGroup.airfield ~= nil or cfxSSBClient.keepInAirGroups or 
 		cfxSSBClient.singleUse then 
 			-- only transfer groups that have airfields (or also keepInAirGroups or when single-use)
 			-- attached. Ignore the rest as they are 
 			-- always fine
-			table.insert(filteredPlayers, theGroup)
+			--table.insert(filteredPlayers, theGroup)
+			filteredPlayers[gName] = theGroup 
 		end
 	end
 	cfxSSBClient.playerGroups = filteredPlayers
+	-- we can now relinquish SSBPlayerData
+	cfxSSBClient.SSBPlayerData = nil 
 end
 
 -- add airfield information to each player group
+-- WARNING: AMENDS/MODIFIES DATA IN MX TO CONTAIN AIRFIELDS 
+-- now changed to internal clones 
 function cfxSSBClient.processGroupData()
 	local pGroups = cfxMX.getPlayerGroup() -- we want the group.name attribute
+	local processed = {}
 	for idx, theGroup in pairs(pGroups) do
 		-- we always use the first player's plane as referenced
+		local cGroup = dcsCommon.clone(theGroup)
 		local playerData = theGroup.playerUnits[1]
 		local theAirfield = nil
 		local delta = -1
@@ -471,20 +506,52 @@ function cfxSSBClient.processGroupData()
 			end 
 			if delta > cfxSSBClient.maxAirfieldRange then 
 				-- forget airfield
-				 theAirfield = nil
+				theAirfield = nil
 				if cfxSSBClient.verbose then 
 					trigger.action.outText("+++SSB: group: " .. theGroup.name .. " unlinked - too far from airfield" , 30)
 				end 
+--			end
+			else 
+				cGroup.airfield = theAirfield -- we update the clone
+				-- add to my player groups, indexed by group name 
+				processed[theGroup.name] = cGroup -- we keep the clone
 			end
-			theGroup.airfield = theAirfield
 		else 
 			if cfxSSBClient.verbose then 
 				trigger.action.outText("+++SSB: group: " .. theGroup.name .. " start option " .. action .. " does not concern SSB", 30)
 			end 
 		end
 	end
+	cfxSSBClient.SSBPlayerData = processed -- remember all relevant clones for post-processing 
 end
 
+function cfxSSBClient.amendPlayerData(theUnit) 
+	-- enter with single, dynamically spawning unit and add an 
+	-- entry for cfxSSBClient.SSBPlayerData to allow entry for 
+	-- group's airbase / FARP
+	local dynGroup = theUnit:getGroup()
+	local theGroup = {} -- entry into db
+	theGroup.name = dynGroup:getName()
+	local thePoint = theUnit:getPoint() 
+	local theAirfield, delta = cfxSSBClient.getClosestAirbaseTo(thePoint)
+	local afName = theAirfield:getName()
+	if cfxSSBClient.verbose then 
+		trigger.action.outText("+++SSB: DYNAMIC group: " .. theGroup.name .. " closest to AF " .. afName .. ": " .. math.floor(delta) .. "m" , 30)
+	end 
+	if delta > cfxSSBClient.maxAirfieldRange then 
+		-- forget airfield
+		--theAirfield = nil
+		if cfxSSBClient.verbose then 
+			trigger.action.outText("+++SSB: DYNAMIC group: " .. theGroup.name .. " unlinked - too far from airfield (???)" , 30 )
+		end 
+	else 
+		if cfxSSBClient.verbose then 
+			trigger.action.outText("+++SSB: DYNAMIC group: " .. theGroup.name .. " added to SSBPlayerData for slot management" , 30)
+		end 
+		theGroup.uName = theUnit:getName()
+		cfxSSBClient.playerGroups[theGroup.name] = theGroup
+	end
+end 
 --
 -- read config zone
 --
@@ -589,7 +656,7 @@ function cfxSSBClient.start()
 	
 	-- process player data to minimize effort and build cache
 	-- into cfxSSBClient.playerGroups
-	cfxSSBClient.processPlayerData()
+	cfxSSBClient.processSSBPlayerData() -- processPlayerData()
 	
 	-- process ssbc zones 
 	-- for in-mission DML interface

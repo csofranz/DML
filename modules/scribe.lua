@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "2.0.0"
+scribe.version = "2.0.2"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -13,10 +13,15 @@ VERSION HISTORY
 	1.0.1 postponed land, postponed takeoff, unit_lost 
 	1.1.0 supports persistence's SHARED ability to share data across missions
 	2.0.0 support for main menu 
+	2.0.1 Hardening for DCS Jul 11 patch issues 
+	2.0.2 Secondary landing events correction 
+	      support for DCS dynamic player spawns 
+	
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
 scribe.playerUnits = {} -- indexed by unit name. for crash detection 
+scribe.dynamicPlayers = {}
 
 --[[--
 	unitEntry:
@@ -157,12 +162,22 @@ end
 -- Event handling 
 --
 function scribe.playerBirthedIn(playerName, theUnit)
-	-- access db 
-	local theEntry = scribe.getPlayerNamed(playerName) -- can be new
 	local myType = theUnit:getTypeName() 
 	local uName = theUnit:getName() 
 	local theGroup = theUnit:getGroup() 
 	local gID = theGroup:getID()
+	-- install menu if dynamic plane and not defined already 
+	if cfxMX.isDynamicPlayer(theUnit) then 
+		local gName = theGroup:getName() 
+		if not scribe.dynamicPlayers[gName] then 
+			scribe.installDynamicPlayerMenu(theUnit)
+			scribe.dynamicPlayers[gName] = true 
+		end
+	end
+	
+	-- access db 
+	local theEntry = scribe.getPlayerNamed(playerName) -- can be new
+	
 	-- check if this player is still active
 	if theEntry.isActive then 
 		-- do something to remedy this 
@@ -281,15 +296,15 @@ function scribe.playerLanded(playerName)
 	-- see if last landing is at least xx seconds old 
 	local now = timer.getTime()
 	delta = now - uEntry.lastLanding
-	if delta > scribe.landingCD or delta < 0 then 
+	if delta > scribe.landingCD then -- or delta < 0 then 
 		uEntry.landings = uEntry.landings + 1 
+--		trigger.action.outText("+++scrb: added landing for " .. playerName .. ", delta is <" .. delta .. ">.", 30)
 	else 
 		if scribe.verbose then 
 			trigger.action.outText("+++scb: landing ignored: cooldown active", 30)
 		end 
 	end
 	uEntry.lastLanding = now 
-
 end
 
 function scribe.playerDeparted(playerName)
@@ -342,6 +357,7 @@ function scribe:onEvent(theEvent)
 	if not theEvent.initiator then return end 
 	local theUnit = theEvent.initiator
 	if not theUnit then return end 
+	if not theUnit.getName then return end -- DCS bug hardening
 	local uName = theUnit:getName()
 	if scribe.playerUnits[uName]  and scribe.verbose then 
 		trigger.action.outText("+++scb: event <" .. theEvent.id .. " = " .. dcsCommon.event2text(theEvent.id)  .. ">, concerns player unit named <" .. uName .. ">.", 30)
@@ -362,10 +378,13 @@ function scribe:onEvent(theEvent)
 		return 
 	end 
 	-- when we get here we have a player event 
-	
+--	trigger.action.outText("+++scrb: player event <" .. theEvent.id .. ">", 30)
 	-- players can only ever activate by birth event 
-	if theEvent.id == 15 then -- birth 
-		scribe.playerBirthedIn(playerName, theUnit) 
+	if theEvent.id == 15 
+	   or theEvent == 20 
+	then -- birth / enter unit  
+--		trigger.action.outText("+++scrb: player <" .. playerName .. "> entered unit.", 30)
+		scribe.playerBirthedIn(playerName, theUnit) -- reset timer for landings / take-off 
 		scribe.playerUnits[uName] = playerName -- for crash helo detection 
 	end 
 	
@@ -384,12 +403,12 @@ function scribe:onEvent(theEvent)
 	end 
 	
 	if theEvent.id == 4 or -- landed 
-	   theEvent.id == 56 then 
+	   theEvent.id == 55 then -- corrected to 55
 		scribe.playerLanded(playerName)
 	end 
 	
 	if theEvent.id == 3 or -- take-off
-	   theEvent.id == 55 then -- postponed take-off
+	   theEvent.id == 54 then -- postponed take-off, corrected to 54
 		scribe.playerDeparted(playerName)
 --		trigger.action.outText("departure detected", 30)
 	end 
@@ -484,6 +503,31 @@ end
 --
 -- start
 -- 
+function scribe.installDynamicPlayerMenu(theUnit)
+	local mainMenu = nil 
+	if scribe.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(scribe.mainMenu) -- nilling both next params will return menus[0]
+	end 
+	local unitInfo = {}
+	local theGroup = theUnit:getGroup() 
+	local coa = theGroup:getCoalition() 
+	local theType = theUnit:getTypeName()
+	local gName = theGroup:getName()
+	local uName = theUnit:getName() 
+	if scribe.verbose then 
+		trigger.action.outText("DYNAMIC unit <" .. uName .. ">: type <" .. theType .. "> coa <" .. coa .. ">, group <" .. gName .. ">", 30)
+	end 
+	unitInfo.uName = uName -- needed for reverse-lookup 
+	unitInfo.gName = gName -- also needed for reverse lookup 
+	unitInfo.coa = coa 
+	unitInfo.gID = theGroup:getID()
+	unitInfo.uID = theUnit:getID()
+	unitInfo.theType = theType
+--	unitInfo.cat = cfxMX.groupTypeByName[gName]
+	unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu, mainMenu)
+	unitInfo.checkData = missionCommands.addCommandForGroup(unitInfo.gID, "Get Pilot's Statistics", unitInfo.root, scribe.redirectCheckData, unitInfo)	
+end 
+
 function scribe.startPlayerGUI()
 	-- scan all mx players 
 	-- note: currently assumes single-player groups
@@ -514,7 +558,7 @@ function scribe.startPlayerGUI()
 		unitInfo.gID = gData.groupId
 		unitInfo.uID = uData.unitId
 		unitInfo.theType = theType
-		unitInfo.cat = cfxMX.groupTypeByName[gName]
+--		unitInfo.cat = cfxMX.groupTypeByName[gName]
 		unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu, mainMenu)
 		unitInfo.checkData = missionCommands.addCommandForGroup(unitInfo.gID, "Get Pilot's Statistics", unitInfo.root, scribe.redirectCheckData, unitInfo)
 	end

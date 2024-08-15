@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.6" 
+cfxZones.version = "4.4.2" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -9,38 +9,6 @@ cfxZones.version = "4.3.6"
 --
 
 --[[-- VERSION HISTORY
-- 4.0.0   - dmlZone OOP API started 
-		  - code revision / refactoring 
-		  - moved createPoint and copxPoint to dcsCommon, added bridging code 
-		  - re-routed all createPoint() invocations to dcsCommon 
-		  - removed anyPlayerInZone() because of cfxPlayer dependency
-		  - numberArrayFromString() moved to dcsCommon, bridged 
-		  - flagArrayFromString() moved to dcsCommon, bridged 
-		  - doPollFlag() can differentiate between number method and string method 
-		    to enable passing an immediate negative value 
-		  - getNumberFromZoneProperty() enforces number return even on default
-		  - immediate method switched to preceeding '#', to resolve conflict witzh 
-		    negative numbers, backwards compatibility with old (dysfunctional) method 
-- 4.0.1   - dmlZone:getName()
-- 4.0.2   - removed verbosity from declutterZone (both versions)
-- 4.0.3   - new processDynamicVZU()
-	      - wildcard uses processDynamicVZU
-- 4.0.4   - setFlagValue now supports multiple flags (OOP and classic)
-		  - doSetFlagValue optimizations 
-- 4.0.5   - dynamicAB wildcard 
-		  - processDynamicValueVU
-- 4.0.6   - hash mark forgotten QoL
-- 4.0.7   - drawZone()
-- 4.0.8   - markZoneWithObjects()
-		  - cleanup 
-		  - markCenterWithObject
-		  - markPointWithObject
-- 4.0.9   - createPolyZone now correctly returns new zone 
-		  - createSimplePolyZone correctly passes location to createPolyZone 
-		  - createPolyZone now correctly sets zone.point
-		  - createPolyZone now correctly inits dcsOrigin
-		  - createCircleZone noew correctly inits dcsOrigin
-- 4.0.10  - getBoolFromZoneProperty also supports "on" (=true) and "off" (=false)
 - 4.1.0   - getBoolFromZoneProperty 'on/off' support for dml variant as well 
 - 4.1.1   - evalRemainder() updates 
 - 4.1.2   - hash property missing warning 
@@ -49,7 +17,7 @@ cfxZones.version = "4.3.6"
 		  - small optimization for randomInRange()
 		  - randomDelayFromPositiveRange also allows 0 
 - 4.3.1   - new drawText() for zones 
-		  - dmlZones:getClosestZone() bridge 
+		  - dmlZone:getClosestZone() bridge 
 - 4.3.2   - new getListFromZoneProperty()
 - 4.3.3   - hardened calculateZoneBounds
 - 4.3.4   - rewrote zone bounds for poly zones 
@@ -57,7 +25,13 @@ cfxZones.version = "4.3.6"
 - 4.3.6   - tiny optimization in isPointInsideQuad 
           - moving zone - hardening code for static objects 
 		  - moving zones - now deriving dx, dy,uHeading from dcsCommon xref for linked zones 
-		  
+- 4.3.7   - corrected bug in processDynamicValues for lookup table 
+- 4.4.0   - dmlZone:getCoalition() 
+		  - dmlZone:getTypeName()
+		  - dmlZone supports masterOwner by default 
+		  - dmlZone:getCoalition() dereferences masterOwner once 
+-4.4.1	  - better verbosity for error in doPollFlag()
+-4.4.2    - twn support for wildcards <twn: > and <loc:>
 --]]--
 
 --
@@ -80,6 +54,13 @@ function dmlZone:new(o)
 	self.properties = {}
 	return o 
 end 
+
+-- dmlZone compatibility with DCS MSE objects: 
+-- dmlZone:getName() -- returns zone.name attribute (from ME)
+-- dmlZone:getPoint() -- returns current point or dmlPoint 
+-- dmlZone:getTypeName() -- returns "dmlZone" 
+-- dmlZone:getCoalition  -- returns owner 
+
 
 --
 -- CLASSIC INTERFACE
@@ -1615,7 +1596,7 @@ function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
 
 	else 
 		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++zones: unknown method <" .. method .. "> - using 'on'", 30)
+			trigger.action.outText("+++zones: unknown method <" .. method .. "> for flag <" .. theFlag .. "> in zone <" .. theZone.name .. "> - setting to 1", 30)
 		end
 		-- default: on.
 --		trigger.action.setUserFlag(theFlag, 1)
@@ -2922,7 +2903,7 @@ function cfxZones.processDynamicValues(inMsg, theZone, msgResponses)
 				-- access flag
 				local val = cfxZones.getFlagValue(param, theZone)
 				if not val or (val < 1) then val = 1 end 
-				if val > msgResponses then val = msgResponses end 
+				if val > #msgResponses then val = #msgResponses end 
 				
 				val = msgResponses[val]
 				val = dcsCommon.trim(val)
@@ -2968,7 +2949,7 @@ end
 
 -- process <lat/lon/ele/mgrs/lle/latlon/alt/vel/hdg/rhdg/type/player: zone/unit>
 function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
-	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type", "player"}
+	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type", "player", "twn", "loc"}
 	local outMsg = inMsg
 	local uHead = 0
 	for idx, aLocale in pairs(locales) do 
@@ -3053,6 +3034,23 @@ function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
 					elseif aLocale == "rhdg" and (responses) then 
 						local offset = cfxZones.rspMapper360(uHead, #responses)
 						locString = dcsCommon.trim(responses[offset])
+					elseif aLocale == "twn" then 
+						if twn and towns then locString = twn.closestTownTo(thePoint)
+						else locString = "!twn!" end 
+					elseif aLocale == "loc" then
+						if twn and towns then 
+							local name, data, dist = twn.closestTownTo(thePoint)
+							local units = "km"
+							local mdist= dist * 0.539957
+							dist = math.floor(dist/100) / 10
+							mdist = math.floor(mdist/100) / 10		
+							if imperialUnits then 
+								dist = mdist
+								units = "nm"
+							end 
+							local bear = dcsCommon.compassPositionOfARelativeToB(thePoint, data.p)
+							locString = dist .. units .. " " .. bear .. " of " .. name
+						else locString = "!twn!" end 
 					else 
 						-- we have mgrs
 						local grid = coord.LLtoMGRS(coord.LOtoLL(thePoint))
@@ -3344,6 +3342,24 @@ end
 function dmlZone:getName() -- no cfxZones.bridge!
 	return self.name 
 end
+
+function dmlZone:getCoalition()
+	-- automatically support masterOwner. Warning: cloners etc can reference itself! 
+	if self.masterOwner then return self.masterOwner.owner end -- zone must exist 
+	return self.owner 
+end 
+
+function cfxZones.getCoalition(theZone)
+	return theZone:getCoalition()
+end
+
+function dmlZone:getTypeName()
+	return "dmlZone"
+end
+
+function cfxZones.getTypeName(theZone)
+	return theZone:getTypeName()
+end 
 
 function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really Z, don't get confused!!!!
 	theZone.linkedUnit = theUnit
@@ -3693,6 +3709,20 @@ function cfxZones.init()
 	-- much like verbose, all zones have owner
     for n, aZone in pairs(cfxZones.zones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)
+		
+		if aZone:hasProperty("masterOwner") then 
+			local mo = aZone:getStringFromZoneProperty("masterOwner", "forgotten master")
+			mo = dcsCommon.trim(mo)
+			if mo == "*" then mo = aZone.name end 
+			local mz = cfxZones.getZoneByName(mo)
+			if not mz then 
+				trigger.action.outText("+++fcxZones: WARNING: Master Owner <" .. mo .. "> for zone <" .. aZone.name .. "> does not exist!", 30)
+			else 
+				aZone.masterOwner = mz 
+				aZone.owner = mz.owner 
+			end
+		end
+
 	end
 		
 	-- enable all zone's verbose flags if present

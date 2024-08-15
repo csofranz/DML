@@ -1,5 +1,5 @@
 stopGap = {}
-stopGap.version = "1.1.1 STANDALONE"
+stopGap.version = "1.2.0 STANDALONE"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true 
 stopGap.ignoreMe = "-sg"
@@ -8,6 +8,7 @@ stopGap.isMP = false
 stopGap.running = true 
 stopGap.refreshInterval = -1 -- seconds to refresh all statics. -1 = never, 3600 = once every hour 
 stopGap.kickTheDead = true -- kick players to spectators on death to prevent re-entry issues
+stopGap.allNeutral = false -- make all stand-ins neutral 
 
 --[[--
 	Written and (c) 2023 by Christian Franz 
@@ -37,6 +38,8 @@ stopGap.kickTheDead = true -- kick players to spectators on death to prevent re-
 	1.0.9 - optimization when turning on stopgap
 	1.1.0 - kickTheDead option 
 	1.1.1 - filter "from runway" clients
+	1.2.0 - compatibility with DCS dynamic spawns
+	
 	
 --]]--
 
@@ -115,8 +118,12 @@ function stopGap.staticMXFromUnitMX(theGroup, theUnit)
 	theStatic.heading = theUnit.heading -- may need some attention
 	theStatic.type = theUnit.type 
 	theStatic.name = theUnit.name  -- will magically be replaced with player unit 
+	theStatic.payload = theUnit.payload -- not supported (yet) by DCS 
+	theStatic.onboard_num = theUnit.onboard_num -- not supported 
 	theStatic.cty = cfxMX.countryByName[theGroup.name]
-	
+	if stopGap.allNeutral then 
+		theStatic.cty = 82 -- UN Peache keepers, assign to neutral 
+	end
 	return theStatic 
 end
 

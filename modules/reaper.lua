@@ -1,5 +1,5 @@
 reaper = {}
-reaper.version = "1.1.0"
+reaper.version = "1.2.0"
 reaper.requiredLibs = {
 	"dcsCommon",
 	"cfxZones",  
@@ -22,6 +22,7 @@ VERSION HISTORY
 	   - added FAC task 
 	   - split task generation from wp generation 
 	   - updated reaper naming, uniqueNames attribute (undocumented)
+ 1.2.0 - support twn when present 
 	   
 --]]--
 
@@ -290,12 +291,21 @@ function reaper.setTarget(theZone, theTarget, cycled)
 	local lp = theTarget:getPoint()
 	local lat, lon, alt = coord.LOtoLL(lp)
 	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	local twnLoc = ""
+	if twn and towns then 
+		local name, data, dist = twn.closestTownTo(lp)
+		local mdist= dist * 0.539957
+		dist = math.floor(dist/100) / 10
+		mdist = math.floor(mdist/100) / 10		
+		local bear = dcsCommon.compassPositionOfARelativeToB(lp, data.p)
+		twnLoc = " (" ..dist .. "km/" .. mdist .."nm " .. bear .. " of " .. name .. ")"
+	end
 	
 	local theSpot = Spot.createLaser(theZone.theUav, {0, 2, 0}, lp, theZone.code)
 	if theZone.doSmoke then 
 		trigger.action.smoke(lp , theZone.smokeColor )
 	end 
-	trigger.action.outTextForCoalition(theZone.coa, "Drone <" .. theZone.name .. "> is tracking a <" .. theTarget:getTypeName() .. "> at " .. lat .. " " .. lon .. ", code " .. theZone.code, 30)
+	trigger.action.outTextForCoalition(theZone.coa, "Drone <" .. theZone.name .. "> is tracking a <" .. theTarget:getTypeName() .. "> at " .. lat .. " " .. lon .. twnLoc ..", code " .. theZone.code, 30)
 	trigger.action.outSoundForCoalition(theZone.coa, reaper.actionSound)
 	theZone.theTarget = theTarget
 	if theZone.theSpot then 
@@ -599,14 +609,23 @@ function reaper.doDroneStatus(args)
 				local lat, lon, alt = coord.LOtoLL(lp)
 				lat, lon = dcsCommon.latLon2Text(lat, lon)
 				local ut = theTarget:getTypeName()
-				msg = msg .. ut .. " at " .. lat .. ", " .. lon .. " code " .. theZone.code 
+				local twnLoc = ""
+				if twn and towns then 
+					local tname, data, dist = twn.closestTownTo(lp)
+					local mdist= dist * 0.539957
+					dist = math.floor(dist/100) / 10
+					mdist = math.floor(mdist/100) / 10		
+					local bear = dcsCommon.compassPositionOfARelativeToB(lp, data.p)
+					twnLoc = " (" ..dist .. "km/" .. mdist .."nm " .. bear .. " of " .. tname .. ") "
+				end
+				msg = msg .. ut .. " at " .. lat .. ", " .. lon .. twnLoc .. " code " .. theZone.code 
 			else 
 				msg = msg .. "<signal failure, please try later>"
 			end
 			done[name] = true 
 		end
 	else 
-		msg = msg .. "\n(No drones are tracking a target)\n"
+		msg = msg .. "\n(No drones are tracking targets)\n"
 	end
 	
 	-- collect loitering drones 
@@ -661,7 +680,16 @@ function reaper.doSingleDroneStatus(theZone)
 			local lat, lon, alt = coord.LOtoLL(lp)
 			lat, lon = dcsCommon.latLon2Text(lat, lon)
 			local ut = theTarget:getTypeName()
-			msg = msg .. ut .. " at " .. lat .. ", " .. lon .. " code " .. theZone.code 
+			local twnLoc = ""
+			if twn and towns then 
+				local tname, data, dist = twn.closestTownTo(lp)
+				local mdist= dist * 0.539957
+				dist = math.floor(dist/100) / 10
+				mdist = math.floor(mdist/100) / 10		
+				local bear = dcsCommon.compassPositionOfARelativeToB(lp, data.p)
+				twnLoc = " (" ..dist .. "km/" .. mdist .."nm " .. bear .. " of " .. tname .. ") "
+			end
+			msg = msg .. ut .. " at " .. lat .. ", " .. lon .. twnLoc .. " code " .. theZone.code 
 
 			-- now add full group intelligence 
 			local collector = {}
@@ -886,7 +914,6 @@ function reaper.start()
 	timer.scheduleFunction(reaper.update, {}, timer.getTime() + 1)
 	
 	-- schedule scan and track loops 
---	timer.scheduleFunction(reaper.scan, {}, timer.getTime() + 1)
 	timer.scheduleFunction(reaper.scanALT, {}, timer.getTime() + 1)
 	timer.scheduleFunction(reaper.track, {}, timer.getTime() + 1) 
 	trigger.action.outText("reaper v " .. reaper.version .. " running.", 30)

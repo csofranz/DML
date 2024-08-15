@@ -1,6 +1,6 @@
 camp = {}
 camp.ups = 1
-camp.version = "1.0.2"
+camp.version = "1.1.0"
 camp.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -18,6 +18,7 @@ VERSION HISTORY
 		  - actionSound 
 		  - output sound with communications 
 	1.0.2 - integration with FARPZones 
+	1.1.0 - support for DCS 2.9.6 dynamic spawns 
 --]]--
 --
 -- CURRENTLY REQUIRES SINGLE-UNIT PLAYER GROUPS
@@ -110,24 +111,55 @@ function camp.update()
 end 
 
 function camp:onEvent(theEvent)
-
+	if not theEvent then return end 
+	if not theEvent.initiator then return end
+	local theUnit = theEvent.initiator
+--	if not theUnit.getName then return end 
+--	if not theUnit.getPlayerName then return end 
+	if not cfxMX.isDynamicPlayer(theUnit) then return end 
+	local id = theEvent.id
+	if id == 15 then -- birth 
+		camp.lateProcessPlayer(theUnit)
+		if camp.verbose then 
+			trigger.action.outText("camp: late player processing for <" .. theUnit:getName() .. ">", 30)
+		end 
+	end 
 end 
 
 --
 -- Comms 
 --	
+function camp.lateProcessPlayer(theUnit)
+	if not theUnit then return end 
+	if not theUnit.getGroup then return end 
+	local theGroup = theUnit:getGroup()
+	local gName = theGroup:getName()
+	local gID = theGroup:getID()
+	camp.installComsFor(gID, gName)
+end 
+
+function camp.installComsFor(gID, gName)
+	local theRoot = missionCommands.addSubMenuForGroup(gID, "Funds / Repairs / Upgrades")
+	camp.roots[gName] = theRoot 
+	local c00 = missionCommands.addCommandForGroup(gID, "Theatre Overview", theRoot, camp.redirectTFunds, {gName, gID, "tfunds"})
+	local c0 = missionCommands.addCommandForGroup(gID, "Local Funds & Status Overview", theRoot, camp.redirectFunds, {gName, gID, "funds"})
+	local c1 = missionCommands.addCommandForGroup(gID, "REPAIRS: Purchase local repairs", theRoot, camp.redirectRepairs, {gName, gID, "repair"})
+	local c2 = missionCommands.addCommandForGroup(gID, "UPGRADE: Purchase local upgrades", theRoot, camp.redirectUpgrades, {gName, gID, "upgrade"})
+end
+
 function camp.processPlayers() 
 	-- install coms stump for all players. they will be switched in/out 
 	-- whenever it is apropriate 
 	for idx, gData in pairs(cfxMX.playerGroupByName) do 
 		gID = gData.groupId
 		gName = gData.name 
-		local theRoot = missionCommands.addSubMenuForGroup(gID, "Funds / Repairs / Upgrades")
+--[[--		local theRoot = missionCommands.addSubMenuForGroup(gID, "Funds / Repairs / Upgrades")
 		camp.roots[gName] = theRoot 
 		local c00 = missionCommands.addCommandForGroup(gID, "Theatre Overview", theRoot, camp.redirectTFunds, {gName, gID, "tfunds"})
 		local c0 = missionCommands.addCommandForGroup(gID, "Local Funds & Status Overview", theRoot, camp.redirectFunds, {gName, gID, "funds"})
 		local c1 = missionCommands.addCommandForGroup(gID, "REPAIRS: Purchase local repairs", theRoot, camp.redirectRepairs, {gName, gID, "repair"})
-		local c2 = missionCommands.addCommandForGroup(gID, "UPGRADE: Purchase local upgrades", theRoot, camp.redirectUpgrades, {gName, gID, "upgrade"})
+		local c2 = missionCommands.addCommandForGroup(gID, "UPGRADE: Purchase local upgrades", theRoot, camp.redirectUpgrades, {gName, gID, "upgrade"}) --]]--
+		camp.installComsFor(gID, gName)
 	end
 end
 
