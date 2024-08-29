@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.3.0"
+cfxReconMode.version = "2.3.1"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -61,6 +61,7 @@ VERSION HISTORY
  2.2.2 - added groupNames attribute 
        - clean-up
  2.3.0 - support for towns/twn when present 
+ 2.3.1 - simplified reading config 
  
 --]]--
 
