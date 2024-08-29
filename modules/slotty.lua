@@ -12,8 +12,17 @@ slotty.version = "1.1.0"
 Version history 
 1.0.0 - Initial version 
 1.1.0 - "noSlotty" global disable flag, anti-mirror SSB flag 
-
+1.2.0 - better (delayed) nilling for cfxSSB ocupied clients to 
+	  - avoid a race condition 
+	  
 --]]--
+function slotty.delayedSSBNil(args)
+	uName = args
+	if cfxSSBClient.verbose then 
+		trigger.action.outText("slotty-->SSBClient: nilling <" .. args .. ">, now unoccupied", 30)
+	end
+	cfxSSBClient.occupiedUnits[uName] = nil 
+end 
 
 function slotty:onEvent(event)
 	if not event.initiator then return end 
@@ -42,7 +51,10 @@ function slotty:onEvent(event)
 
 		-- interface with SSBClient for compatibility 
 		if cfxSSBClient and cfxSSBClient.occupiedUnits then 
-			cfxSSBClient.occupiedUnits[uName] = nil 
+			-- to resolve a race condition, we schedule nilling the 
+			-- ssbClientSlot in 1/2 second 
+--			cfxSSBClient.occupiedUnits[uName] = nil 
+			timer.scheduleFunction(slotty.delayedSSBNil, uName, timer.getTime() + 0.5)
 		end 
 	
 		if isSP then 

@@ -1,5 +1,5 @@
 LZ = {}
-LZ.version = "1.1.0"
+LZ.version = "1.2.1"
 LZ.verbose = false 
 LZ.ups = 1 
 LZ.requiredLibs = {
@@ -15,7 +15,8 @@ LZ.LZs = {}
 	Version History 
 	1.0.0 - initial version 
 	1.1.0 - persistence 
-	
+	1.2.0 - dcs 2024-07-11 and dcs 2024-07-22 updates (new events)
+	1.2.1 - theZone --> aZone typo at input management 
 --]]--
 
 function LZ.addLZ(theZone)
@@ -216,7 +217,9 @@ function LZ:onEvent(event)
 	
     -- only interested in S_EVENT_TAKEOFF and  events
     if event.id ~= world.event.S_EVENT_TAKEOFF and 
-	   event.id ~= world.event.S_EVENT_LAND then
+	   event.id ~= world.event.S_EVENT_LAND and 
+	   event.id ~= world.event.S_EVENT_RUNWAY_TAKEOFF and 
+	   event.id ~= world.event.S_EVENT_RUNWAY_TOUCH then
         return
     end
 					
@@ -231,14 +234,20 @@ function LZ:onEvent(event)
 			-- see if this unit interests us at all 
 			if LZ.unitIsInterestingForZone(theUnit, aZone) then 
 				-- interesting unit in zone triggered the event 
-				if aZone.lzDeparted and event.id ==  world.event.S_EVENT_TAKEOFF then 
+				if aZone.lzDeparted and 
+					(event.id ==  world.event.S_EVENT_TAKEOFF or 
+					 event.id == world.event.S_EVENT_RUNWAY_TAKEOFF)
+				then 
 					if LZ.verbose or aZone.verbose then 
 						trigger.action.outText("+++LZ: detected departure from <" .. aZone.name .. ">", 30)
 					end
 					cfxZones.pollFlag(aZone.lzDeparted, aZone.lzMethod, aZone)
 				end
 				
-				if aZone.lzLanded and event.id == world.event.S_EVENT_LAND then
+				if aZone.lzLanded and 
+				   (event.id == world.event.S_EVENT_LAND or 
+				    event.id == world.event.S_EVENT_RUNWAY_TOUCH)
+				then
 					if LZ.verbose or aZone.verbose then 
 						trigger.action.outText("+++LZ: detected landing in <" .. aZone.name .. ">", 30)
 					end
@@ -264,14 +273,14 @@ function LZ.update()
 	for idx, aZone in pairs(LZ.LZs) do
 		-- see if we are being paused or unpaused 
 		if cfxZones.testZoneFlag(aZone, aZone.lzPause, aZone.LZTriggerMethod, "lzLastPause") then 
-			if LZ.verbose or theZone.verbose then 
+			if LZ.verbose or aZone.verbose then 
 				trigger.action.outText("+++LZ: triggered pause? for <".. aZone.name ..">", 30)
 			end
 			aZone.isPaused = true 
 		end 
 		
 		if cfxZones.testZoneFlag(aZone, aZone.lzContinue, aZone.LZTriggerMethod, "lzLastContinue") then 
-			if LZ.verbose or theZone.verbose then 
+			if LZ.verbose or aZone.verbose then 
 				trigger.action.outText("+++LZ: triggered continue? for <".. aZone.name ..">", 30)
 			end
 			aZone.isPaused = false 

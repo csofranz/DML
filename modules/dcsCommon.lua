@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.1.2"
+dcsCommon.version = "3.1.3"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -29,19 +29,37 @@ dcsCommon.version = "3.1.2"
 3.1.0  - updates to events, DCS update 7-11 2024 hardening 
 3.1.1  - added Chinook to troop carriers
 3.1.2  - isTroopCarrier() hardening against DCS sillieness
+3.1.3  - new dcsCommon.unitIsOfLegalType() analogue to isTroopCarrier 
+	   - new DCS Patch section
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
 	-- for easy access and simple mission programming
 	-- (c) 2021 - 2024 by Christian Franz and cf/x AG
 
+--
+-- DCS API PATCHES FOR DCS-INTERNAL BUGS
+--
+
+Group.getByNameBase = Group.getByName -- thanks, Dzsekeb(?)
+
+function Group.getByName(name) -- patch getByName to protect against empty groups 
+    local g = Group.getByNameBase(name)
+    if not g then return nil end
+    if g:getSize() == 0 then return nil end
+    return g
+end
+
+--
+-- DML FOUNDATION
+--
 	dcsCommon.verbose = false -- set to true to see debug messages. Lots of them
 	dcsCommon.uuidStr = "uuid-"
 	dcsCommon.simpleUUID = 76543 -- a number to start. as good as any
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops, the Kiowa can!
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
@@ -2837,6 +2855,10 @@ function dcsCommon.isTroopCarrierType(theType, carriers)
 	end 
 	
 	return false
+end
+
+function dcsCommon.unitIsOfLegalType(theUnit, types)
+	return dcsCommon.isTroopCarrier(theUnit, types)
 end
 
 function dcsCommon.isTroopCarrier(theUnit, carriers)

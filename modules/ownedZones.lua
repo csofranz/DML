@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.4.0"
+cfxOwnedZones.version = "2.4.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -44,6 +44,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - code clean-up
 2.3.1 - restored getNearestOwnedZoneToPoint 
 2.4.0 - dmlZones masterOwner update 
+2.4.1 - conquered flag now correctly guarded in loadData() 
 
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -761,7 +762,7 @@ function cfxOwnedZones.loadData()
 		local theZone = cfxOwnedZones.getOwnedZoneByName(zName)
 		if theZone then 
 			theZone.owner = zData.owner 
-			if zData.conquered then 
+			if zData.conquered and theZone.conqueredFlag then 
 				theZone:setFlagValue(theZone.conqueredFlag, zData.conquered)
 			end
 			-- update mark in map 

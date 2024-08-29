@@ -1,5 +1,5 @@
 cfxObjectSpawnZones = {}
-cfxObjectSpawnZones.version = "2.1.0"
+cfxObjectSpawnZones.version = "2.1.1"
 cfxObjectSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -15,7 +15,7 @@ cfxObjectSpawnZones.verbose = false
  version history
    2.0.0 - dmlZones 
    2.1.0 - autoTurn attribute 
-   
+   2.1.1 - now spawns the correct country 
 --]]--
  
 -- respawn currently happens after theSpawns is deleted and cooldown seconds have passed 
@@ -246,7 +246,8 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 		end 
 		
 		-- spawn in dcs
-		local theObject = coalition.addStaticObject(aSpawner.rawOwner, theStaticData) -- create in dcs
+		--local theObject = coalition.addStaticObject(aSpawner.rawOwner, theStaticData) -- create in dcs
+		local theObject = coalition.addStaticObject(aSpawner.country, theStaticData) -- create in dcs
 		table.insert(container, theObject) -- add to collection
 		if aSpawner.isCargo and aSpawner.managed then 
 			if cfxCargoManager then 
@@ -303,7 +304,8 @@ function cfxObjectSpawnZones.spawnObjectNTimes(aSpawner, theType, n, container)
 		end
 		
 		-- spawn in dcs
-		local theObject = coalition.addStaticObject(aSpawner.rawOwner, theStaticData) -- this will generate an event!
+--		local theObject = coalition.addStaticObject(aSpawner.rawOwner, theStaticData) -- this will generate an event!
+		local theObject = coalition.addStaticObject(aSpawner.country, theStaticData) -- this will generate an event!
 		table.insert(container, theObject)
 		-- see if it is managed cargo 
 		if aSpawner.isCargo and aSpawner.managed then 

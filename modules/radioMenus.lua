@@ -1,10 +1,11 @@
 radioMenu = {}
-radioMenu.version = "4.0.0"
+radioMenu.version = "4.0.1"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
+	"cfxMX",
 }
 -- note: cfxMX is optional unless using types or groups attributes 
 radioMenu.menus = {}
@@ -18,6 +19,7 @@ radioMenu.lateGroups = {} -- dict by ID
 			detect cyclic references
 	4.0.0 - added infrastructure for dynamic players (DCS 2.9.6)
 		  - added dynamic player support 
+	4.0.1 - MX no longer optional, so ask for it 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)

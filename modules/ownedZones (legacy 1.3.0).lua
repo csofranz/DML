@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "1.3.0"
+cfxOwnedZones.version = "1.3.0gamma"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -61,6 +61,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - blueLost! zone output 
 	  - ownedBy direct zone output 
 	  - neutral! zone output 
+1.3.0g - DML 2.x compatibility 
 
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -1193,7 +1194,7 @@ function cfxOwnedZones.loadData()
 			end
 			theZone.owner = zData.owner 
 			theZone.state = zData.state 
-			if zData.conquered then 
+			if zData.conquered and theZone.conqueredFlag then 
 				cfxZones.setFlagValue(theZone.conqueredFlag, zData.conquered, theZone)
 			end
 			-- update mark in map 

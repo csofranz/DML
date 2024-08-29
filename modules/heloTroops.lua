@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.1.0"
+cfxHeloTroops.version = "3.1.2"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -18,7 +18,8 @@ cfxHeloTroops.requestRange = 500 -- meters
  3.0.4 - also handles picking up troops with orders "captureandhold"
  3.0.5 - worked around a new issues accessing a unit's name 
  3.1.0 - compatible with DCS 2.9.6 dynamic spawning 
- 
+ 3.1.1 - deployTroopsFromHelicopter() captureandhold 
+ 3.1.2 - doLoadGroup - test if group is still alive edge case handling 
 --]]--
 
 
@@ -613,6 +614,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local moveFormation = conf.troopsOnBoard.moveFormation 
 	
 	if not orders then orders = "guard" end
+	orders = string.lower(orders) 
 	
 	-- order processing: if the orders were pre-pended with "wait-"
 	-- we now remove that, so after dropping they do what their 
@@ -646,7 +648,11 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 		-- and make them run to the wrong zone 
 		dest = cfxGroundTroops.getClosestEnemyZone(troop)
 		troopData.destination = dest
-		trigger.action.outText("Inserting troops to capture zone <" .. dest.name .. ">", 30)
+		if dest then 
+			trigger.action.outText("Inserting troops to capture zone <" .. dest.name .. ">", 30)
+		else 
+			trigger.action.outText("+++heloT: WARNING: cap&hold: can't find a zone to cap.", 30)
+		end
 	end 
 	
 	troop.destination = dest -- transfer target zone for attackzone oders
@@ -678,6 +684,8 @@ end
 function cfxHeloTroops.doLoadGroup(args) 
 	local conf = args[1]
 	local group = args[2]
+	if not group then return end 
+	if not Group.isExist(group) then return end -- edge case: group died in the past 0.1 seconds
 	conf.troopsOnBoard = {}
 	-- all we need to do is disassemble the group into type 
 	conf.troopsOnBoard.types = dcsCommon.getGroupTypeString(group)

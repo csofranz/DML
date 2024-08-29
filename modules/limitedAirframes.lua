@@ -1,5 +1,5 @@
 limitedAirframes = {}
-limitedAirframes.version = "1.6.0"
+limitedAirframes.version = "1.7.0"
 
 limitedAirframes.warningSound = "Quest Snare 3.wav"
 limitedAirframes.loseSound = "Death PIANO.wav"
@@ -11,33 +11,6 @@ limitedAirframes.requiredLibs = {
 }
 
 --[[-- VERSION HISTORY
- - 1.0.0 - initial version 
- - 1.0.1 - out text to coalition for switch
-         - less verbose
-		 - win/lose sound by coalition
- - 1.0.2 - corrected some to to-->for Groups typos
- - 1.0.3 - renamed to 'pilot' instead of airframe:
-           pilotSafe attribute 
-		 - fixed MP bug, switched to EventMonII code
- - 1.0.4 - added CSAR integration: create CSAR and callback
-         - safe ditch only at less than 7 kmh and 10m agl 
- - 1.0.5 - replaced 5 (crash) check for helos only 
- - 1.0.6 - changed alt and speed tests to inAir
-           reduced verbosity 
-		   made reporting of new units for coalition side only 
- - 1.0.7 - if unlimited pilots it says so when you return one 
-           to base
- - 1.0.8 - now can query remaining pilots 
- - 1.0.9 - better formatted remaining pilots 
- - 1.1.0 - module manager 
-         - separated out settings 
-		 - hand change in pilotsafe zones that can be landed in 
- - 1.2.0 - limitedAirframesConfig zone 
- - 1.3.0 - added network dead override logic via unitFlownByPlayer
- - 1.4.0 - DML integration, verbosity, clean-up, QoL improvements
-		   redSafe, blueSafe with attribute, backward compatible
-		   currRed 
- - 1.4.1 - removed dependency to cfxPlayer
  - 1.5.0 - persistence support 
  - 1.5.1 - new "announcer" attribute
  - 1.5.2 - integration with autoCSAR: prevent limitedAF from creating csar 
@@ -49,28 +22,17 @@ limitedAirframes.requiredLibs = {
 		 - new hasUI attribute
 		 - minor clean-up
 		 - set numRed and numBlue on startup
+   1.7.0 - dcs jul-11, jul-22 bug prevention 
+		 - some cleanup 
 		   
 --]]--
-
--- limitedAirframes manages the number of available player airframes
--- per scenario and side. Each time a player crashes the plane
--- outside of safe zones, the number is decreased for that side
--- when the number reaches -1 or smaller, other side wins
--- !!!Only affects player planes!!
-
--- safe zones must have a property "pilotSafe"
---   - pilotSafe - this is a zone to safely change airframes in
---               - can also carry 'red' or 'blue' to enable 
---   if zone can change ownership, player's coalition 
---   is checked against current zone ownership 
---   zone owner. 
 
 
 limitedAirframes.safeZones = {} -- safezones are zones where a crash or change plane does not
 
 limitedAirframes.myEvents = {5, 9, 30, 6, 20, 21, 15 } -- 5 = crash, 9 - dead, 30 - unit lost, 6 - eject, 20 - enter unit, 21 - leave unit, 15 - birth
 
--- guarantee a min of 2 seconds between events
+-- guarantee a minimum of 2 seconds between events
 -- for this we save last event per player 
 limitedAirframes.lastEvents = {}
 -- each time a plane crashes or is abandoned check 
@@ -196,10 +158,16 @@ end
 -- and also adds the player if unknown
 function limitedAirframes.addPlayerUnit(theUnit)
 	local theSide = theUnit:getCoalition()
-	local uName = theUnit:getName()
-	if not uName then uName = "**XXXX**" end 
-	local pName = theUnit:getPlayerName()
-	if not pName then pName = "**????**" end 
+	local uName = "**XXXX**"
+	if theUnit.getName then 
+		uName = theUnit:getName()
+	end 
+--	if not uName then uName = "**XXXX**" end 
+	local pName = "**????**" 
+	if theUnit.getPlayerName then 
+		pName = theUnit:getPlayerName()
+	end 
+--	if not pName then pName = "**????**" end 
 	limitedAirframes.updatePlayer(pName, "alive")
 	
 	local desc = "unit <" .. uName .. "> controlled by <" .. pName .. ">"
@@ -273,6 +241,7 @@ end
 --
 -- E V E N T   H A N D L I N G 
 -- 
+--[[--
 function limitedAirframes.XXXisKnownPlayerUnit(theUnit) 
 	if not theUnit then return false end 
 	local aName = theUnit:getName()
@@ -281,6 +250,7 @@ function limitedAirframes.XXXisKnownPlayerUnit(theUnit)
 	end
 	return false 
 end
+--]]--
 
 function limitedAirframes.isInteresting(eventID) 
 	-- return true if we are interested in this event, false else 
@@ -294,6 +264,7 @@ function limitedAirframes.preProcessor(event)
 	-- make sure it has an initiator
 	if not event.initiator then return false end -- no initiator 
 	local theUnit = event.initiator
+	if not theUnit.getName then return false end -- DCS Jul-22 bug 
 	local uName = theUnit:getName()
 	
 
@@ -353,6 +324,7 @@ function limitedAirframes.somethingHappened(event)
 	end
 	
 	local theUnit = event.initiator
+	if not theUnit.getName then return end 
 	local unitName = theUnit:getName()
 	local ID = event.id
 	local myType = theUnit:getTypeName()

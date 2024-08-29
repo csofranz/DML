@@ -1,5 +1,5 @@
 civHelo = {}
-civHelo.version = "1.0.0"
+civHelo.version = "1.0.1"
 civHelo.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", 
@@ -7,7 +7,7 @@ civHelo.requiredLibs = {
 --[[--
 Version History
 	1.0.0 - Initial version 
-	
+	1.0.1 - livery hardening 
 --]]--
 
 civHelo.flights = {} -- currently active flights 
@@ -282,10 +282,24 @@ function civHelo.getType(theZone)
 end
 
 function civHelo.getLiveryForType(theType, theData)
+--	trigger.action.outText("picking liviery for helo type <" .. theType .. ">", 30)
 	if civHelo.liveries[theType] then 
 		local available = civHelo.liveries[theType]
-		local chosen = dcsCommon.pickRandom(available)		
+		if available then 
+--			trigger.action.outText("We have a livery selection available for helo", 30)
+		else 
+--			trigger.action.outText("No liveries for type.", 30)
+		end
+		local chosen = dcsCommon.pickRandom(available)	
+		if chosen then 	
+--			trigger.action.outText("a fine livery choice: <" .. chosen .. "> for type <" .. theType .. ">", 30)
+		else 
+--			trigger.action.outText("No choice, no livery.", 30)
+		end 
+		
 		theData.livery_id = chosen
+	else
+--		trigger.action.outText("No livery for type <" .. theType .. ">", 30)
 	end
 end
 

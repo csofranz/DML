@@ -560,6 +560,10 @@ end
 -- Start 
 --
 function FARPZones.releaseFARPS()
+	if FARPZones.verbose then 
+		trigger.action.outText("FARPz: releasing FARP ownership to mission in progress", 30)
+	end 
+	
 	for idx, aFarp in pairs(FARPZones.lockup) do 
 		aFarp:autoCapture(true)
 	end 

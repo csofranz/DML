@@ -930,14 +930,7 @@ function cfxReconMode.readConfigZone()
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("reconModeConfig") 
 	if not theZone then 
-		if cfxReconMode.verbose then
-			trigger.action.outText("+++rcn: no config zone!", 30) 
-		end 
 		theZone = cfxZones.createSimpleZone("reconModeConfig")
-	else  
-		if cfxReconMode.verbose then 
-			trigger.action.outText("+++rcn: found config zone!", 30) 
-		end 
 	end 
 	
 	cfxReconMode.verbose = theZone.verbose --cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)

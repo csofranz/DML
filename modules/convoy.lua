@@ -1050,17 +1050,13 @@ destinationReached! -- adds script to last waypoint to hit this signal, also ini
 dead! signal and cb. only applies to ground troops? can they disembark troops when hit?
 attacked signal each time a unit is destroyed
 importantType - type that must survive=
-coalition / masterOwner 
-isActive# 0/1 
+coalition / masterOwner tie-in 
 doWipe? to wipe all my convoys? 
 tacTypes = desinate units types that must survive. Upon start, ensure that at least one tac type is pressenr 
 when arriving, verify that it still is, or fail earlier when all tactypes are destroyed. 
-convoy status UI  
-
+csar integration. when losing a vehicle, pSCAR match (say, 50%), whole convoy pushes a HOLD order to defend until time runs out or csar mission picks up evacuee (pop task).
 do:
-when escort engages, send notice 
-when escort damaged, send notice 
-mark source and dest of convoy on map for same side 
+?mark source and dest of convoy on map for same side 
 make routes interchangeable between convoys?
 make inf units disembark when convoy attacked
 --]]--
