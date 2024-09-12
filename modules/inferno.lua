@@ -1,5 +1,5 @@
 inferno = {}
-inferno.version = "0.9.9"
+inferno.version = "1.0.0"
 inferno.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -91,6 +91,7 @@ function inferno.buildGrid(theZone)
 			local lp = {x=xc, y=zc}
 			local yc = land.getHeight(lp)
 			ele.center = {x=xc, y=yc, z=zc}
+			--[[--
 			if theZone.markCell then 
 				dcsCommon.createStaticObjectForCoalitionAtLocation(0, ele.center, dcsCommon.uuid(theZone.name), "Black_Tyre_RF", 0, false) 
 				
@@ -99,7 +100,7 @@ function inferno.buildGrid(theZone)
 				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x - cellx/2, y=0, z=ele.center.z + cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
 				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x + cellx/2, y=0, z=ele.center.z + cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
 			end
-			
+			--]]--
 			ele.fxpos = {x=xf, y=yc, z=zf}
 			ele.myType = land.getSurfaceType(lp) -- LAND=1, SHALLOW_WATER=2, WATER=3, ROAD=4, RUNWAY=5
 			-- we don not burn if a cell has shallow or deep water, or roads or runways 
@@ -223,10 +224,20 @@ function inferno.waterInZone(theZone, p, amount)
 	local x = p.x - theZone.minx 
 	local z = p.z - theZone.minz 
 	local xc = math.floor(x / theZone.cellSize) + 1 -- square cells!
+	if xc > theZone.numX then return nil end -- xc = theZone.numX end -- was cut off, 
 	local zc = math.floor(z / theZone.cellSize) + 1
-	local ele = theZone.grid[xc][zc]
+	if zc > theZone.numZ then return nil end -- zc = theZone.numZ end 
+	local row = theZone.grid[xc]
+	if not row then 
+		trigger.action.outText("inferno.waterinZone: cannot access row for xc = " .. xc .. ", x = " .. x .. ", numX = " .. theZone.numX .. " in " .. theZone.name, 30)
+		return "NIL row for xc " .. xc .. ", zc " .. zc .. " in " .. theZone.name 
+	end 
+	local ele = row[zc]
+	
+--	local ele = theZone.grid[xc][zc]
 	if not ele then 
 		trigger.action.outText("Inferno: no ele for <" .. theZone.name .. ">: x<" .. x .. ">z<" .. z .. ">", 30)
+		trigger.action.outText("with xc = " .. xc .. ", numX 0 " .. theZone.numX .. ", zc = " .. zc .. ", numZ=" .. theZone.numZ, 30)
 		return "NIL ele for x" .. xc .. ",z" .. zc .. " in " .. theZone.name 
 	end 
 	
@@ -307,10 +318,7 @@ function inferno.waterDropped(p, amount, data) -- if returns non-nil, has hit a 
 				else 
 					theZone.heroes[data.pName] = 1
 				end
---				trigger.action.outText("registering <" .. data.pName .. "> for drop in <" .. theZone.name .. ">", 30)
-	
---			else 
---				trigger.action.outText("Not registered, no data", 30)
+
 			end 
 			return inferno.waterInZone(theZone, p, amount)
 		end
@@ -619,6 +627,7 @@ end
 --
 function inferno.update() -- for flag polling etc 
 	timer.scheduleFunction(inferno.update, {}, timer.getTime() + 1/inferno.ups)
+	local fireNum = 0
 	for idx, theZone in pairs (inferno.zones) do 
 		if theZone.ignite and 
 		theZone:testZoneFlag(theZone.ignite, "change", "lastIgnite") then
@@ -628,6 +637,12 @@ function inferno.update() -- for flag polling etc
 		if theZone.douse and theZone:testZoneFlag(theZone.douse, "change", "lastDouse") then 
 			inferno.douseFire(theZone)
 		end
+		if theZone.burning then 
+			fireNum = fireNum + 1 
+		end
+	end
+	if inferno.fireNum then 
+		 trigger.action.setUserFlag(inferno.fireNum, fireNum)
 	end
 end
 
@@ -645,6 +660,7 @@ function inferno.readConfigZone()
 	inferno.ups = theZone:getNumberFromZoneProperty("ups", 1)
 	inferno.fireTick = theZone:getNumberFromZoneProperty("fireTick", 10)
 	inferno.cellSize = theZone:getNumberFromZoneProperty("cellSize", 100)
+	--[[
 	inferno.menuName = theZone:getStringFromZoneProperty("menuName", "Firefighting")
 	inferno.impactSmoke = theZone:getBoolFromZoneProperty("impactSmoke", false) 
 
@@ -661,7 +677,10 @@ function inferno.readConfigZone()
 			trigger.action.outText("+++inferno: REQUIRES radioMenu to run before inferno. 'AttachTo:' ignored.", 30)
 		end 
 	end 
-	
+	--]]--
+	if theZone:hasProperty("fire#") then 
+		inferno.fireNum = theZone:getStringFromZoneProperty("fire#", "none")
+	end 
 
 end
 

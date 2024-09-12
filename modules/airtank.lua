@@ -1,5 +1,5 @@
 airtank = {}
-airtank.version = "0.9.9"
+airtank.version = "1.0.0"
 -- Module to extinguish fires controlled by the 'inferno' module.
 -- For 'airtank' fire extinguisher aircraft modules. 
 airtank.requiredLibs = {

@@ -1,5 +1,5 @@
 cfxObjectDestructDetector = {}
-cfxObjectDestructDetector.version = "2.0.3" 
+cfxObjectDestructDetector.version = "2.0.4" 
 cfxObjectDestructDetector.verbose = false 
 cfxObjectDestructDetector.requiredLibs = {
 	"dcsCommon", -- always
@@ -23,6 +23,8 @@ cfxObjectDestructDetector.requiredLibs = {
 		 if objects was killed by player 
 		 verbosity bug fixed after kill (ref to old ID)
    2.0.3 if no output! given,a warning and default are given 
+   2.0.4 prelim hardening against jul-11 and jul-12 bugs 
+   
 --]]--
 
 cfxObjectDestructDetector.objectZones = {}
@@ -146,6 +148,9 @@ function cfxObjectDestructDetector:onEvent(event)
 	if event.id == world.event.S_EVENT_DEAD then
 		if not event.initiator then return end 
 		local theObject = event.initiator
+		-- protect agianst DCS jul-11 and jul-22 bugs 
+		if not theObject.getName then return end 
+		
 		-- check location 
 		local pos = theObject:getPoint() 
 		local desc = theObject:getDesc() 

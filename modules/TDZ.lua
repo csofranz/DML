@@ -1,5 +1,5 @@
 tdz = {}
-tdz.version = "1.1.0"
+tdz.version = "1.1.1"
 tdz.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -19,6 +19,7 @@ VERSION HISTORY
          filters FARPs 
  1.0.3 - "manual" now defaults to false 
  1.1.0 - now supports event 55 (runway touch) 
+ 1.1.1 - corrected a type when signalling touchdown!
  
 --]]--
 
@@ -46,10 +47,6 @@ function tdz.rotateXZPolyAroundCenterInRads(thePoly, center, rads)
 	tdz.rotateXZPolyInRads(thePoly, rads)
 	tdz.translatePoly(thePoly, center)
 end
-
---function tdz.rotateXZPolyAroundCenterInDegrees(thePoly, center, degrees)
---	tdz.rotateXZPolyAroundCenterInRads(thePoly, center, degrees * 0.0174533)
---end
 
 function tdz.translatePoly(thePoly, v) -- straight rot, translate to 0 first
 	for idx, aPoint in pairs(thePoly) do 
@@ -247,7 +244,7 @@ function tdz.playerLanded(theUnit, playerName)
 			then 
 				theZone = aRunway -- FOUND!
 				if theZone.touchDownFlag then 
-					theZone.pollFlag(theZone.touchDownFlag, theZone.method)
+					theZone:pollFlag(theZone.touchDownFlag, theZone.method)
 				end
 				trigger.action.outTextForGroup(gID, "Touchdown! Come to a FULL STOP for evaluation", 30)
 			else 

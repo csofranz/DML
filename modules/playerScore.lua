@@ -18,6 +18,8 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	3.3.0 - case INsensitivity for all typeScore objects 
 	3.3.1 - fixes for DCS oddity in events after update 
 		  - cleanup 
+	TODO: Kill event no longer invoked for map objetcs, attribute 
+	      to faction now, reverse invocation direction with PlayerScore 
 --]]--
 
 cfxPlayerScore.requiredLibs = {
@@ -587,6 +589,42 @@ function cfxPlayerScore.preProcessor(theEvent)
 	if theEvent.initiator  == nil then 
 		return false 
 	end 
+	if cfxPlayerScore.verbose then 
+		trigger.action.outText("Event preproc: " .. theEvent.id .. " (" .. dcsCommon.event2text(theEvent.id) .. ")", 30)
+		if theEvent.id == 8 or theEvent.id == 30 then -- dead or lost event 
+			local who = theEvent.initiator
+			local name = "(nil ini)"
+			if who then 
+				name = "(inval object)"
+				if who.getName then name = who:getName() end 
+			end 
+			trigger.action.outText("Dead/Lost subject: <" .. name .. ">", 30)
+		end 
+		if theEvent.id == 2 then -- hit
+			local who = theEvent.initiator
+			local name = "(nil ini)"
+			if who then 
+				name = "(inval initi)"
+				if who.getName then name = who:getName() end 
+				if not name then -- WTF??? could be a weapon 
+					name = "!nil getName!"
+					if who.getTypeName then name = who:getTypeName() end 
+					if not name then 
+						name = "WTFer"
+					end
+				end
+			end
+			
+			local hit = theEvent.object
+			local hname = "(nil ini)"
+			if hit then 
+				hname = "(inval object)"
+				if hit.getName then hname = hit:getName() end 
+			end
+			trigger.action.outText("o:<" .. name .. "> hit <" .. hname .. ">", 30)
+		end
+	end 
+	
 	-- check if this was FORMERLY a player plane 
 	local theUnit = theEvent.initiator 
 	if not theUnit.getName then return end -- fix for DCS update bug 

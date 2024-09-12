@@ -13,7 +13,7 @@ airfield.allAirfields = {} -- inexed by af name, db entries: base, cat
 	can force the coalition of an airfield, and always provides the 
 	current owner as a value
 	
-	Version History^
+	Version History
 	2.0.0 - show all airfields option
 		  - fully reworked show options
 		  - unmanaged airfields are automatically updated 
