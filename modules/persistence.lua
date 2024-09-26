@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "3.0.0"
+persistence.version = "3.0.1"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -18,7 +18,11 @@ persistence.requiredLibs = {
 	2.0.0 - dml zones, OOP
 			cleanup
 	3.0.0 - shared data 
-	
+	3.0.1 - shared data validations/fallback  
+	        API cleanup 
+			shared text data "flase" typo corrected (no impact)
+			code cleanup 
+			
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
 --]]--
@@ -100,15 +104,6 @@ function persistence.getSavedDataForModule(name, sharedDataName)
 end
 
 --
--- Shared Data API 
---
-function persistence.getSharedDataFor(name, item) -- not yet finalized
-end
-
-function persistence.putSharedDataFor(data, name, item) -- not yet finalized
-end
-
---
 -- helper meths
 --
 
@@ -144,33 +139,28 @@ function persistence.saveText(theString, fileName, shared, append)
 		trigger.action.outText("+++persistence: saveText without fileName", 30)
 		return false 
 	end 
-	if not shared then shared = flase end 
+	if not shared then shared = false end 
 	if not theString then theString = "" end 
 	
 	local path = persistence.missionDir .. fileName
 	if shared then 
 		-- we would now change the path
 		trigger.action.outText("+++persistence: NYI: shared", 30)
-		return 
+		return false 
 	end
 
 	local theFile = nil 
-	
 	if append then 
 		theFile = io.open(path, "a")
 	else 
 		theFile = io.open(path, "w")
 	end
-
 	if not theFile then 
 		trigger.action.outText("+++persistence: saveText - unable to open " .. path, 30)
 		return false 
 	end
-	
 	theFile:write(theString)
-	
 	theFile:close()
-	
 	return true 
 end
 
@@ -181,9 +171,7 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	if not shared then shared = false end 
 	
 	local theString = net.lua2json(theTable)
-	
 	if not theString then theString = "" end 
-	
 	local path = persistence.missionDir .. fileName
 	if shared then 
 		-- we change the path to shared 
@@ -191,46 +179,35 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	end
 	
 	local theFile = nil 
-	
 	if append then 
 		theFile = io.open(path, "a")
 	else 
 		theFile = io.open(path, "w")
 	end
-
 	if not theFile then 
 		return false 
 	end
-	
 	theFile:write(theString)
-	
 	theFile:close()
-	
 	return true 
 end
 
 function persistence.loadText(fileName, hasPath) -- load file as text
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
-	
 	local path 
 	if hasPath then 
 		path = fileName 
 	else 
 		path = persistence.missionDir .. fileName
 	end 
-	
 	if persistence.verbose then 
 		trigger.action.outText("persistence: will load text file <" .. path .. ">", 30)
 	end 
-	
 	local theFile = io.open(path, "r") 
 	if not theFile then return nil end
-	
 	local t = theFile:read("*a")
-	
 	theFile:close()
-	
 	return t
 end
 
@@ -238,13 +215,9 @@ function persistence.loadTable(fileName, hasPath) -- load file as table
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
 	if not hasPath then hasPath = false end 
-
 	local t = persistence.loadText(fileName, hasPath)
-	
 	if not t then return nil end 
-	
 	local tab = net.json2lua(t)
-
 	return tab
 end
 
@@ -380,7 +353,7 @@ function persistence.saveMissionData()
 				if not specificShared then specificShared = {} end
 				specificShared[moduleName] = moduleData
 				allSharedData[sharedName] = specificShared -- write back 
-			end
+			end -- !NO ELSE! WE ALSO STORE IN MAIN DATA FOR REDUNDANCY
 			myData[moduleName] = moduleData
 			if persistence.verbose then 
 				trigger.action.outText("+++persistence: gathered data from <" .. moduleName .. ">", 30)

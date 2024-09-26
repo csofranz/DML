@@ -544,7 +544,7 @@ function airtank.readConfigZone()
 		end 
 	end 
 
-	-- add own troop carriers 
+	-- add own troop carriers -- superceded by airTankSpecs
 	if theZone:hasProperty("airtanks") then 
 		local tc = theZone:getStringFromZoneProperty("airtanks", "UH-1D")
 		tc = dcsCommon.splitString(tc, ",")

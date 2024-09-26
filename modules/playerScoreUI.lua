@@ -1,5 +1,5 @@
 cfxPlayerScoreUI = {}
-cfxPlayerScoreUI.version = "3.0.0"
+cfxPlayerScoreUI.version = "3.0.1"
 cfxPlayerScoreUI.verbose = false 
 
 --[[-- VERSION HISTORY
@@ -12,6 +12,7 @@ cfxPlayerScoreUI.verbose = false
 		 - allowAll
  - 2.1.1 - minor cleanup 
  - 3.0.0 - compatible with dynamic groups/units in DCS 2.9.6 
+ - 3.0.1 - more hardening 
 		 
 --]]--
 cfxPlayerScoreUI.requiredLibs = {
@@ -34,6 +35,7 @@ function cfxPlayerScoreUI.doCommandX(args)
 	local playerName = args[2]
 	local what = args[3] -- "score" or other commands
 	local theGroup = Group.getByName(groupName)
+	if not theGroup then return end -- should not happen 
 	local gid = theGroup:getID()
 	local coa = theGroup:getCoalition()
 	
