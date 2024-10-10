@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.1.0"
+cfxMX.version = "2.2.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -18,11 +18,13 @@ cfxMX.verbose = false
 		 - new isDynamicPlayer()
 		 - new isMEPlayer() 
 		 - new isMEPlayerGroup()
-		 
+   2.2.0 - new groupCatByName[]
+   
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.unitIDbyName = {}
+cfxMX.groupCatByName = {}
 cfxMX.groupDataByName = {}
 cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
 cfxMX.groupCoalitionByName = {}
@@ -226,7 +228,6 @@ function cfxMX.createCrossReferences()
 											category = "train" 
 											obj_type_name = "train"
 										end 
-										
 										cfxMX.groupTypeByName[aName] = category
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
@@ -237,16 +238,22 @@ function cfxMX.createCrossReferences()
 										-- now make the type-specific xrefs
 										if obj_type_name == "helicopter" then 
 											cfxMX.allHeloByName[aName] = group_data 
+											cfxMX.groupCatByName[aName] = 1
 										elseif obj_type_name == "ship" then 
 											cfxMX.allSeaByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 3
 										elseif obj_type_name == "plane" then 
 											cfxMX.allFixedByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 0
 										elseif obj_type_name == "vehicle" then 
 											cfxMX.allGroundByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 2
 										elseif obj_type_name == "static" then 
 											cfxMX.allStaticByName[aName] = group_data
+--											cfxMX.groupCatByName[aName] = -1 -- not covered
 										elseif obj_type_name == "train" then 
 											cfxMX.allTrainsByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 4
 										else 
 											-- should be impossible, but still
 											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)

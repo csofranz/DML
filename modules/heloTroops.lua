@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.1.2"
+cfxHeloTroops.version = "3.1.3"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -20,6 +20,10 @@ cfxHeloTroops.requestRange = 500 -- meters
  3.1.0 - compatible with DCS 2.9.6 dynamic spawning 
  3.1.1 - deployTroopsFromHelicopter() captureandhold 
  3.1.2 - doLoadGroup - test if group is still alive edge case handling 
+ 3.1.3 - decycled structures (destination zone) on save
+       - upcycled structures (destination) on load 
+	   - loadSound and disembarkSound 
+	   
 --]]--
 
 
@@ -658,7 +662,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	troop.destination = dest -- transfer target zone for attackzone oders
 	cfxGroundTroops.addGroundTroopsToPool(troop) -- will schedule move orders
 	trigger.action.outTextForGroup(conf.id, "<" .. theGroup:getName() .. "> have deployed to the ground with orders " .. orders .. "!", 30)
-	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) 
+	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.disembarkSound) 
 	-- see if this is tracked by a tracker, and pass them back so 
 	-- they can un-limbo 
 	if groupTracker then 
@@ -747,7 +751,7 @@ function cfxHeloTroops.doLoadGroup(args)
 	
 	-- say so 
 	trigger.action.outTextForGroup(conf.id, "Team '".. conf.troopsOnBoard.name .."' aboard, ready to go!", 30)
-	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.actionSound) --  "Quest Snare 3.wav")
+	trigger.action.outSoundForGroup(conf.id, cfxHeloTroops.loadSound) --  "Quest Snare 3.wav")
 
 	-- reset menu 
 	cfxHeloTroops.removeComms(conf.unit)
@@ -898,6 +902,8 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.combatDropScore = theZone:getNumberFromZoneProperty( "combatDropScore", 200)
 	
 	cfxHeloTroops.actionSound = theZone:getStringFromZoneProperty("actionSound", "Quest Snare 3.wav")
+	cfxHeloTroops.loadSound = theZone:getStringFromZoneProperty("loadSound", cfxHeloTroops.actionSound)
+	cfxHeloTroops.disembarkSound = theZone:getStringFromZoneProperty("disembarkSound", cfxHeloTroops.actionSound)
 	
 	cfxHeloTroops.requestRange = theZone:getNumberFromZoneProperty("requestRange", 500)
 	-- add own troop carriers 
@@ -920,6 +926,10 @@ function cfxHeloTroops.saveData()
 	for gName, gData in pairs(cfxHeloTroops.deployedTroops) do 
 		local sData = dcsCommon.clone(gData)
 		dcsCommon.synchGroupData(sData.groupData)
+		if sData.destination then 
+			net.log("cfxHeloTroops: decycling troop 'destination' for <" .. sData.destination:getName() .. ">")
+			sData.destination = sData.destination:getName()
+		end 
 		allTroopData[gName] = sData
 	end
 	theData.troops = allTroopData
@@ -947,6 +957,13 @@ function cfxHeloTroops.loadData()
 		local range = gdTroop.range
 		local cty = gData.cty 
 		local cat = gData.cat  
+		local dest = nil 
+		
+		-- synch destination from name to real zone 
+		if gdTroop.destination then 
+			dest = cfxZones.getZoneByName(gdTroop.destination)
+			net.log("cfxHeloTroops: attempting to restore troop destination zone <" .. gdTroop.destination .. ">")
+		end 
 		
 		-- now spawn, but first 
 		-- add to my own deployed queue so we can save later 
@@ -957,6 +974,7 @@ function cfxHeloTroops.loadData()
 
 		-- add to groundTroops 
 		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders) 
+		newTroops.destination = dest 
 		cfxGroundTroops.addGroundTroopsToPool(newTroops)
 	end
 end

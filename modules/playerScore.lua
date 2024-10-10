@@ -18,6 +18,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	3.3.0 - case INsensitivity for all typeScore objects 
 	3.3.1 - fixes for DCS oddity in events after update 
 		  - cleanup 
+		  
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore 
 --]]--

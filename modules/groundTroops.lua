@@ -953,6 +953,9 @@ function cfxGroundTroops.addGroundTroopsToPool(troops) -- troops MUST be a table
 	end
 	if not troops.orders then troops.orders = "guard" end 
 	troops.orders = troops.orders:lower()
+	
+	--trigger.action.outText("Enter adding group <" .. troops.name .. "> with orders=<" .. troops.orders .. "> to pool", 30)
+	
 	if not troops.moveFormation then troops.moveFormation = "Custom" end 
 	troops.reschedule = true -- in case we use scheduled update 
 	-- we now add to internal array. this is worked on by all 

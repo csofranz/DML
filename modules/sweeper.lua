@@ -27,6 +27,7 @@ function sweeper.readSweeperZone(theZone)
 end
 
 function sweeper.update()
+	net.log("sweeper: begin update") 
 	timer.scheduleFunction(sweeper.update, {}, timer.getTime() + sweeper.interval)
 	local toKill = {}
 	local newFlights = {}
@@ -105,6 +106,8 @@ function sweeper.update()
 	
 	-- remember new list, forget old 
 	sweeper.flights = newFlights
+	net.log("sweeper: end update") 
+
 end
 
 function sweeper.readConfig()

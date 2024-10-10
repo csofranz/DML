@@ -1,6 +1,6 @@
 impostors={}
 
-impostors.version = "1.0.1"
+impostors.version = "1.1.0"
 impostors.verbose = false  
 impostors.ups = 1
 impostors.requiredLibs = {
@@ -18,7 +18,9 @@ impostors.uniqueCounter = 8200000 -- clones start at 9200000
 	Version History
 	1.0.0 - initial version
 	1.0.1 - added some verbosity 
-	
+	1.1.0 - filtered dead units during spawns 
+			cleanup
+			some performance boost for mx lookup 
 
   LIMITATIONS:
   must be on ground (or would be very silly
@@ -41,10 +43,8 @@ function impostors.getCloneZoneByName(aName)
 	if impostors.verbose then 
 		trigger.action.outText("+++ipst: no impostor with name <" .. aName ..">", 30)
 	end 
-	
 	return nil 
 end
-
 
 --
 -- spawn impostors from data 
@@ -110,7 +110,9 @@ function impostors.getRawDataFromGroupNamed(gName)
 	local cat = theGroup:getCategory()
 	-- access mxdata for livery because getDesc does not return the livery 	
 	local liveries = {} 
-	local mxData = cfxMX.getGroupFromDCSbyName(gName)
+--	local mxData = cfxMX.getGroupFromDCSbyName(gName)
+	local mxData = cfxMX.groupDataByName[gName] -- performance 
+	if mxData then mxData = dcsCommon.clone(mxData) end 
 	for idx, theUnit in pairs (mxData.units) do 
 		liveries[theUnit.name] = theUnit.livery_id
 	end 
@@ -136,8 +138,9 @@ function impostors.getRawDataFromGroupNamed(gName)
 		ir.y = up.z -- !!! warning! 
 		-- see if any zones are linked to this unit 
 		ir.linkedZones = cfxZones.zonesLinkedToUnit(theUnit)
-		
-		table.insert(rawUnits, ir)
+		if theUnit:getLife() > 1 then 
+			table.insert(rawUnits, ir)
+		end
 		ctry = theUnit:getCountry()
 	end
 	rawGroup.ctry = ctry 
@@ -161,21 +164,15 @@ function impostors.createImpostorWithZone(theZone) -- has "impostor?"
 		theZone.reanimateFlag = cfxZones.getStringFromZoneProperty(theZone, "reanimate?", "*<none>")
 		theZone.lastReanimateValue = cfxZones.getFlagValue(theZone.reanimateFlag, theZone)
 	end 
-	
-	-- watchflag:
-	-- triggerMethod
 	theZone.impostorTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
-	
 	if cfxZones.hasProperty(theZone, "impostorTriggerMethod") then 
 		theZone.impostorTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "impostorTriggerMethod", "change")
 	end
-
---	local localGroups = impostors.allGroupsInZoneByData(theZone)  
+ 
 	theZone.groupNames = cfxZones.allGroupNamesInZone(theZone)
 	theZone.impostor = false -- we have not yet turned units into impostors
 	theZone.myImpostors = {} 
 	theZone.origin = cfxZones.getPoint(theZone) -- save reference point for all groupVectors 
-
 	theZone.onStart = cfxZones.getBoolFromZoneProperty(theZone, "onStart", false) 
 	
 	-- blinking
@@ -207,7 +204,6 @@ function impostors.createImpostorWithZone(theZone) -- has "impostor?"
 	-- we end with group replaced by impostors 
 end
 
-
 -- 
 -- Spawning
 --
@@ -230,6 +226,9 @@ function impostors.turnGroupsIntoImpostors(theZone)
 		end 
 		local aGroup = Group.getByName(gName)
 		if aGroup and gName then 
+			if theZone.verbose then 
+				trigger.action.outText("impostoring group <" .. gName .. ">", 30)
+			end 
 			-- record unit data to create impostors
 			local rawData, cat, ctry = impostors.getRawDataFromGroupNamed(gName)
 			-- if we are tracking the group, remove it from tracker 
@@ -241,8 +240,6 @@ function impostors.turnGroupsIntoImpostors(theZone)
 			-- we may do some book-keeping first for the 
 			-- names. we'll see later 
 			Group.destroy(aGroup)
---			local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(gName)
---			local origID = rawData.groupId -- may be redundant 
 			-- now spawn impostors based on the rawData, 
 			-- and return impostorGroup
 			local impostorGroup = impostors.spawnImpostorsFromData(rawData, cat, ctry) 
@@ -303,28 +300,40 @@ function impostors.spawnGroupsFromImpostor(theZone)
 	for idx, groupName in pairs(theZone.groupNames) do 
 		-- get my group data from MX based on my name 
 		-- we get from MX so we get all path and order info 
-		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(groupName)
+--		local rawData, cat, ctry = cfxMX.getGroupFromDCSbyName(groupName)
+		local rawData = cfxMX.groupDataByName[groupName]
+		if rawData then rawData = dcsCommon.clone(rawData) end 
+		local cat = cfxMX.groupCatByName[groupName]
+		local ctry = cfxMX.countryByName[groupName]
 		local impostorGroup = theZone.myImpostors[groupName]
 		local relinkZones = {}
 		-- now iterate all units in that group, and remove their impostors
 		for idy, theUnit in pairs(rawData.units) do 
-			local impName = impostorGroup[theUnit.name]
-			local impStat = StaticObject.getByName(impName)
-			if impStat and impStat:isExist() and impStat:getLife() > 1 then 
-				-- still alive. read x, y and heading 
-				local sp = impStat:getPoint()
-				theUnit.x = sp.x 
-				theUnit.y = sp.z -- !!!
-				theUnit.heading = dcsCommon.getUnitHeading(impStat) -- should also work for statics
-				-- should automatically handle ["livery_id"]
-				relinkZones[theUnit.name] = cfxZones.zonesLinkedToUnit(impStat)
-			else 
-				-- dead 
-				table.insert(deadUnits, theUnit.name)
-			end
-			-- destroy imp
-			if impStat and impStat:isExist() then 
-				impStat:destroy()
+			if theUnit and theUnit.name then 
+				local impName = impostorGroup[theUnit.name]
+				if not impName then 
+					if theZone.verbose then 
+						trigger.action.outText("group <" .. groupName .. ">: no impostor for <" .. theUnit.name .. ">", 30)
+					end 
+				else 
+					local impStat = StaticObject.getByName(impName)
+					if impStat and impStat:isExist() and impStat:getLife() > 1 then 
+						-- still alive. read x, y and heading 
+						local sp = impStat:getPoint()
+						theUnit.x = sp.x 
+						theUnit.y = sp.z -- !!!
+						theUnit.heading = dcsCommon.getUnitHeading(impStat) -- should also work for statics
+						-- should automatically handle ["livery_id"]
+						relinkZones[theUnit.name] = cfxZones.zonesLinkedToUnit(impStat)
+					else 
+						-- dead 
+						table.insert(deadUnits, theUnit.name)
+					end
+					-- destroy imp
+					if impStat and impStat:isExist() then 
+						impStat:destroy()
+					end
+				end
 			end
 		end
 		
@@ -335,7 +344,8 @@ function impostors.spawnGroupsFromImpostor(theZone)
 		-- now create the group 
 		if theZone.blinkTime <= 0 then 
 			-- immediate spawn
-			local newGroup = coalition.addGroup(ctry, cfxMX.catText2ID(cat), rawData)
+			--local newGroup = coalition.addGroup(ctry, cfxMX.catText2ID(cat), rawData)
+			local newGroup = coalition.addGroup(ctry, cat, rawData)
 			impostors.relinkZonesForGroup(relinkZones, newGroup)
 			if theZone.trackWith and groupTracker.addGroupToTrackerNamed then 
 				-- add these groups to the group tracker 
@@ -349,7 +359,7 @@ function impostors.spawnGroupsFromImpostor(theZone)
 			theZone.blinkCount = theZone.blinkCount + 1 -- so healthcheck avoids false positives
 			local args = {}
 			args.ctry = ctry 
-			args.cat = cfxMX.catText2ID(cat)
+			args.cat = cat -- cfxMX.catText2ID(cat)
 			args.rawData = rawData
 			args.theZone = theZone 
 			args.relinkZones = relinkZones
@@ -384,12 +394,6 @@ function impostors.delayedSpawn(args)
 	local newGroup = coalition.addGroup(ctry, cat, rawData)
 	impostors.relinkZonesForGroup(relinkZones, newGroup)
 
-	if newGroup then 
---		trigger.action.outText("+++ipst: SUCCESS!!! Spawned group <" .. newGroup:getName() .. "> for impostor <" .. rawData.name .. ">", 30)
-	else 
-		trigger.action.outText("+++ipst: failed to spawn group for impostor <" .. rawData.name .. ">", 30)
-	end
-
 	if theZone.trackWith and groupTracker.addGroupToTrackerNamed then 
 		-- add these groups to the group tracker 
 		if theZone.verbose or impostors.verbose then 
@@ -409,7 +413,6 @@ function impostors.delayedCleanup(deadUnits)
 		end 
 	end
 end
-
 -- 
 -- healthCheck
 --
@@ -502,8 +505,6 @@ function impostors.update()
 		end
 	end
 end
-
-
 --
 -- start 
 -- 
