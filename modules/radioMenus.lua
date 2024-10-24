@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "4.0.1"
+radioMenu.version = "4.0.2"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {
@@ -19,7 +19,8 @@ radioMenu.lateGroups = {} -- dict by ID
 			detect cyclic references
 	4.0.0 - added infrastructure for dynamic players (DCS 2.9.6)
 		  - added dynamic player support 
-	4.0.1 - MX no longer optional, so ask for it 
+	4.0.1 - MX no longer optional, so ask for it
+	4.0.2 - ackSnd now also broadcasts to all if no group 
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -770,7 +771,11 @@ function radioMenu.doMenuX(args)
 			radioMenu.radioOutMsg(ack, gid, theZone)
 		end
 		if ackSnd then 
-			trigger.action.outSoundForGroup(gid, ackSnd)
+			if (not gid) or gid == 0 then 
+				trigger.action.outSound(ackSnd)
+			else 
+				trigger.action.outSoundForGroup(gid, ackSnd)
+			end
 		end 
 	end
 	

@@ -1,5 +1,5 @@
 noGap = {}
-noGap.version = "1.0.1"
+noGap.version = "1.3.1"
 
 noGap.verbose = false 
 noGap.ignoreMe = "-ng" -- ignore altogether
@@ -20,11 +20,7 @@ noGap.requiredLibs = {
 	works on unit-level (stop-Gap works on group level)
 	Advantage: multiple-ship player groups look better, less code
 	Disadvantage: incompatibe with SSB/slotBlock
-	
-	What it does:
-	Replace all player units with static aircraft until the first time 
-	that a player slots into that plane. Static is then replaced with live player unit. 
-	
+		
 	DOES NOT SUPPORT SHIP-BASED AIRCRAFT 
 	
 	For multiplayer, NoGapGUI must run on the server (only server)
@@ -38,12 +34,18 @@ noGap.requiredLibs = {
 	Version History
 	1.0.0 - Initial version
 	1.0.1 - added "from runway"
-    
+    1.3.1 - in line with stopGap 1.3.0
+		  - allNeutral attribute 
+		  - DCS dynamic player spawn compatibility 
+		  - shallow water also qualifies as carrier based 
+		  - noParking 
+		  - kickTheDead
+		  - refreshInterval, reinforced guards 
 --]]--
 
 noGap.standInUnits = {} -- static replacement, if filled; indexed by name
 noGap.liveUnits = {} -- live in-game units, checked regularly
-noGap.allPlayerUnits = {} -- for update check to get server notification 
+noGap.allPlayerUnits = {} -- for update check to get server notification, excludes dynamically spawned units 
 noGap.noGapZones = {} -- DML only 
 
 function noGap.staticMXFromUnitMX(theGroup, theUnit)
@@ -57,6 +59,12 @@ function noGap.staticMXFromUnitMX(theGroup, theUnit)
 	theStatic.type = theUnit.type 
 	theStatic.name = theUnit.name  -- same as ME unit 
 	theStatic.cty = cfxMX.countryByName[theGroup.name]
+	theStatic.payload = theUnit.payload -- not supported (yet) by DCS 
+	theStatic.onboard_num = theUnit.onboard_num -- not supported 
+	-- DML only: allNeutral 
+	if noGap.allNeutral then 
+		theStatic.cty = dcsCommon.getACountryForCoalition(0)
+	end
 	return theStatic 
 end
 
@@ -82,10 +90,20 @@ function noGap.isGroundStart(theGroup)
 	if action == "Turning Point" then return false end 	
 	if action == "Landing" then return false end 	
 	if action == "From Runway" then return false end 
+	if noGap.noParking then
+		local loAct = string.lower(action)
+		if loAct == "from parking area" or 
+		   loAct == "from parking area hot" then 
+			if noGap.verbose then 
+				trigger.action.outText("StopG: Player Group <" .. theGroup.name .. "> NOPARKING: [" .. action .. "] must be skipped.", 30)
+			end 
+			return false 
+		end
+	end
 	-- aircraft is on the ground - but is it in water (carrier)? 
 	local u1 = theGroup.units[1]
 	local sType = land.getSurfaceType(u1) -- has fields x and y
-	if sType == 3 then return false	end 
+	if sType == 3 or sType == 2 then return false	end 
 	if noGap.verbose then 
 		trigger.action.outText("noG: Player Group <" .. theGroup.name .. "> GROUND BASED: " .. action .. ", land type " .. sType, 30)
 	end 
@@ -107,7 +125,7 @@ function noGap.ignoreMXUnit(theUnit) -- DML-only
 	return false
 end
 
-function noGap.createStandInForMXData(group, theUnit) -- group, theUnit are MX data blocks
+function noGap.createStandInForMXData(group, theUnit) -- WARNING: group and theUnit are MX data blocks
 	local sgMatch = theUnit.name:sub(-#noGap.ignoreMe) == noGap.ignoreMe or group.name:sub(-#noGap.ignoreMe) == noGap.ignoreMe
 	local spMatch = theUnit.name:sub(-#noGap.spIgnore) == noGap.spIgnore or group.name:sub(-#noGap.spIgnore) == noGap.spIgnore
 	local zoneIgnore = noGap.ignoreMXUnit(theUnit)
@@ -139,7 +157,6 @@ function noGap.createStandInForMXData(group, theUnit) -- group, theUnit are MX d
 			end
 		end
 	end
-	
 end
 
 function noGap.fillGaps()
@@ -175,6 +192,7 @@ function noGap.turnOff()
 		StaticObject.destroy(standIn)
 	end
 	noGap.standInUnits = {}
+	noGap.running = false 
 end
 
 function noGap.turnOn()
@@ -183,6 +201,23 @@ function noGap.turnOn()
 	end
 	-- populate all empty (non-taken) slots with stand-ins
 	noGap.fillGaps()
+	noGap.running = true 
+end
+
+function noGap.refreshAll() -- restore all statics 
+	if noGap.refreshInterval > 0 then 
+		-- re-schedule invocation 
+		timer.scheduleFunction(noGap.refreshAll, {}, timer.getTime() + noGap.refreshInterval)
+		if not noGap.enabled then return end 
+		if noGap.running then 
+			noGap.turnOff() -- kill all statics 
+			-- turn back on in half a second 
+			timer.scheduleFunction(noGap.turnOn, {}, timer.getTime() + 0.5)
+		end
+		if stopGap.verbose then 
+			noGap.action.outText("+++noG: refreshing all static", 30)
+		end
+	end
 end
 
 -- 
@@ -193,11 +228,18 @@ function noGap:onEvent(event)
 	if not event.id then return end 
 	if not event.initiator then return end 
 	local theUnit = event.initiator 
-
+	if (not theUnit.getPlayerName) or (not theUnit:getPlayerName()) then 
+		return 
+	end -- no player unit.
+	if cfxMX.isDynamicPlayer(theUnit) then 
+		if noGap.verbose then 
+			trigger.action.outText("+++noG: unit <" .. theUnit:getName() .. "> controlled by <" .. theUnit:getPlayerName() .. "> is dynamically spawned, ignoring.", 30)
+		end
+		return 
+	end -- ignore all dynamically spawned aircraft 
+	
 	if event.id == 15 then -- we act on player unit birth 
-		if (not theUnit.getPlayerName) or (not theUnit:getPlayerName()) then 
-			return 
-		end -- no player unit.
+		
 		local uName = theUnit:getName()
 		
 		if noGap.standInUnits[uName] then
@@ -208,10 +250,34 @@ function noGap:onEvent(event)
 				trigger.action.outText("+++noG: removed static for <" ..uName  .. ">, player inbound", 30)
 			end
 		end
-		noGap.liveUnits[uName] = theUnit
+		noGap.liveUnits[uName] = theUnit -- dynamic never show up here 
 		-- reset noGapGUI flag, it has done its job. Unit is live   
 		-- we can reset it for next iteration 
 		trigger.action.setUserFlag("NG"..uName, 0)
+	end
+	
+	if id == 6 then -- eject, ignore for now 
+	end
+	if 	(id == 9) or (id == 30) or (id == 5) then -- dead, lost, crash 
+		local pName = theUnit:getPlayerName()
+		timer.scheduleFunction(noGap.kickplayer, pName, timer.getTime() + 1)
+	end
+	
+end
+
+noGap.kicks = {}
+function noGap.kickplayer(args)
+	if not noGap.kickTheDead then return end 
+	local pName = args 
+	for i,slot in pairs(net.get_player_list()) do
+		local nn = net.get_name(slot)
+		if nn == pName then
+			if noGap.kicks[nn] then 
+				if timer.getTime() < noGap.kicks[nn] then return end 
+			end 
+			net.force_player_slot(slot, 0, '')
+			noGap.kicks[nn] = timer.getTime() + 5 -- avoid too many kicks in 5 seconds
+		end
 	end
 end
 
@@ -312,7 +378,7 @@ function noGap.update()
 end
 
 -- 
--- read stopGapZone (DML only)
+-- read noGap Zone (DML only)
 --
 function noGap.createNoGapZone(theZone)
 	local ng = theZone:getBoolFromZoneProperty("noGap", true)
@@ -331,8 +397,11 @@ noGap.name = "noGapConfig" -- cfxZones compatibility here
 function noGap.readConfigZone(theZone)
 	-- currently nothing to do 
 	noGap.verbose = theZone.verbose 
+	noGap.ssbEnabled = theZone:getBoolFromZoneProperty("ssb", true)
 	noGap.enabled = theZone:getBoolFromZoneProperty("onStart", true)
 	noGap.timeOut = theZone:getNumberFromZoneProperty("timeOut", 0) -- default to off 
+	noGap.noParking = theZone:getBoolFromZoneProperty("noParking", false)
+	
 	if theZone:hasProperty("on?") then 
 		noGap.turnOnFlag = theZone:getStringFromZoneProperty("on?", "*<none>")
 		noGap.lastTurnOnFlag = trigger.misc.getUserFlag(noGap.turnOnFlag)
@@ -350,6 +419,10 @@ function noGap.readConfigZone(theZone)
 			trigger.action.outText("+++noG: turned off", 30)		
 		end 
 	end
+	
+	noGap.refreshInterval = theZone:getNumberFromZoneProperty("refresh", -1) -- default: no refresh
+	noGap.kickTheDead = theZone:getBoolFromZoneProperty("kickDead", true)
+	noGap.allNeutral = theZone:getBoolFromZoneProperty("allNeutral", false)
 end
 
 --
@@ -393,6 +466,11 @@ function noGap.start()
 	
 	-- start update in 1 second 
 	timer.scheduleFunction(noGap.update, {}, timer.getTime() + 1)
+	
+	-- start refresh cycle if refresh (>0)
+	if noGap.refreshInterval > 0 then 
+		timer.scheduleFunction(noGap.refreshAll, {}, timer.getTime() + noGap.refreshInterval)
+	end
 	
 	-- say hi!
 	local mp = " (SP - <" .. sgDetect .. ">)"

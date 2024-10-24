@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.1.3"
+cfxHeloTroops.version = "3.1.5"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -23,7 +23,8 @@ cfxHeloTroops.requestRange = 500 -- meters
  3.1.3 - decycled structures (destination zone) on save
        - upcycled structures (destination) on load 
 	   - loadSound and disembarkSound 
-	   
+ 3.1.4 - guarding destination access in save 	  
+ 3.1.5 - more guarding of destination access 
 --]]--
 
 
@@ -926,9 +927,14 @@ function cfxHeloTroops.saveData()
 	for gName, gData in pairs(cfxHeloTroops.deployedTroops) do 
 		local sData = dcsCommon.clone(gData)
 		dcsCommon.synchGroupData(sData.groupData)
-		if sData.destination then 
-			net.log("cfxHeloTroops: decycling troop 'destination' for <" .. sData.destination:getName() .. ">")
-			sData.destination = sData.destination:getName()
+		if sData.destination then
+			if type(sData.destination) == "table" and (sData.destination.name) then
+				net.log("cfxHeloTroops: decycling troop 'destination' for <" .. sData.destination.name .. ">")
+				sData.destination = sData.destination.name
+			else 
+				sData.destination = nil 
+				net.log("cfxHeloTroops: decycling deployed troops 'destination' nilling for safety")
+			end
 		end 
 		allTroopData[gName] = sData
 	end

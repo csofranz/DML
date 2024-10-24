@@ -1,5 +1,5 @@
 slotty = {}
-slotty.version = "1.1.0"
+slotty.version = "1.2.0"
 --[[--
  Single-player slot blocking and slot blocking fallback
  for multiplayer when SSB is not installed on server. 
@@ -12,7 +12,7 @@ slotty.version = "1.1.0"
 Version history 
 1.0.0 - Initial version 
 1.1.0 - "noSlotty" global disable flag, anti-mirror SSB flag 
-1.2.0 - better (delayed) nilling for cfxSSB ocupied clients to 
+1.2.0 - better (delayed) nilling for cfxSSB occupied clients to 
 	  - avoid a race condition 
 	  
 --]]--

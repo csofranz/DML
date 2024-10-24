@@ -1,5 +1,5 @@
 airfield = {}
-airfield.version = "2.2.0"
+airfield.version = "2.3.0"
 airfield.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -22,6 +22,12 @@ airfield.allAirfields = {} -- inexed by af name, db entries: base, cat
 	2.1.0 - added support for makeNeutral? 
 	2.1.1 - bug fixing for DCS 2.9x airfield retrofit 
 	2.2.0 - dmlZone:getCoalition() / masterowner adaptation for owner 
+	2.3.0 - increased verbosity on persistence 
+		  - airfield delayed release after data load 
+		  - locked owner on start 
+		  - release after start
+		  - redrawing airfields when releasing
+          - cleanup 		  
 --]]--
 
 -- init all airfields DB
@@ -31,7 +37,6 @@ function airfield.collectAll()
 	local dropped = 0 
 	for idx, aBase in pairs(allBases) do 
 		local entry = {}
-		--local cat = Airbase.getCategory(aBase) -- DCS 2.9 hardened
 		-- ho! dcs 2.9.x retrofit screwed with Airfield.getCategory.
 		local cat = aBase:getDesc().category
 		-- cats: 0 = airfield, 1 = farp, 2 = ship 
@@ -44,20 +49,18 @@ function airfield.collectAll()
 			count = count + 1
 		else 
 			dropped = dropped + 1
---			trigger.action.outText("***dropped airbase <" .. aBase:getName() .. ">, cat = <" .. cat .. ">", 30)
 		end
 	end
 	if airfield.verbose then 
 		trigger.action.outText("+++airF: init - count = <" .. count .. ">, dropped = <" .. dropped .. ">", 30)
 	end 
 end
-
 --
 -- setting up airfield
 --
+airfield.collector = {}
 function airfield.createAirFieldFromZone(theZone)
 	theZone.farps = theZone:getBoolFromZoneProperty("farps", false)
-
 	local filterCat = 0
 	if (theZone.farps) then filterCat = {0, 1} end -- bases and farps
 	local p = theZone:getPoint()
@@ -65,17 +68,15 @@ function airfield.createAirFieldFromZone(theZone)
 	theZone.airfield = theBase
 	theZone.afName = theBase:getName() 
 	
-		-- set zone's owner 
+	-- set zone's owner 
 	theZone.owner = theBase:getCoalition()
 	theZone.mismatchCount = airfield.gracePeriod
 	if theZone.verbose or airfield.verbose then 
 		trigger.action.outText("+++airF: airfield zone <" .. theZone.name .. "> associates with <" .. theZone.afName .. ">, current owner is <" .. theZone.owner .. ">", 30)
 	end
 	
-	-- methods 
 	theZone.method = theZone:getStringFromZoneProperty("method", "inc")
-	theZone.triggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
-		
+	theZone.triggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")		
 	if theZone:hasProperty("red!") then 
 		theZone.redCap = theZone:getStringFromZoneProperty("red!")
 	end
@@ -92,23 +93,20 @@ function airfield.createAirFieldFromZone(theZone)
 		theZone.makeBlue = theZone:getStringFromZoneProperty("makeBlue?", "<none>")
 		theZone.lastMakeBlue = trigger.misc.getUserFlag(theZone.makeBlue)
 	end
-	
 	if theZone:hasProperty("makeNeutral?") then 
 		theZone.makeNeutral = theZone:getStringFromZoneProperty("makeNeutral?", "<none>")
 		theZone.lastMakeNeutral = trigger.misc.getUserFlag(theZone.makeNeutral)
 	end
-	
 	if theZone:hasProperty("autoCap?") then 
 		theZone.autoCap = theZone:getStringFromZoneProperty("autoCap?", "<none>")
 		theZone.lastAutoCap = trigger.misc.getUserFlag(theZone.autoCap)
 	end
 	
 	theZone.directControl = theZone:getBoolFromZoneProperty("directControl", false)
-	
 	if theZone.directControl then 
 		airfield.assumeControl(theZone)
 	end
-	
+		
 	-- if fixed attribute, we switch to that color and keep it fixed.
 	-- can be overridden by either makeXX or autoCap.
 	if theZone:hasProperty("fixed") then 
@@ -143,6 +141,14 @@ function airfield.createAirFieldFromZone(theZone)
 	theZone.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", airfield.neutralFill)
 	
 	airfield.showAirfield(theZone)
+
+	theBase:autoCapture(false) -- lock down owner to avoid contested at beginning 	
+	-- set up collector to free ownership later 
+	if theZone:hasProperty("fixed") then 
+		airfield.collector[theBase] = false -- autocap off after delay
+	else 
+		airfield.collector[theBase] = true 
+	end 
 
 	-- now mark this zone as handled 
 	local entry = airfield.allAirfields[theZone.afName]
@@ -179,7 +185,6 @@ function airfield.showAirfield(theZone)
 		theZone.ownerMark = nil 
 	end 
 	if not theZone.show then return end -- we don't show in map
-	
 	local lineColor = theZone.redLine -- {1.0, 0, 0, 1.0} -- red  
 	local fillColor = theZone.redFill -- {1.0, 0, 0, 0.2} -- red 
 	local owner = theZone:getCoalition() -- .owner
@@ -190,10 +195,7 @@ function airfield.showAirfield(theZone)
 		lineColor = theZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
 		fillColor = theZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
-	
 	theZone.ownerMark = airfield.markAirfieldOnMap(theZone.airfield, lineColor, fillColor)
-	
-
 end
 
 function airfield.assumeControl(theZone)
@@ -211,7 +213,6 @@ function airfield.relinquishControl(theZone)
 	end
 	theBase:autoCapture(true) -- turn off autocap 
 end
-
 --
 -- event handling
 --
@@ -252,7 +253,6 @@ function airfield.airfieldCaptured(theBase)
 	if theZone.verbose or airfield.verbose then 
 		trigger.action.outText("+++airF: capturing <" .. bName .. "> for zone <" .. theZone.name .. ">", 30)
 	end
-	
 	local newCoa = theBase:getCoalition()
 	theZone.owner = newCoa 
 	
@@ -272,7 +272,6 @@ function airfield.airfieldCaptured(theBase)
 	if theZone.blueCap and newCoa == 2 then 
 		theZone:pollFlag(theZone.blueCap, theZone.method)
 	end
-	
 end
 
 function airfield:onEvent(event)
@@ -347,7 +346,6 @@ function airfield.update()
 			end 
 			theZone.owner = 0
 		end
-
 		
 		if theZone.autoCap and theZone:testZoneFlag(theZone.autoCap, theZone.triggerMethod, "lastAutoCap") then 
 			if theAirfield:autoCaptureIsOn() then 
@@ -386,16 +384,12 @@ function airfield.GC()
 					trigger.action.outText("+++airF: corrected ownership after grace period", 30)
 				end
 			end
-
 		end
 	end
-
 end
-
 --
 -- LOAD / SAVE 
 -- 
-
 function airfield.saveData()
 	local theData = {}
 	local allAF = {}
@@ -411,6 +405,21 @@ function airfield.saveData()
 	return theData
 end
 
+function airfield.releaseFields(releaseMe)
+	for theAF, rel in pairs(releaseMe) do 
+		theAF:autoCapture(rel)
+		if airfield.verbose then 	
+			trigger.action.outText("+++airF: releasing AF <" .. theAF:getName() .. "> to saved cap state <" .. dcsCommon.bool2Text(rel) .. ">", 30)
+		end 
+	end
+	for name, theZone in pairs(airfield.myAirfields) do 
+		airfield.showAirfield(theZone)
+		if airfield.verbose or theZone.verbose then 
+			trigger.action.outText("+++airF: redrawing <" .. theZone.name .. ">", 30)
+		end
+	end 
+end
+
 function airfield.loadData()
 	if not persistence then return end 
 	local theData = persistence.getSavedDataForModule("airfield")
@@ -418,6 +427,7 @@ function airfield.loadData()
 		if airfield.verbose then 
 			trigger.action.outText("+++airF persistence: no save data received, skipping.", 30)
 		end
+		timer.scheduleFunction(airfield.releaseFields, airfield.collector, timer.getTime() + 2)
 		return
 	end
 	
@@ -426,9 +436,12 @@ function airfield.loadData()
 		if airfield.verbose then 
 			trigger.action.outText("+++airF persistence: no airfield data, skipping", 30)
 		end		
+		timer.scheduleFunction(airfield.releaseFields, airfield.collector, timer.getTime() + 2)
 		return
 	end
 	
+	airfield.collector = {} -- overwrite existing 
+
 	for theName, AFData in pairs(allAF) do 
 		local theZone = airfield.myAirfields[theName]
 		if theZone then 
@@ -438,20 +451,22 @@ function airfield.loadData()
 			theAirfield:autoCapture(false)
 			theAirfield:setCoalition(AFData.owner)
 			theZone.owner = AFData.owner
+			if airfield.verbose or theZone.verbose then 
+				trigger.action.outText("+++airF: setting AF Zone <" .. theZone.name .. ">, owner from file to <" .. theZone.owner .. ">", 30)
+			end 
 			-- set ownedBy#
 			if theZone.ownedBy then 
 				trigger.action.setUserFlag(theZone.ownedBy, theZone.owner)
 			end 
 			-- set owning mode: autocap or direct 
-			theAirfield:autoCapture(AFData.autocapActive)
-
+			--theAirfield:autoCapture(AFData.autocapActive)
+			airfield.collector[theAirfield] = AFData.autocapActive
 		else 
 			trigger.action.outText("+++airF persistence: cannot synch airfield <" .. theName .. ">, skipping", 40)
 		end
 	end
+	timer.scheduleFunction(airfield.releaseFields, airfield.collector, timer.getTime() + 2)
 end
-
-
 --
 -- start up
 --
@@ -460,9 +475,7 @@ function airfield.readConfig()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("airfieldConfig")
 	end
-	airfield.verbose = theZone.verbose 
---	airfield.farps = theZone:getBoolFromZoneProperty("farps", false)
-	
+	airfield.verbose = theZone.verbose 	
 	-- colors for line and fill 
 	airfield.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", {1.0, 0, 0, 1.0})
 	airfield.redFill = theZone:getRGBAVectorFromZoneProperty("redFill", {1.0, 0, 0, 0.2})
@@ -470,7 +483,6 @@ function airfield.readConfig()
 	airfield.blueFill = theZone:getRGBAVectorFromZoneProperty("blueFill", {0.0, 0, 1.0, 0.2})
 	airfield.neutralLine = theZone:getRGBAVectorFromZoneProperty("neutralLine", {0.8, 0.8, 0.8, 1.0})
 	airfield.neutralFill = theZone:getRGBAVectorFromZoneProperty("neutralFill", {0.8, 0.8, 0.8, 0.2})
-	
 	airfield.showAll = theZone:getBoolFromZoneProperty("show", false)
 end
 
@@ -485,13 +497,10 @@ end
 function airfield.start()
 	if not dcsCommon.libCheck("cfx airfield", airfield.requiredLibs) 
 	then return false end
-
 	-- set up DB
 	airfield.collectAll()
-	
 	-- read config
 	airfield.readConfig()
-	
 	-- read bases 
 	local abZones = cfxZones.zonesWithProperty("airfield")
 	for idx, aZone in pairs(abZones) do
@@ -512,6 +521,8 @@ function airfield.start()
 		persistence.registerModule("airfield", callbacks)
 		-- now load my data 
 		airfield.loadData()
+	else 
+		timer.scheduleFunction(airfield.releaseFields, airfield.collector, timer.getTime() + 2) -- release airfields when not loaded from storage
 	end
 	
 	-- start update in 1 second 

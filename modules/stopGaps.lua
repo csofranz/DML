@@ -58,7 +58,7 @@ stopGap.requiredLibs = {
 			required 
 	1.3.0 - carriers in shallow waters also no longer handled as viable 
 		  - noParking option 
-	
+	1.3.1 - stronger guards on refresh 
 --]]--
 
 stopGap.standInGroups = {} -- idx by name, if set has a static 
@@ -239,6 +239,7 @@ function stopGap.refreshAll() -- restore all statics
 	if stopGap.refreshInterval > 0 then 
 		-- re-schedule invocation 
 		timer.scheduleFunction(stopGap.refreshAll, {}, timer.getTime() + stopGap.refreshInterval)
+		if not stopGap.enabled then return end -- why do we have enabled and running?		
 		if stopGap.running then 
 			stopGap.turnOff() -- kill all statics 
 			-- turn back on in half a second 

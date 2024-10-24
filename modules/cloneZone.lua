@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.4.0"
+cloneZones.version = "2.5.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -57,6 +57,8 @@ cloneZones.respawnOnGroupID = true
 			path) with wiper module
 		  - using "wipe?" will now create a warning 
 	2.4.0 - reworked masterOwner to fit with dmlZone 
+	2.5.0 - re-establish spawn zone in persistence to provide 
+	        empty! detection through saves (missed hasClones)
 --]]--
 
 --
@@ -90,7 +92,6 @@ function cloneZones.invokeCallbacks(theZone, reason, args)
 	if not theZone then return end 
 	if not reason then reason = "<none>" end 
 	if not args then args = {} end 
-	
 	-- invoke anyone who wants to know that a group 
 	-- of people was rescued.
 	for idx, cb in pairs(cloneZones.callbacks) do 
@@ -105,7 +106,6 @@ function cloneZones.partOfGroupDataInZone(theZone, theUnits)
 	local zP = cfxZones.getPoint(theZone)
 	zP = theZone:getDCSOrigin() -- don't use getPoint now.
 	zP.y = 0
-	
 	for idx, aUnit in pairs(theUnits) do 
 		local uP = {}
 		uP.x = aUnit.x 
@@ -197,7 +197,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 				table.insert(theZone.myStatics, aStatic)
 			end
 		end
-		
 		cloneZones.despawnAll(theZone) 
 		if (#theZone.cloneNames + #theZone.staticNames)	< 1 then 
 			if cloneZones.verbose then 
@@ -210,18 +209,12 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 			trigger.action.outText(theZone.name .. " clone template saved", 30)
 		end
 	end
-	
-	-- declutter 
 	theZone.declutter = theZone:getBoolFromZoneProperty("declutter", false)
-	
-	-- watchflags
 	theZone.cloneTriggerMethod = theZone:getStringFromZoneProperty("triggerMethod", "change")
-
 	if theZone:hasProperty("cloneTriggerMethod") then 
 		theZone.cloneTriggerMethod = theZone:getStringFromZoneProperty("cloneTriggerMethod", "change")
 	end
 	
-	-- f? and spawn? and other synonyms map to the same 
 	if theZone:hasProperty("f?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("f?", "none")
 	elseif theZone:hasProperty("in?") then 
@@ -231,12 +224,10 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	elseif theZone:hasProperty("clone?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("clone?", "none")
 	end
-	
 	if theZone.spawnFlag then 
 		theZone.lastSpawnValue = theZone:getFlagValue(theZone.spawnFlag)
 	end
 	
-	-- deSpawn?
 	if theZone:hasProperty("deSpawn?") then 
 		theZone.deSpawnFlag = theZone:getStringFromZoneProperty( "deSpawn?", "none")
 	elseif theZone:hasProperty("deClone?") then 
@@ -259,7 +250,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
 	theZone.moveRoute = theZone:getBoolFromZoneProperty("moveRoute", false)
 	theZone.preWipe = theZone:getBoolFromZoneProperty("preWipe", false)
-		
+	
 	if theZone:hasProperty("empty!") then 
 		theZone.emptyBangFlag = theZone:getStringFromZoneProperty("empty!", "<None>") -- note string on number default
 	end
@@ -267,30 +258,7 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	theZone.cloneMethod = theZone:getStringFromZoneProperty("cloneMethod", "inc")
 	if theZone:hasProperty("method") then 
 		theZone.cloneMethod = theZone:getStringFromZoneProperty("method", "inc") -- note string on number default
-	end
-	
-	--[[--
-	if theZone:hasProperty("masterOwner") then 
-		theZone.masterOwner = theZone:getStringFromZoneProperty( "masterOwner", "*")
-		theZone.masterOwner = dcsCommon.trim(theZone.masterOwner)
-		if theZone.masterOwner == "*" then 
-			theZone.masterOwner = theZone.name 
-			if theZone.verbose then 
-				trigger.action.outText("+++clnZ: masterOwner for <" .. theZone.name .. "> set successfully to to itself, currently owned by faction <" .. theZone.owner .. ">", 30)
-			end
-		end
-		if theZone.verbose or cloneZones.verbose then 
-			trigger.action.outText("+++clnZ: ownership of <" .. theZone.name .. "> tied to zone <" .. theZone.masterOwner .. ">", 30)
-		end
-		-- check that the zone exists in DCS 
-		local theMaster = cfxZones.getZoneByName(theZone.masterOwner)
-		if not theMaster then 
-			trigger.action.outText("clnZ: WARNING: cloner's <" .. theZone.name .. "> master owner named <" .. theZone.masterOwner .. "> does not exist!", 30)
-		end
-		theZone.masterOwner = theMaster 
-	end
-	--]]--
-	
+	end		
 	theZone.turn = theZone:getNumberFromZoneProperty("turn", 0)
 	
 	-- interface to groupTracker 
@@ -329,7 +297,6 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.inBuiltup = theZone:getNumberFromZoneProperty("inBuiltup", 10) -- 10 meter radius must be free -- small houses
 	end 
 	theZone.rndHeading = theZone:getBoolFromZoneProperty("rndHeading", false)
-	
 	theZone.onRoad = theZone:getBoolFromZoneProperty("onRoad", false)
 	theZone.onPerimeter = theZone:getBoolFromZoneProperty("onPerimeter", false)
 
@@ -338,15 +305,12 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.identical = theZone:getBoolFromZoneProperty("identical", false)
 		if theZone.identical == false then theZone.identical = nil end 
 	end 
-	
 	if theZone:hasProperty("nameScheme") then 
 		theZone.nameScheme = theZone:getStringFromZoneProperty( "nameScheme", "<o>-<uid>") -- default to [<original name> "-" <uuid>] 
 	end
-	
 	if theZone:hasProperty("groupScheme") then 
 		theZone.groupScheme = theZone:getStringFromZoneProperty("groupScheme", "<o>-<uid>")
 	end 
-	
 	if theZone.identical and theZone.nameScheme then
 		trigger.action.outText("+++clnZ: WARNING - clone zone <" .. theZone.name .. "> has both IDENTICAL and NAMESCHEME/GROUPSCHEME attributes. nameScheme is ignored.", 30)
 		theZone.nameScheme = nil
@@ -539,7 +503,6 @@ function cloneZones.updateLocationsInGroupData(theData, zoneDelta, adjustAllWayp
 	-- now process departing slot if given 
 	if departFromAerodrome then 
 		-- we may need alt from land to add here, maybe later 
-	
 		-- now process parking slots, and choose closest slot 
 		-- per unit's location 
 		if fromParking then 
@@ -658,11 +621,9 @@ function cloneZones.uniqueNameStaticData(theData, theCloneZone, sourcename)
 	if theCloneZone and theCloneZone.nameScheme then
 		local schema = theCloneZone.nameScheme
 		newName, iterCount = cloneZones.nameFromSchema(schema, theData.name, theCloneZone, sourceName, iterCount)
-		
 		if theCloneZone.verbose then 
 			trigger.action.outText("clnZ: zone <" .. theCloneZone.name .. "> static schema <" .. schema .. ">: <" .. theData.name .. "> --> <" .. newName .. ">", 30)
 		end
-		
 		theData.name = newName -- dcsCommon.uuid(theData.name)
 	else
 		-- default naming scheme: <name>-<uuid>
@@ -697,19 +658,6 @@ end
 
 function cloneZones.resolveOwnership(spawnZone, ctry)
 	if not spawnZone.masterOwner then return ctry end -- old code 
---[[--	
-	local masterZone = cfxZones.getZoneByName(spawnZone.masterOwner)
-	if not masterZone then 
-		trigger.action.outText("+++clnZ: cloner " .. spawnZone.name .. " could not find master owner <" .. spawnZone.masterOwner .. ">", 30)
-		return ctry 
-	end
-	
-	if not masterZone.owner then 
-		return ctry 
-	end
---]]--
-	
---	ctry = dcsCommon.getACountryForCoalition(masterZone.owner)
 	ctry = dcsCommon.getACountryForCoalition(spawnZone:getCoalition())
 	return ctry 
 end
@@ -1249,6 +1197,8 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		
 		-- clone for persistence
 		local theData = dcsCommon.clone(rawData)
+		-- remember the zone that spawned this particular group 
+		theData.CZspawner = spawnZone.name 
 		cloneZones.allClones[rawData.name] = theData 
 		
 		if cloneZones.verbose or spawnZone.verbose then 
@@ -1273,7 +1223,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			info.timeLimit = now + timeLimit
 			info.cloneZone = spawnZone
 			table.insert(cloneZones.despawnPlan, info)
---			trigger.action.outText("+++clne: scheduled auto-despawn for <" .. info.name .. "> in <" .. timeLimit .. "> secs", 30)
 		end 
 				
 		-- turn off AI if disabled 
@@ -1446,6 +1395,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		rawData.cty = ctry 
 		-- save for persistence 
 		local theData = dcsCommon.clone(rawData)
+		theData.CZspawner = spawnZone.name -- remember spawner 
 		cloneZones.allCObjects[rawData.name] = theData 
 		
 		if cloneZones.verbose or spawnZone.verbose then 
@@ -1466,7 +1416,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			info.timeLimit = now + timeLimit
 			info.cloneZone = spawnZone
 			table.insert(cloneZones.despawnPlan, info)
---			trigger.action.outText("+++clne: scheduled auto-despawn for OBJECT <" .. info.name .. "> in <" .. timeLimit .. "> secs", 30)
 		end 
 		-- we don't mix groups with units, so no lookup tables for 
 		-- statics 
@@ -1528,9 +1477,7 @@ end
 function cloneZones.spawnWithSpawner(theZone)
 	-- analog to cfxSpawnZones.spawnWithSpawner(theSpawner)
 	-- glue code for helo troops and other modules 
-	
 	-- we may want to check if cloner isn't emtpy first 
-	
 	cloneZones.spawnWithCloner(theZone)
 end 
 
@@ -1702,15 +1649,6 @@ end
 
 function cloneZones.resolveOwningCoalition(theZone)
 	return theZone:getCoalition()
---[[--	
-	if not theZone.masterOwner then return theZone.owner end 
-	local masterZone = cfxZones.getZoneByName(theZone.masterOwner)
-	if not masterZone then 
-		trigger.action.outText("+++clnZ: cloner " .. theZone.name .. " could not find master owner <" .. theZone.masterOwner .. ">", 30)
-		return theZone.owner 
-	end
-	return masterZone.owner 
---]]--
 end
 
 function cloneZones.getRequestableClonersInRange(aPoint, aRange, aSide)
@@ -1821,7 +1759,6 @@ function cloneZones.update()
 	local filtered = {}
 	for idx, theInfo in pairs(cloneZones.despawnPlan) do 
 		if theInfo.timeLimit < now then 
---			trigger.action.outText("+++clne: auto-despawning <" .. theInfo.name .. ">", 30)
 			if theInfo.isObject then 
 				-- dealloc static object 
 				local theObject = theInfo.theGroup 
@@ -1857,7 +1794,6 @@ function cloneZones.doOnStart()
 		end 
 	end
 end
-
 --
 -- Regular GC and housekeeping
 --
@@ -1884,7 +1820,6 @@ function cloneZones.GC()
 		end
 	end
 	cloneZones.allClones = filteredAttackers
-	
 	filteredAttackers = {}
 	for gName, gData in pairs (cloneZones.allCObjects) do 
 		-- all we need to do is get the group of that name
@@ -1904,8 +1839,6 @@ function cloneZones.houseKeeping()
 	timer.scheduleFunction(cloneZones.houseKeeping, {}, timer.getTime() + 5 * 60) -- every 5 minutes 
 	cloneZones.GC()
 end
-
-
 --
 -- LOAD / SAVE 
 --
@@ -1969,7 +1902,7 @@ function cloneZones.saveData()
 		cData.myUniqueCounter = theCloner.myUniqueCounter
 		cData.oSize = theCloner.oSize 
 		cData.lastSize = theCloner.lastSize 
-		-- mySpawns: all groups i'm curently observing for empty!
+		-- mySpawns: all groups I'm curently observing for empty!
 		-- myStatics: dto for objects 
 		local mySpawns = {}
 		for idx, aGroup in pairs(theCloner.mySpawns) do 
@@ -2071,6 +2004,7 @@ function cloneZones.loadData()
 				local theGroup = Group.getByName(aName)
 				if theGroup then 
 					table.insert(mySpawns, theGroup)
+					theCloner.hasClones = true -- was missing!
 				else
 					trigger.action.outText("+++clnZ - persistence: can't reconnect cloner <" .. cName .. "> with clone group <".. aName .. ">", 30)
 				end
@@ -2082,6 +2016,7 @@ function cloneZones.loadData()
 				local theStatic = StaticObject.getByName(aName)
 				if theStatic then 
 					table.insert(myStatics, theStatic)
+					theCloner.hasClones = true -- was missing!S
 				else
 					trigger.action.outText("+++clnZ - persistence: can't reconnect cloner <" .. cName .. "> with static <".. aName .. ">", 30)
 				end
@@ -2115,24 +2050,16 @@ function cloneZones.readConfigZone()
 		end 
 		theZone = cfxZones.createSimpleZone("cloneZonesConfig") 
 	end 
-	
 	if theZone:hasProperty("uniqueCount") then 
 		cloneZones.uniqueCounter = theZone:getNumberFromZoneProperty("uniqueCount", cloneZone.uniqueCounter)
 	end
-	
 	if theZone:hasProperty("localCount") then 
 		cloneZones.lclUniqueCounter = theZone:getNumberFromZoneProperty("localCount", cloneZone.lclUniqueCounter)
 	end
-	
 	if theZone:hasProperty("globalCount") then 
 		cloneZones.globalCounter = theZone:getNumberFromZoneProperty("globalCount", cloneZone.globalCounter)
 	end
-	
-	cloneZones.verbose = theZone:getBoolFromZoneProperty("verbose", false)
-	
-	if cloneZones.verbose then 
-		trigger.action.outText("+++clnZ: read config", 30)
-	end 
+	cloneZones.verbose = theZone.verbose
 end
 
 function cloneZones.start()
@@ -2201,4 +2128,5 @@ end
 	make example where transport can be different plane types but have same name 
 	
 	support 'orders' to complete replace routes, and pass to groundCommander like spawner. only for ground troops 
+	maxCycles - maximum number of clone cycles. emulate with countdown?
 --]]--

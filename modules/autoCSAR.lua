@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "2.2.0" 
+autoCSAR.version = "2.2.1" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -19,7 +19,8 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 	2.1.0 - persistence support 
 	2.2.0 - new noExploit option in config 
 		  - no csar mission if pilot lands too close to airbase or farp 
-		    and noExploit is on 
+		    and noExploit is on
+	2.2.1 - DCS hardening for isExist
 --]]--
 autoCSAR.forbidden = {} -- indexed by name, contains point 
 autoCSAR.killDist = 2100 -- meters from center of forbidden 
@@ -173,7 +174,9 @@ function autoCSAR:onEvent(event)
 		local coa = event.initiator:getCoalition()
 		-- see if pilot has ejector seat and prepare to connect one with the other 
 		local info = nil 
-		if event.target and event.target:isExist() then 
+		if event.target 
+		and event.target.isExist 
+		and event.target:isExist() then -- DCS hardening 
 			info = {}
 			info.coa = coa
 			info.seat = event.target

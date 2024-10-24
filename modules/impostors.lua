@@ -1,6 +1,6 @@
 impostors={}
 
-impostors.version = "1.1.0"
+impostors.version = "1.2.0"
 impostors.verbose = false  
 impostors.ups = 1
 impostors.requiredLibs = {
@@ -21,7 +21,7 @@ impostors.uniqueCounter = 8200000 -- clones start at 9200000
 	1.1.0 - filtered dead units during spawns 
 			cleanup
 			some performance boost for mx lookup 
-
+	1.2.0 - filters dead groups entirely 
   LIMITATIONS:
   must be on ground (or would be very silly
   does not work with any units deployed on ships
@@ -296,7 +296,7 @@ function impostors.spawnGroupsFromImpostor(theZone)
 	
 	local deadUnits = {} -- collect all dead units for immediate delete 
 						 -- after spawning 
-						 
+	local filtered = {} 
 	for idx, groupName in pairs(theZone.groupNames) do 
 		-- get my group data from MX based on my name 
 		-- we get from MX so we get all path and order info 
@@ -306,67 +306,75 @@ function impostors.spawnGroupsFromImpostor(theZone)
 		local cat = cfxMX.groupCatByName[groupName]
 		local ctry = cfxMX.countryByName[groupName]
 		local impostorGroup = theZone.myImpostors[groupName]
-		local relinkZones = {}
-		-- now iterate all units in that group, and remove their impostors
-		for idy, theUnit in pairs(rawData.units) do 
-			if theUnit and theUnit.name then 
-				local impName = impostorGroup[theUnit.name]
-				if not impName then 
-					if theZone.verbose then 
-						trigger.action.outText("group <" .. groupName .. ">: no impostor for <" .. theUnit.name .. ">", 30)
-					end 
-				else 
-					local impStat = StaticObject.getByName(impName)
-					if impStat and impStat:isExist() and impStat:getLife() > 1 then 
-						-- still alive. read x, y and heading 
-						local sp = impStat:getPoint()
-						theUnit.x = sp.x 
-						theUnit.y = sp.z -- !!!
-						theUnit.heading = dcsCommon.getUnitHeading(impStat) -- should also work for statics
-						-- should automatically handle ["livery_id"]
-						relinkZones[theUnit.name] = cfxZones.zonesLinkedToUnit(impStat)
+		if impostorGroup then 
+			table.insert(filtered, groupName)
+			local relinkZones = {}
+			-- now iterate all units in that group, and remove their impostors
+			for idy, theUnit in pairs(rawData.units) do 
+				if theUnit and theUnit.name then 
+					local impName = impostorGroup[theUnit.name]
+					if not impName then 
+						if theZone.verbose then 
+							trigger.action.outText("group <" .. groupName .. ">: no impostor for <" .. theUnit.name .. ">", 30)
+						end 
 					else 
-						-- dead 
-						table.insert(deadUnits, theUnit.name)
-					end
-					-- destroy imp
-					if impStat and impStat:isExist() then 
-						impStat:destroy()
+						local impStat = StaticObject.getByName(impName)
+						if impStat and impStat:isExist() and impStat:getLife() > 1 then 
+							-- still alive. read x, y and heading 
+							local sp = impStat:getPoint()
+							theUnit.x = sp.x 
+							theUnit.y = sp.z -- !!!
+							theUnit.heading = dcsCommon.getUnitHeading(impStat) -- should also work for statics
+							-- should automatically handle ["livery_id"]
+							relinkZones[theUnit.name] = cfxZones.zonesLinkedToUnit(impStat)
+						else 
+							-- dead 
+							table.insert(deadUnits, theUnit.name)
+						end
+						-- destroy imp
+						if impStat and impStat:isExist() then 
+							impStat:destroy()
+						end
 					end
 				end
 			end
-		end
-		
-		-- destroy impostor info 
-		theZone.myImpostors[groupName] = nil 
-		theZone.impostor = false 
-		
-		-- now create the group 
-		if theZone.blinkTime <= 0 then 
-			-- immediate spawn
-			--local newGroup = coalition.addGroup(ctry, cfxMX.catText2ID(cat), rawData)
-			local newGroup = coalition.addGroup(ctry, cat, rawData)
-			impostors.relinkZonesForGroup(relinkZones, newGroup)
-			if theZone.trackWith and groupTracker.addGroupToTrackerNamed then 
-				-- add these groups to the group tracker 
-				if theZone.verbose or impostors.verbose then 
-					trigger.action.outText("+++ipst: attempting to add group <" .. newGroup:getName() .. "> to tracker <" .. theZone.trackWith .. ">", 30)
-				end 
-				groupTracker.addGroupToTrackerNamed(newGroup, theZone.trackWith)
+			
+			-- destroy impostor info 
+			theZone.myImpostors[groupName] = nil 
+			theZone.impostor = false -- is this good?
+			
+			-- now create the group 
+			if theZone.blinkTime <= 0 then 
+				-- immediate spawn
+				--local newGroup = coalition.addGroup(ctry, cfxMX.catText2ID(cat), rawData)
+				local newGroup = coalition.addGroup(ctry, cat, rawData)
+				impostors.relinkZonesForGroup(relinkZones, newGroup)
+				if theZone.trackWith and groupTracker.addGroupToTrackerNamed then 
+					-- add these groups to the group tracker 
+					if theZone.verbose or impostors.verbose then 
+						trigger.action.outText("+++ipst: attempting to add group <" .. newGroup:getName() .. "> to tracker <" .. theZone.trackWith .. ">", 30)
+					end 
+					groupTracker.addGroupToTrackerNamed(newGroup, theZone.trackWith)
+				end
+			else 
+				-- scheduled spawn 
+				theZone.blinkCount = theZone.blinkCount + 1 -- so healthcheck avoids false positives
+				local args = {}
+				args.ctry = ctry 
+				args.cat = cat -- cfxMX.catText2ID(cat)
+				args.rawData = rawData
+				args.theZone = theZone 
+				args.relinkZones = relinkZones
+				timer.scheduleFunction(impostors.delayedSpawn, args, timer.getTime() + theZone.blinkTime)
 			end
 		else 
-			-- scheduled spawn 
-			theZone.blinkCount = theZone.blinkCount + 1 -- so healthcheck avoids false positives
-			local args = {}
-			args.ctry = ctry 
-			args.cat = cat -- cfxMX.catText2ID(cat)
-			args.rawData = rawData
-			args.theZone = theZone 
-			args.relinkZones = relinkZones
-			timer.scheduleFunction(impostors.delayedSpawn, args, timer.getTime() + theZone.blinkTime)
+			if theZone.verbose or impostors.verbose then 
+				trigger.action.outText("No impostor group named <" .. groupName .. "> any more, skipped.", 30)
+			end 
+--			theZone.myImpostors[groupName] = nil 
 		end
 	end
-	
+	theZone.groupNames = filtered -- filter out non-existing 
 	-- now remove all dead units 
 	if theZone.blinkTime <= 0 then 
 		for idx, unitName in pairs(deadUnits) do 
