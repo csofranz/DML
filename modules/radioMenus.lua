@@ -21,6 +21,7 @@ radioMenu.lateGroups = {} -- dict by ID
 		  - added dynamic player support 
 	4.0.1 - MX no longer optional, so ask for it
 	4.0.2 - ackSnd now also broadcasts to all if no group 
+	4.1.0 - outX --> valX verification. putting back in optional outX  
 --]]--
 
 function radioMenu.addRadioMenu(theZone)
@@ -437,6 +438,11 @@ function radioMenu.createRadioMenuWithZone(theZone)
 	if theZone:hasProperty("radioMethod") then 
 		theZone.radioMethod = theZone:getStringFromZoneProperty( "radioMethod", "inc")
 	end
+	-- note: outX currently overridden with valX 
+	theZone.outMethA = theZone:getStringFromZoneProperty("outA", theZone.radioMethod)
+	theZone.outMethB = theZone:getStringFromZoneProperty("outB", theZone.radioMethod)
+	theZone.outMethC = theZone:getStringFromZoneProperty("outC", theZone.radioMethod)
+	theZone.outMethD = theZone:getStringFromZoneProperty("outD", theZone.radioMethod)
 	
 	theZone.radioTriggerMethod = theZone:getStringFromZoneProperty("radioTriggerMethod", "change")
 	
@@ -731,6 +737,7 @@ function radioMenu.doMenuX(args)
 	local outVal = theZone.outValA
 	local ack = theZone.ackA 
 	local ackSnd = theZone.ackASnd
+	local meth = theZone.outMethA -- currently not used 
 	
 	-- decode A..X
 	if theItemIndex == "B"then 
@@ -740,6 +747,7 @@ function radioMenu.doMenuX(args)
 		outVal = theZone.outValB
 		ack = theZone.ackB 
 		ackSnd = theZone.ackBSnd
+		meth = theZone.outMethB
 	elseif theItemIndex == "C" then 
 		cd = radioMenu.cdByGID(theZone.mcdC, theZone, theGroup) -- theZone.mcdC
 		busy = theZone.busyC 
@@ -747,6 +755,7 @@ function radioMenu.doMenuX(args)
 		outVal = theZone.outValC
 		ack = theZone.ackC 
 		ackSnd = theZone.ackCSnd
+		meth = theZone.outMethC
 	elseif theItemIndex == "D" then 
 		cd = radioMenu.cdByGID(theZone.mcdD, theZone, theGroup) -- theZone.mcdD
 		busy = theZone.busyD 
@@ -754,6 +763,7 @@ function radioMenu.doMenuX(args)
 		outVal = theZone.outValD
 		ack = theZone.ackD
 		ackSnd = theZone.ackDSnd
+		meth = theZone.outMethD
 	end
 	
 	-- see if we are on cooldown 
@@ -793,6 +803,7 @@ function radioMenu.doMenuX(args)
 	-- poll flag, override with outVal if set 
 	if outVal then 
 		--outVal = "#"..outVal -- we force immediate mode
+		-- now replaced by 'valX' attribute 
 		theZone:pollFlag(theFlag, outVal)
 		if theZone.verbose or radioMenu.verbose then 
 			trigger.action.outText("+++menu: overriding index " .. theItemIndex .. " output method <" .. theZone.radioMethod .. "> with immediate value <" .. outVal .. ">", 30)

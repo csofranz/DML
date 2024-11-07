@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "3.3.1"
+cfxPlayerScore.version = "4.0.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.badSound = "Death BRASS.wav"
 cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
@@ -18,7 +18,9 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	3.3.0 - case INsensitivity for all typeScore objects 
 	3.3.1 - fixes for DCS oddity in events after update 
 		  - cleanup 
-		  
+	4.0.0 - own event handling, disco from dcsCommon 
+		  - early landing detection (unitSpawnTime)
+	
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore 
 --]]--
@@ -51,7 +53,7 @@ cfxPlayerScore.train = 5
 cfxPlayerScore.landing = 0 -- if > 0 it scores as feat
 
 cfxPlayerScore.unit2player = {} -- lookup and reverse look-up 
-
+cfxPlayerScore.unitSpawnTime = {} -- lookup by unit name to prevent early landing 
 function cfxPlayerScore.addSafeZone(theZone)
 	theZone.scoreSafe = theZone:getCoalitionFromZoneProperty("scoreSafe", 0)
 	table.insert(cfxPlayerScore.safeZones, theZone)
@@ -570,7 +572,7 @@ function cfxPlayerScore.awardScoreTo(killSide, theScore, killerName)
 end
 
 --
--- EVENT HANDLING
+-- EVENT PROCESSING / HANDLING
 --
 function cfxPlayerScore.linkUnitWithPlayer(theUnit)
 	-- create the entries for lookup and reverseLooup tables
@@ -583,7 +585,7 @@ function cfxPlayerScore.unlinkUnit(theUnit)
 	local uName = theUnit:getName()
 	cfxPlayerScore.unit2player[uName] = nil 	
 end
-
+--[[--
 function cfxPlayerScore.preProcessor(theEvent)
 	-- return true if the event should be processed
 	-- by us
@@ -721,10 +723,13 @@ function cfxPlayerScore.preProcessor(theEvent)
 	
 	return false 
 end
+--]]--
 
+--[[--
 function cfxPlayerScore.postProcessor(theEvent)
 	-- don't do anything
 end
+--]]--
 
 function cfxPlayerScore.isStaticObject(theUnit) 
 	if not theUnit.getGroup then return true end 
@@ -1091,7 +1096,165 @@ function cfxPlayerScore.handlePlayerDeath(theEvent)
 	end
 end
 
-function cfxPlayerScore.handlePlayerEvent(theEvent)
+--
+-- event detection 
+--
+function cfxPlayerScore.isScoreEvent(theEvent)
+	-- return true if the event results in a score event
+	if theEvent.initiator  == nil then 
+		return false 
+	end 
+	if cfxPlayerScore.verbose then 
+		trigger.action.outText("Event preproc: " .. theEvent.id .. " (" .. dcsCommon.event2text(theEvent.id) .. ")", 30)
+		if theEvent.id == 8 or theEvent.id == 30 then -- dead or lost event 
+			local who = theEvent.initiator
+			local name = "(nil ini)"
+			if who then 
+				name = "(inval object)"
+				if who.getName then name = who:getName() end 
+			end 
+			trigger.action.outText("Dead/Lost subject: <" .. name .. ">", 30)
+		end 
+		if theEvent.id == 2 then -- hit
+			local who = theEvent.initiator
+			local name = "(nil ini)"
+			if who then 
+				name = "(inval initi)"
+				if who.getName then name = who:getName() end 
+				if not name then -- WTF??? could be a weapon 
+					name = "!nil getName!"
+					if who.getTypeName then name = who:getTypeName() end 
+					if not name then 
+						name = "WTFer"
+					end
+				end
+			end
+			
+			local hit = theEvent.object
+			local hname = "(nil ini)"
+			if hit then 
+				hname = "(inval object)"
+				if hit.getName then hname = hit:getName() end 
+			end
+			trigger.action.outText("o:<" .. name .. "> hit <" .. hname .. ">", 30)
+		end
+	end 
+	
+	-- check if this was FORMERLY a player plane 
+	local theUnit = theEvent.initiator 
+	if not theUnit.getName then return end -- fix for DCS update bug 
+	local uName = theUnit:getName()
+	if cfxPlayerScore.unit2player[uName] then 
+		-- this requires special IMMEDIATE handling when event is
+		-- one of the below 		
+		if theEvent.id == 5 or -- crash 
+		   theEvent.id == 8 or -- dead 
+	       theEvent.id == 9 or -- pilot_dead
+		   theEvent.id == 30 or -- unit loss 
+	       theEvent.id == 6 then -- eject 
+			-- these can lead to a pilot demerit
+			-- event does NOT have a player
+			cfxPlayerScore.handlePlayerDeath(theEvent)
+			return false -- false = no score event (any more)
+	    end 
+	end
+	
+	-- from here on, initiator must be player 
+	if not theUnit.getPlayerName or  
+	   not theUnit:getPlayerName() then 
+	   return false 
+	end 
+	if theEvent.id == 28 then -- kill, but only with target
+		local killer = theEvent.initiator 
+		if not theEvent.target then 
+			if cfxPlayerScore.verbose then 
+				trigger.action.outText("+++scr kill nil TARGET", 30) 
+			end 
+			return false 
+		end 
+		-- if there are kill zones, we filter all kills that happen outside of kill zones 
+		if #cfxPlayerScore.killZones > 0 then
+			local pLoc = theUnit:getPoint() 
+			local tLoc = theEvent.target:getPoint()
+			local isIn, percent, dist, theZone = cfxZones.pointInOneOfZones(tLoc, cfxPlayerScore.killZones)
+			if not isIn then 
+				if cfxPlayerScore.verbose then 
+					trigger.action.outText("+++pScr: kill detected, but target <" .. theEvent.target:getName() .. "> was outside of any kill zones", 30)
+				end
+				return false 
+			end
+			if theZone.duet and not cfxZones.pointInZone(pLoc, theZone) then 
+				-- player must be in same zone but was not
+				if cfxPlayerScore.verbose then 
+					trigger.action.outText("+++pScr: kill detected, but player <" .. theUnit:getPlayerName() .. "> was outside of kill zone <" .. theZone.name .. ">", 30)
+				end
+				return false
+			end			
+		end
+		return true 
+	end
+	
+	-- birth event for players initializes score if 
+	-- not existed, and nils the queue 
+	if theEvent.id == 15 then -- player birth
+		-- link player and unit
+		cfxPlayerScore.linkUnitWithPlayer(theUnit)
+		cfxPlayerScore.unitSpawnTime[uName] = timer.getTime() -- to detect 'early landing' 
+--		trigger.action.outText("Birth event", 30)
+		return true 
+	end
+	
+	-- take off. overwrites timestamp for last landing 
+	-- so a blipping t/o does nor count. Pre-proc only 
+	if theEvent.id == 3 or theEvent.id == 54 then 
+		local now = timer.getTime()
+		local playerName = theUnit:getPlayerName() 
+		cfxPlayerScore.lastPlayerLanding[playerName] = now -- overwrite 
+		return false 
+	end
+	
+	-- landing can score. but only the first landing in x seconds
+	-- and has spawned more than 10 seconds before 
+	-- landing in safe zone promotes any queued scores to 
+	-- permanent if enabled, then nils queue
+	if theEvent.id == 4 or theEvent.id == 55 then
+--		trigger.action.outText("LANDING event", 30)	
+		-- player landed. filter multiple landed events
+		local now = timer.getTime()
+		local playerName = theUnit:getPlayerName() 
+		-- if player spawns on ground, DCS now can post a 
+		-- "landing" event. filter 
+		if cfxPlayerScore.unitSpawnTime[uName] and 
+			now - cfxPlayerScore.unitSpawnTime[uName] < 10 
+		then 
+			cfxPlayerScore.lastPlayerLanding[playerName] = now -- just for the sake of it 
+--			trigger.action.outText("(DCS early landing bug ignored)", 30)
+			return false 
+		end 		
+--		trigger.action.outText("Time since spawn: " .. now - cfxPlayerScore.unitSpawnTime[uName], 30)
+		local lastLanding = cfxPlayerScore.lastPlayerLanding[playerName]
+		cfxPlayerScore.lastPlayerLanding[playerName] = now -- overwrite 
+		if lastLanding and lastLanding + cfxPlayerScore.delayBetweenLandings > now then 
+			if cfxPlayerScore.verbose then 
+				trigger.action.outText("+++pScr: Player <" .. playerName .. "> touch-down ignored: too soon after last.", 30)
+				trigger.action.outText("now is <" .. now .. ">, between is <" .. cfxPlayerScore.delayBetweenLandings .. ">, last + between is <" .. lastLanding + cfxPlayerScore.delayBetweenLandings .. ">", 30)
+			end 
+			-- filter this event, too soon 
+			return false 
+		end
+		return true 
+	end
+	
+	return false 
+end
+
+function cfxPlayerScore:onEvent(theEvent)
+	if cfxPlayerScore.isScoreEvent(theEvent) then 
+		cfxPlayerScore.handleScoreEvent(theEvent)
+	end 
+end 
+
+function cfxPlayerScore.handleScoreEvent(theEvent)
 	if theEvent.id == 28 then 
 		-- kill from player detected.
 		cfxPlayerScore.killDetected(theEvent)	
@@ -1134,7 +1297,9 @@ function cfxPlayerScore.handlePlayerEvent(theEvent)
 		end	
 	end
 end
-
+--
+-- Config handling 
+--
 function cfxPlayerScore.readConfigZone(theZone)
 	cfxPlayerScore.verbose = theZone.verbose 
 	-- default scores 
@@ -1450,9 +1615,10 @@ function cfxPlayerScore.start()
 	end
 
 	-- subscribe to events and use dcsCommon's handler structure
-	dcsCommon.addEventHandler(cfxPlayerScore.handlePlayerEvent,
-							  cfxPlayerScore.preProcessor,
-							  cfxPlayerScore.postProcessor) 
+	-- dcsCommon.addEventHandler(cfxPlayerScore.handlePlayerEvent,
+--							  cfxPlayerScore.preProcessor,
+--							  cfxPlayerScore.postProcessor) 
+	world.addEventHandler(cfxPlayerScore)
 	-- now load all save data and populate map with troops that
 	-- we deployed last save. 
 	if persistence then 

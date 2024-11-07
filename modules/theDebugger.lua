@@ -1,5 +1,5 @@
 debugger = {}
-debugger.version = "3.0.0"
+debugger.version = "3.1.0"
 debugDemon = {}
 debugDemon.version = "2.1.0"
 
@@ -45,7 +45,8 @@ debugger.log = ""
 		  - x *f 
 		  - x *z 
 		  - x ? 
-
+	3.1.0 - new DCS world events 57-61
+		  - x ! xref hanging/unconnected 
 			
 --]]--
 
@@ -122,7 +123,11 @@ debugDemon.eventList = {
   ["54"] = "S_EVENT_MISSION_WINNER = 54", 
   ["55"] = "S_EVENT_POSTPONED_TAKEOFF = 55", 
   ["56"] = "S_EVENT_POSTPONED_LAND = 56", 
-  ["57"] = "S_EVENT_MAX = 57",
+  ["57"] = "S_EVENT_SIMULATION_FREEZE  = 57",
+  ["58"] = "S_EVENT_SIMULATION_UNFREEZE = 58",
+  ["59"] = "S_EVENT_HUMAN_AIRCRAFT_REPAIR_START = 59",
+  ["60"] = "S_EVENT_HUMAN_AIRCRAFT_REPAIR_FINISH = 60",
+  ["61"] = "S_EVENT_MAX = 61",
 }
 
 debugger.spawnTypes = {
@@ -150,7 +155,7 @@ debugger.spawnTypes = {
 -- XREF MODULE
 --
 xref = {}
-xref.version = "1.0.0"
+xref.version = "1.1.0"
 xref.dmlObjects = {} -- dict by zone name:upper() 
 -- has inputs: dict of string for each '?' input, contains input flag name 
 -- has output: dict of array for each output '!', contains output flag names as array 
@@ -158,7 +163,7 @@ xref.flags = {} -- dict by flag name
 -- has froms: dict of zone of attributes that can write to this flags 
 -- has tos: dict of zones of attributes that read from flag 
 
-function xref.getDmlObject(name)
+function xref.getDmlObject(name) -- lazy alloc 
 	name = name:upper() 
 	local theObject = xref.dmlObjects[name]
 	if not theObject then 
@@ -170,7 +175,7 @@ function xref.getDmlObject(name)
 	return theObject 
 end
 
-function xref.getFlag(name, theZone)
+function xref.getFlag(name, theZone) -- lazy alloc 
 	if theZone and dcsCommon.stringStartsWith(name, "*") then 
 		-- local name conversion 
 		name = theZone.name .. name 
@@ -178,8 +183,8 @@ function xref.getFlag(name, theZone)
 	local theFlag = xref.flags[name]
 	if not theFlag then 
 		theFlag = {}
-		theFlag.froms = {} -- dict by zone name/output that write to this flag
-		theFlag.tos = {} -- dict by zone name / inputs that reads from this flag
+		theFlag.froms = {} -- dict by zone name: OUTPUTS that write to this flag
+		theFlag.tos = {} -- dict by zone name: INPUTS that read from this flag
 		xref.flags[name] = theFlag
 	end
 	return theFlag 
@@ -236,20 +241,21 @@ function xref.scanMissionZones()
 		-- iterate all properties
 		local attributes = theZone:getAllZoneProperties()
 		for name, value in pairs(attributes) do 
+			local n2 = dcsCommon.trim(name)
 			-- find inputs 
-			if dcsCommon.stringEndsWith(name, "?") then 
-				xref.addInput(theZone, name, value)
+			if dcsCommon.stringEndsWith(n2, "?") then 
+				xref.addInput(theZone, n2, value)
 			end
 		
 			-- find outputs
-			if dcsCommon.stringEndsWith(name, "!") then 
-				xref.addOutput(theZone, name, value)
+			if dcsCommon.stringEndsWith(n2, "!") then 
+				xref.addOutput(theZone, n2, value)
 			end
 		 
 			-- other stuff, e.g. "#"
 			-- find outputs
-			if dcsCommon.stringEndsWith(name, "#") then 
-				xref.addOutput(theZone, name, value)
+			if dcsCommon.stringEndsWith(n2, "#") then 
+				xref.addOutput(theZone, n2, value)
 			end
 		end
 	end
@@ -289,8 +295,6 @@ function xref.xrefFlag(name)
 			end 
 		end 
 	end 
-	
---	trigger.action.outText(msg, 30)
 	return msg 
 	
 end
@@ -323,9 +327,7 @@ function xref.xrefZone(name, theObject)
 		end 
 	end 
 
---	trigger.action.outText(msg, 30)
-	return msg 
-	
+	return msg 	
 end 
 
 function xref.xrefName(name)
@@ -362,40 +364,92 @@ function xref.allZones()
 end 
 
 function xref.xall()
-	msg = ""
+	local msg = ""
 	-- now dump all flags 
 	for flagName, data in pairs (xref.flags) do 
-		-- msg = msg .. xref.xrefFlag(flagName) 
 		msg = msg .. xref.xrefName(flagName)
 	end 
 	
 	-- dump all zones 
 	for zoneName, data in pairs(xref.dmlObjects) do 
---		msg = msg .. xref.xrefZone(zoneName, data)
 		msg = msg .. xref.xrefName(zoneName)
 	end 
 	return msg
---	trigger.action.outText(msg, 30)
 end
+
+function xref.unconnected()
+	local msg = "xref: unconnected flags/commands:\n"
+	local badFroms = {}
+	local badTos = {}
+	for name, theFlag in pairs(xref.flags) do 
+		-- look for single-direction flags, i.e those that have 
+		-- no froms or no tos.
+		if dcsCommon.getSizeOfTable(theFlag.froms) < 1 then 
+			-- this flag has output referencing it, so the input hangs 
+			badFroms[name] = theFlag 
+		end 
+		if dcsCommon.getSizeOfTable(theFlag.tos) < 1 then 
+			-- this flag has output referencing it, so the input hangs 
+			badTos[name] = theFlag 
+		end
+	end
+	local hasUnconnected = false 
+	if dcsCommon.getSizeOfTable(badFroms) > 0 then
+		msg = msg .. "<Flag/Command> used at [zone]:INPUT that listens for/to nothing:\n"
+		for name, theFlag in pairs(badFroms) do 
+			msg = msg .. "    <" .. name .. ">: "
+			local froms = theFlag.tos -- crossing from and to here!
+			for zName, outList in pairs(froms) do 
+				msg = msg .. "[" .. zName .. "]:"
+				local c = 0 
+				for idx, outName in pairs(outList) do 
+					if c > 0 then msg = msg .. ", " end 
+					c = 1 
+					msg = msg .. outName
+				end 
+				msg = msg .. "\n"
+			end
+		end
+		msg = msg .. "  -- END OF LIST --\n\n"
+		hasUnconnected = true 
+	end 
+	
+	if dcsCommon.getSizeOfTable(badTos) > 0 then
+		msg = msg .. "<Flag/Command> used at [zone]:OUTPUT that sends to nobody:\n"
+		for name, theFlag in pairs(badTos) do 
+			msg = msg .. "    <" .. name .. ">: "
+			local tos = theFlag.froms -- crossing!
+			for zName, inList in pairs(tos) do 
+				msg = msg .. "[" .. zName .. "]:"
+				local c = 0 
+				for idx, inName in pairs(inList) do 
+					if c > 0 then msg = msg .. ", " end 
+					c = 1 
+					msg = msg .. inName
+				end 
+			end
+			msg = msg .. "\n"
+		end
+		hasUnconnected = true
+		msg = msg .. "  -- END OF LIST --\n\n"
+	end 
+	
+	if not hasUnconnected then 
+		msg = msg .. "\n  -- NONE --\n"
+	end 
+	
+	return msg
+end 	
 
 function xref.start()
 	xref.scanMissionZones()
 	local flagNum = dcsCommon.getSizeOfTable(xref.flags)
 	local dmlObNum = dcsCommon.getSizeOfTable(xref.dmlObjects)
-	trigger.action.outText("XRef v" .. xref.version .. " full DML object scan on mission complete:\n<" .. flagNum .. "> flags are referenced in <" .. dmlObNum .. "> DML zones", 30)
-	
---	trigger.action.outText(xref.xall(), 30)
+	trigger.action.outText("XRef v" .. xref.version .. " full DML object scan on mission complete:\n<" .. flagNum .. "> flags are referenced in <" .. dmlObNum .. "> DML zones", 30)	
 end
 
 -- run the xref 
 xref.start()
-
---[[--
-	to do
-		scan messenger and wildcards for flag access 
-		
---]]--
-
 
 --
 -- DEBUGGER MAIn
@@ -435,7 +489,6 @@ function debugger.saveLog(name)
 		debugger.outText("+++debug: unable to save log to <" .. persistence.missionDir .. name .. ">")
 	end
 end
-
 
 --
 -- tracking flags 
@@ -764,7 +817,6 @@ function debugger.update()
 	end
 end
 
-
 --
 -- Config & Start
 --
@@ -950,7 +1002,6 @@ function debugDemon:onEvent(theEvent)
 	end
     
     if theEvent.id == world.event.S_EVENT_MARK_CHANGE then
---		trigger.action.outText("debugger: Mark Change event received", 30)
 		-- when changed, the mark's text is examined for a command
 		-- if it starts with the 'mark' string ("-" by  default) it is processed
 		-- by the command processor
@@ -958,42 +1009,26 @@ function debugDemon:onEvent(theEvent)
 		-- else an error is displayed and the mark remains.
 		if debugDemon.hasMark(theEvent.text) then 
 			-- strip the mark 
-			local cCommand = dcsCommon.clone(theEvent.text, true)
+			local cCommand = dcsCommon.clone(theEvent.text)
 			local commandString = cCommand:sub(1+debugDemon.markOfDemon:len())
 			-- break remainder apart into <command> <arg1> ... <argn>
 			local commands = dcsCommon.splitString(commandString, debugDemon.splitDelimiter)
 
 			-- this is a command. process it and then remove it if it was executed successfully
-			local cTheEvent = dcsCommon.clone(theEvent, true) -- strip meta tables
+			local cTheEvent = dcsCommon.clone(theEvent) -- strip meta tables
 			local args = {commands, cTheEvent}	
 			-- defer execution for 0.1s to get out of trx bracked
 			timer.scheduleFunction(debugDemon.deferredDebug, args, timer.getTime() + 0.1)
 			debugDemon.activeIdx = cTheEvent.idx 
-			--[[--
-			local success = debugDemon.executeCommand(commands, cTheEvent) -- execute on a clone, not original 
-						
-			-- remove this mark after successful execution
-			if success then 
-				trigger.action.removeMark(theEvent.idx) 
-			else 
-				-- we could play some error sound
-			end
-			--]]--
 		end 
     end 
 	
 	if theEvent.id == world.event.S_EVENT_MARK_REMOVED then
---		trigger.action.outText("Mark Remove received, removing idx <" .. theEvent.idx .. ">.", 30)
 		debugDemon.activeIdx = nil 
     end
 end
 
 function debugDemon.deferredDebug(args)
---	trigger.action.outText("enter deferred debug command", 30)
---	if not debugDemon.activeIdx then 
---		trigger.action.outText("Debugger: window was closed, debug command ignored.", 30)
---		return 
---	end 
 	local commands = args[1]
 	local cTheEvent = args[2]
 	local success = debugDemon.executeCommand(commands, cTheEvent) -- execute on a clone, not original 
@@ -1884,8 +1919,11 @@ function debugDemon.processXrefCommand(args, event)
 	if not larg or larg == "" then larg = "?" end 
 	larg = larg:lower() 
 	if larg == "?" then 
-		debugger.outText("*** xRef: ? = help (this), * = xref all, *f = list all DML flags, *z = list all DML zones, <name> xref flag or zone", 30) 
+		debugger.outText("*** xRef: ? = help (this), ! = xref all 'hanging' or unconnected flags/commands, * = xref all, *f = list all DML flags, *z = list all DML zones, <name> xref flag or zone", 30) 
 		return true -- leave up 
+	elseif larg == "!" then 
+		debugger.outText(xref.unconnected(), 30)
+		return true 
 	elseif larg == "*" then 
 		debugger.outText(xref.xall(), 30)
 		return true 

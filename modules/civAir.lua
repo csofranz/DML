@@ -1,5 +1,5 @@
 civAir = {}
-civAir.version = "3.0.2"
+civAir.version = "3.1.0"
 --[[--
 	3.0.0 liveries support
 		  default liveries for Yak-50 (main test case)
@@ -15,7 +15,12 @@ civAir.version = "3.0.2"
 		  protest action 
 		  spawning now works correctly for groupType
 	3.0.2 clean-up
-
+	3.1.0 better verbosity for startup info 
+		  dicts for departOnly and landingOnly 
+		  correctly filter depart only, land only, closed at start 
+		  Syria multiple "H" airfields DCS bug 
+		  filter airfields with no runways
+		  getAirfieldNamed
 --]]--
 
 civAir.ups = 0.05 -- updates per second. 0.05  = once every 20 seconds 
@@ -60,8 +65,11 @@ civAir.maxIdle = 8 * 60 -- seconds of ide time before it is removed after landin
 
 civAir.trafficCenters = {} 
 civAir.excludeAirfields = {}
+civAir.excludeAirfieldsDict = {}
 civAir.departOnly = {} -- use only to start from 
+civAir.departOnlyDict = {} -- as above, by af name 
 civAir.landingOnly = {} -- use only to land at 
+civAir.landingOnlyDict = {} -- as above, by af name 
 civAir.inoutZones = {} -- off-map connector zones 
 
 civAir.requiredLibs = {
@@ -180,7 +188,7 @@ end
 
 function civAir.processZone(theZone)
 	local value = theZone:getStringFromZoneProperty("civAir", "")
-	local af = dcsCommon.getClosestAirbaseTo(theZone.point, 0) -- 0 = only airfields, not farp or ships 
+	local af = dcsCommon.getClosestAirbaseTo(theZone.point, 0) -- 0 = only airfields, not farp nor ships 
 	local inoutName = "***" .. theZone:getName() 
 	
 	if af then 
@@ -188,10 +196,13 @@ function civAir.processZone(theZone)
 		value = value:lower()
 		if value == "exclude" or value == "closed" then 
 			table.insert(civAir.excludeAirfields, afName)
+			civAir.excludeAirfieldsDict[afName] = afName
 		elseif dcsCommon.stringStartsWith(value, "depart") or dcsCommon.stringStartsWith(value, "start") or dcsCommon.stringStartsWith(value, "take") then 
 			table.insert(civAir.departOnly, afName)
+			civAir.departOnlyDict[afName] = afName -- can fold many in one 
 		elseif dcsCommon.stringStartsWith(value, "land") or dcsCommon.stringStartsWith(value, "arriv") then
 			table.insert(civAir.landingOnly, afName)
+			civAir.landingOnlyDict[afName] = afName -- can fold many on one
 		elseif dcsCommon.stringStartsWith(value, "inb") then 
 			table.insert(civAir.departOnly, inoutName) -- start in inbound zone
 			civAir.inoutZones[inoutName] = theZone
@@ -253,8 +264,8 @@ function civAir.filterAirfields(inAll, inFilter)
 end
 
 function civAir.getTwoAirbases()
-	local fAB -- first airbase to depart
-	local sAB -- second airbase to fly to 
+	local fAB -- name of first airbase to depart from
+	local sAB -- name second airbase to fly to 
 	
 	local departAB = dcsCommon.combineTables(civAir.trafficCenters, civAir.departOnly)
 	-- remove all currently excluded air bases from departure 
@@ -263,11 +274,14 @@ function civAir.getTwoAirbases()
 	if #filteredAB < 1 then 
 		trigger.action.outText("+++civA: too few departure airfields", 30)
 		return nil, nil 
+	else 
+--		trigger.action.outText("+++civA: source (first) fields available: " .. #filteredAB, 30)
 	end
 	
 	-- now pick the departure airfield
-	fAB = dcsCommon.pickRandom(filteredAB)
-
+	fAB = dcsCommon.pickRandom(filteredAB) -- returns an airfield name 
+--	trigger.action.outText("+++civA: picked first: <" .. fAB .. ">", 30)
+	
 	-- now generate list of landing airfields 
 	local arriveAB = dcsCommon.combineTables(civAir.trafficCenters, civAir.landingOnly)
 	-- remove all currently excluded air bases from arrival 
@@ -277,6 +291,8 @@ function civAir.getTwoAirbases()
 	if #filteredAB < 1 then 
 		trigger.action.outText("+++civA: too few arrival airfields", 30)
 		return nil, nil
+	else 
+--		trigger.action.outText("+++civA: second (ARV) fields available: " .. #filteredAB, 30)
 	end
 	
 	-- pick any second that are not the same 
@@ -285,10 +301,13 @@ function civAir.getTwoAirbases()
 		sAB = dcsCommon.pickRandom(filteredAB)
 		tries = tries + 1 -- only try 10 times
 	until fAB ~= sAB or tries > 10
-		
+	
+--	trigger.action.outText("+++civA: picked SECOND: <" .. sAB .. ">", 30)
+
+	
 	local civA = {}
 	if not (dcsCommon.stringStartsWith(fAB, '***')) then 
-		civA.AB = dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0) 
+		civA.AB = civAir.getAirfieldNamed(fAB) -- dcsCommon.getFirstAirbaseWhoseNameContains(fAB, 0) 
 		civA.name = civA.AB:getName()
 	else 
 		civA.zone = civAir.inoutZones[fAB]
@@ -296,14 +315,20 @@ function civAir.getTwoAirbases()
 	end 
 	local civB = {}
 	if not (dcsCommon.stringStartsWith(sAB, '***')) then 
-		civB.AB = dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0) 
+		civB.AB = civAir.getAirfieldNamed(sAB) -- dcsCommon.getFirstAirbaseWhoseNameContains(sAB, 0) 
 		civB.name = civB.AB:getName()
 	else 
 		civB.zone = civAir.inoutZones[sAB]
 		civB.name = civB.zone:getName() 
 	end 
 
+--	trigger.action.outText("+++civA: picked source AF <" .. civA.name .. "> and dest <" .. civB.name .. ">", 30)
+
 	return civA, civB -- fAB, sAB	
+end
+
+function civAir.getAirfieldNamed(name)
+	return Airbase.getByName(name)
 end
 
 function civAir.parkingIsFree(fromWP) 
@@ -684,24 +709,48 @@ function civAir.collectHubs()
 end
 
 function civAir.listTrafficCenters()
-	trigger.action.outText("Traffic Centers", 30)
+	local msg = "Traffic Centers:\n"
+	local other = false 
 	for idx, aName in pairs(civAir.trafficCenters) do
-		trigger.action.outText(aName, 30)
+		if other then msg = msg .. ", " end
+		msg = msg .. aName
+		other = true 
 	end
+	trigger.action.outText(msg .. "\n", 30)
 	
+	msg = "Departure-Only:\n"
+	other = false
 	if #civAir.departOnly > 0 then 
-		trigger.action.outText("Departure-Only:", 30)
 		for idx, aName in pairs(civAir.departOnly) do
-			trigger.action.outText(aName, 30)
+			if other then msg = msg .. ", " end
+			msg = msg .. aName
+			other = true
 		end
 	end
+	trigger.action.outText(msg .. "\n", 30)
 	
+	msg = "Landing-Only:\n"
+	other = false
 	if #civAir.landingOnly > 0 then 
-		trigger.action.outText("Arrival/Landing-Only:", 30)
 		for idx, aName in pairs(civAir.landingOnly) do
-			trigger.action.outText(aName, 30)
+			if other then msg = msg .. ", " end
+			msg = msg .. aName
+			other = true
 		end
 	end
+	trigger.action.outText(msg .. "\n", 30)
+	
+	
+	msg = "Closed:\n"
+	other = false
+	if #civAir.excludeAirfields > 0 then 
+		for idx, aName in pairs(civAir.excludeAirfields) do
+			if other then msg = msg .. ", " end
+			msg = msg .. aName
+			other = true
+		end
+	end
+	trigger.action.outText(msg .. "\n", 30)
 end
  
 -- start 
@@ -721,13 +770,27 @@ function civAir.start()
 	if (#civAir.trafficCenters + #civAir.departOnly < 1) or
 	   (#civAir.trafficCenters + #civAir.landingOnly < 1) 
 	then 
+		trigger.action.outText("+++civA: marked traffic centers:" .. #civAir.trafficCenters .. "\n    depart-only:" .. #civAir.departOnly .. "\n   landing-only: " .. #civAir.landingOnly .. "\n", 30 )
 		trigger.action.outText("+++civA: auto-populating", 30)
 		-- simply add airfields on the map
+		-- and filter those that are excluded, land-only or depart only 
 		local allBases = dcsCommon.getAirbasesWhoseNameContains("*", 0)
 		for idx, aBase in pairs(allBases) do 
 			local afName = aBase:getName()
-
-			table.insert(civAir.trafficCenters, afName)
+			if civAir.departOnlyDict[afName] or 
+			   civAir.landingOnlyDict[afName] or 
+			   civAir.excludeAirfieldsDict[afName] 
+			then 
+				trigger.action.outText("+++civA: filtering base " .. afName .. " for single-exception", 30)
+			else 
+				-- syria special proccing 
+				local rw = aBase:getRunways() 
+				if #rw < 1 then 
+--					trigger.action.outText(afName .. " has no runways, filtered", 30) 
+				else 	
+					table.insert(civAir.trafficCenters, afName)
+				end 
+			end
 		end
 	end
 	

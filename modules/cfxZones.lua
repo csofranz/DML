@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.4.2" 
+cfxZones.version = "4.4.3" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -32,6 +32,7 @@ cfxZones.version = "4.4.2"
 		  - dmlZone:getCoalition() dereferences masterOwner once 
 -4.4.1	  - better verbosity for error in doPollFlag()
 -4.4.2    - twn support for wildcards <twn: > and <loc:>
+-4.4.3    - property name is trimmed (double check)
 --]]--
 
 --
@@ -123,7 +124,14 @@ function cfxZones.readFromDCS(clearfirst)
 			else
 				newZone.properties = {}
 			end -- WARNING: REF COPY. May need to clone 
-			
+--[[--			
+			trigger.action.outText("zone <> properties:trimmed", 30)
+			local msg = "["
+			for idx, val in pairs(newZone.properties) do 
+				msg = msg .. "<" .. val.key .. ">:<" .. dcsCommon.trim(val.key) .. ">, "
+			end 
+			trigger.action.outText(msg, 30)
+--]]--			
 			local upperName = newZone.name:upper()
 			
 			-- location as 'point'
@@ -2158,7 +2166,14 @@ function cfxZones.extractPropertyFromDCS(theKey, theProperties)
 	for i=1, #theProperties do
 		local theP = theProperties[i]
 		 
-		local existingKey = dcsCommon.trim(theP.key)  
+		local existingKey = dcsCommon.trim(theP.key)  -- does not work if ends on "#!?" - why?
+		--while len(existingKey) > 1 and string.sub(existingKey, -1) == " " do
+		--	existingKey = existingKey:sub(1, -2) -- trim manually 
+		--end		
+		if string.sub(existingKey, -1) == " " then 
+			trigger.action.outText("+++ZONES: warning: unable to trim blanks from attribute name <" .. existingKey .. ">", 30)
+		end 
+--		trigger.action.outText("procced attribute name <" .. existingKey .. ">", 30)
 		if not cfxZones.caseSensitiveProperties then 
 			existingKey = string.lower(existingKey)
 		end
@@ -2388,6 +2403,7 @@ function dmlZone:hasProperty(theProperty)
 		trigger.action.outText("+++zne: WARNING - hasProperty called with nil theProperty for zone <" .. self.name .. ">", 30)
 		return false 
 	end 
+	theProperty = dcsCommon.trim(theProperty) -- strip leading and training blanks 
 	local foundIt = self:getZoneProperty(theProperty)
 	if not foundIt then 
 		-- check for possible forgotten or exchanged IO flags 

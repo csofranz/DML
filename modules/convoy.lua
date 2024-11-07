@@ -1,5 +1,5 @@
 convoy = {}
-convoy.version = "1.1.0"
+convoy.version = "1.2.0"
 convoy.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -32,7 +32,8 @@ VERSION HISTORY
 	  - warning when not onStart and no start?
 	  - say hi 
 	  - removed destination attribute 
-	  
+1.2.0 - convoyMethod 
+	  - convoyTriggerMethod 
 --]]--
 
 --[[-- CONVOY Structure
@@ -174,6 +175,9 @@ function convoy.readConvoyZone(theZone)
 			trigger.action.outText("+++CVY: Warning: Convoy zone <" .. theZone.name .. "> has disabled 'onStart' and has no 'spawn?' input. This convoy zone can't send out any convoys,", 30)
 		end
 	end
+	theZone.convoyMethod = theZone:getStringFromZoneProperty("convoyMethod", "inc")
+	theZone.convoyTriggerMethod = theZone:getStringFromZoneProperty("convoyTriggerMethod", "change") 
+	
 	--[[--
 	if theZone:hasProperty("destination") then -- remove me
 		theZone.destination = theZone:getStringFromZoneProperty("destination", "none")
@@ -560,7 +564,7 @@ function convoy.wpReached(gName, convName, idx, wpNum)
 			convoy.invokeArrivedCallbacks(theConvoy)
 			-- hit the output flag if defined 
 			if theZone.arrivedOut then 
-				theZone:pollFlag(theZone.arrivedOut, "inc")
+				theZone:pollFlag(theZone.arrivedOut, theZone.convoyMethod) -- "inc")
 			end 
 			-- remove convoy from watchlist 
 			convoy.convoys[convName] = nil 
@@ -845,7 +849,7 @@ function convoy.update()
 	-- check for flags 
 	for idx, theZone in pairs (convoy.zones) do 
 		if theZone.spawnFlag and 
-		theZone:testZoneFlag(theZone.spawnFlag, "change", "lastSpawnFlag") then
+		theZone:testZoneFlag(theZone.spawnFlag, theZone.convoyTriggerMethod, "lastSpawnFlag") then
 			convoy.startConvoy(theZone)
 		end
 	end
@@ -900,7 +904,7 @@ function convoy.statusUpdate() -- every 10 seconds
 			convoy.invokeAttackedCallbacks(theConvoy)
 			theZone = theConvoy.origin 
 			if theZone.attackedOut then 
-				theZone:pollFlag(theZone.attackedOut, "inc")
+				theZone:pollFlag(theZone.attackedOut, theZone.convoyMethod) -- "inc")
 			end
 		end
 		
@@ -909,7 +913,7 @@ function convoy.statusUpdate() -- every 10 seconds
 			convoy.invokeDestroyedCallbacks(theConvoy)
 			theZone = theConvoy.origin 
 			if theZone.deadOut then 
-				theZone:pollFlag(theZone.deadOut, "inc")
+				theZone:pollFlag(theZone.deadOut, theZone.convoyMethod) -- "inc")
 			end
 			trigger.action.outTextForCoalition(theConvoy.coa, "Convoy " .. convName .. " enroute to " .. theConvoy.dest .. " was destroyed.", 30)
 			trigger.action.outSoundForCoalition(theConvoy.coa, convoy.actionSound)

@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "3.1.5"
+cfxHeloTroops.version = "4.0.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -25,6 +25,9 @@ cfxHeloTroops.requestRange = 500 -- meters
 	   - loadSound and disembarkSound 
  3.1.4 - guarding destination access in save 	  
  3.1.5 - more guarding of destination access 
+ 4.0.0 - added dropZones
+	   - enforceDropZones
+	   - coalition for drop zones 
 --]]--
 
 
@@ -37,10 +40,24 @@ cfxHeloTroops.requiredLibs = {
 
 cfxHeloTroops.unitConfigs = {} -- all configs are stored by unit's name 
 cfxHeloTroops.troopWeight = 100 -- kg average weight per trooper 
+cfxHeloTroops.dropZones = {}
 
 -- persistence support 
 cfxHeloTroops.deployedTroops = {}
 
+--
+-- drop zones 
+--
+function cfxHeloTroops.processDropZone(theZone)
+	theZone.droppedFlag = theZone:getStringFromZoneProperty("dropZone!", "cfxNone")
+	theZone.dropMethod = theZone:getStringFromZoneProperty("dropMethod", "inc")
+	theZone.dropCoa = theZone:getCoalitionFromZoneProperty("coalition", 0)
+	theZone.autoDespawn = theZone:getNumberFromZoneProperty("autoDespawn", -1)
+end
+
+--
+-- comms
+--
 function cfxHeloTroops.resetConfig(conf)
 	conf.autoDrop = cfxHeloTroops.autoDrop --if true, will drop troops on-board upon touchdown
 	conf.autoPickup = cfxHeloTroops.autoPickup -- if true will load nearest troops upon touchdown
@@ -576,16 +593,33 @@ function cfxHeloTroops.scoreWhenCapturing(theUnit)
 	end
 end
 
+function cfxHeloTroops.isInsideDropZone(theUnit)
+	local p = theUnit:getPoint()
+	for idx, theZone in pairs (cfxHeloTroops.dropZones) do 
+		if theZone:isPointInsideZone(p) then return true end 
+	end
+	return false 
+end
+
 function cfxHeloTroops.doDeployTroops(args)
 	local conf = args[1]
 	local what = args[2]
-	-- deploy the troops I have on board in formation
+	local theUnit = conf.unit
+	local theGroup = theUnit:getGroup()
+	local gid = theGroup:getID()
+	local inside = cfxHeloTroops.isInsideDropZone(theUnit)
+	if (not inside) and cfxHeloTroops.enforceDropZones then 
+		trigger.action.outTextForGroup(gid, "You are outside an disembark/drop zone.", 30)
+		return 
+	end 
+	
+	-- deploy the troops I have on board
 	cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	
 	-- interface with playerscore if we dropped 
 	-- inside an enemy-owned zone 
 	if cfxPlayerScore and cfxOwnedZones then 
-		local theUnit = conf.unit
+		--local theUnit = conf.unit
 		cfxHeloTroops.scoreWhenCapturing(theUnit)
 	end
 	
@@ -630,7 +664,7 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	end
 	
 	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m radius around choppa
-	local theCoalition = theUnit:getGroup():getCoalition() -- make it choppers COALITION
+	local theCoalition = theUnit:getGroup():getCoalition() -- make it chopper's COALITION
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 												
 				theName, -- group name, may be tracked 
@@ -677,8 +711,39 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 			end
 		end
 	end
+	
+	-- bang on all dropZones that we can find 
+	for name, theZone in pairs(cfxHeloTroops.dropZones) do 
+		-- can employ coalition test here as well, maybe later? 
+		if theZone:isPointInsideZone(p) then 
+			if theZone.dropCoa == 0 or theCoalition == theZone.dropCoa then 
+				if cfxHeloTroops.verbose or theZone.verbose then 
+					trigger.action.outText("+++Helo: will bang! on dropZone <" .. theZone.name .. "> output dropZone! <" .. theZone.droppedFlag .. "> with method <" .. theZone.dropMethod .. ">", 30)
+				end 
+				theZone:pollFlag(theZone.droppedFlag, theZone.dropMethod)
+			end 
+			if theZone.autoDespawn and theZone.autoDespawn > 0 then 
+				args = {}
+				args.theZone = theZone 
+				args.theGroup = theGroup
+				timer.scheduleFunction(cfxHeloTroops.autoDespawn, args, timer.getTime() + theZone.autoDespawn)
+			end
+		end
+	end 
 end
 
+function cfxHeloTroops.autoDespawn(args)
+	if not args then return end 
+	local theZone = args.theZone 
+	local theGroup = args.theGroup 
+	if theZone.verbose then 
+		trigger.action.outText("+++Helo: auto-despawning drop in drop zone <" .. theZone.name .. ">", 30)
+	end 
+	if not theGroup then return end 
+	if Group.isExist(theGroup) then 
+		Group.destroy(theGroup)
+	end
+end
 --
 -- Loading Troops
 --
@@ -882,7 +947,7 @@ function cfxHeloTroops.readConfigZone()
 		theZone = cfxZones.createSimpleZone("heloTroopsConfig")
 	end 
 
-	cfxHeloTroops.verbose = theZone:getBoolFromZoneProperty("verbose", false)
+	cfxHeloTroops.verbose = theZone.verbose
 	
 	if theZone:hasProperty("legalTroops") then 
 		local theTypesString = theZone:getStringFromZoneProperty("legalTroops", "")
@@ -907,6 +972,7 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.disembarkSound = theZone:getStringFromZoneProperty("disembarkSound", cfxHeloTroops.actionSound)
 	
 	cfxHeloTroops.requestRange = theZone:getNumberFromZoneProperty("requestRange", 500)
+	cfxHeloTroops.enforceDropZones = theZone:getBoolFromZoneProperty("enforceDropZones", false)
 	-- add own troop carriers 
 	if theZone:hasProperty("troopCarriers") then 
 		local tc = theZone:getStringFromZoneProperty("troopCarriers", "UH-1D")
@@ -998,6 +1064,13 @@ function cfxHeloTroops.start()
 	
 	-- read config zone
 	cfxHeloTroops.readConfigZone()
+	
+	-- read drop zones 
+	local attrZones = cfxZones.getZonesWithAttributeNamed("dropZone!")
+	for k, aZone in pairs(attrZones) do 
+		cfxHeloTroops.processDropZone(aZone)
+		cfxHeloTroops.dropZones[aZone.name] = aZone 
+	end
 	
 	-- start housekeeping 
 	cfxHeloTroops.houseKeeping()
