@@ -1,5 +1,5 @@
 messenger = {}
-messenger.version = "3.2.0"
+messenger.version = "3.2.1"
 messenger.verbose = false 
 messenger.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,7 +14,8 @@ messenger.messengers = {}
 	3.1.0 - msgGroup supports multiple groups, separated by comma 
 		  - msgUnit supports multiple units, separated by comma
 	3.2.0 - loc and twn wildcard support (inherited from zones)
-	
+	3.2.1 - corrected typo in verbose on trigger message
+		  - increased verbosity when active for audio 
 --]]--
 
 function messenger.addMessenger(theZone)
@@ -31,7 +32,6 @@ function messenger.getMessengerByName(aName)
 	
 	return nil 
 end
-
 
 --
 -- Dynamic Group and Dynamic Unit processing are 
@@ -164,7 +164,6 @@ function messenger.dynamicUnitProcessing(inMsg, theZone, theUnit)
 	end -- for all locales 
 	return outMsg
 end
-
 
 --
 -- read attributes
@@ -313,8 +312,7 @@ function messenger.getMessage(theZone)
 	
 	-- remainder hand-off to cfxZones (refactoring of messenger code 
 	msg = cfxZones.processStringWildcards(msg, theZone, theZone.msgTimeFormat, theZone.imperialUnits, theZone.msgResponses)
-	
-	
+		
 	return msg 
 end
 
@@ -322,7 +320,7 @@ function messenger.isTriggered(theZone)
 	-- this module has triggered 
 	if theZone.messageOff then 
 		if messenger.verbose or theZone.verbose then 
-			trigger.action.outFlag("msg: message for <".. theZone.name .."> is OFF",30)
+			trigger.action.outText("msg: message for <".. theZone.name .."> is OFF",30)
 		end
 		return 
 	end
@@ -341,6 +339,9 @@ function messenger.isTriggered(theZone)
 			trigger.action.outTextForCoalition(theZone.msgCoalition, msg, theZone.duration, theZone.clearScreen)
 		end
 		trigger.action.outSoundForCoalition(theZone.msgCoalition, fileName)
+		if messenger.verbose or theZone.verbose then 
+			trigger.action.outText("+++msg: messenger in <" .. theZone.name .. "> playing sound file <" .. fileName .. "> to coa " .. theZone.msgCoalition, 30)
+		end 
 	elseif theZone.msgGroup then 
 		for idx, aGroupName in pairs(theZone.msgGroup) do 
 			local theGroup = Group.getByName(aGroupName)
@@ -351,6 +352,9 @@ function messenger.isTriggered(theZone)
 					trigger.action.outTextForGroup(ID, msg, theZone.duration, theZone.clearScreen)
 				end
 				trigger.action.outSoundForGroup(ID, fileName)
+				if messenger.verbose or theZone.verbose then 
+					trigger.action.outText("+++msg: messenger in <" .. theZone.name .. "> playing sound file <" .. fileName .. "> to unit group ID " .. ID .. " <" .. theGroup:getName() .. ">", 30)
+				end 
 			end
 		end
 	elseif theZone.msgUnit then 
@@ -363,6 +367,9 @@ function messenger.isTriggered(theZone)
 					trigger.action.outTextForUnit(ID, msg, theZone.duration, theZone.clearScreen)
 				end
 				trigger.action.outSoundForUnit(ID, fileName)
+				if messenger.verbose or theZone.verbose then 
+					trigger.action.outText("+++msg: messenger in <" .. theZone.name .. "> playing sound file <" .. fileName .. "> to unit ID " .. ID, 30)
+				end 
 			end 
 		end
 	elseif theZone:getLinkedUnit() then 
@@ -379,19 +386,24 @@ function messenger.isTriggered(theZone)
 			trigger.action.outTextForCoalition(coa, msg, theZone.duration, theZone.clearScreen)
 		end
 		trigger.action.outSoundForCoalition(coa, fileName)
+		if messenger.verbose or theZone.verbose then 
+			trigger.action.outText("+++msg: messenger in <" .. theZone.name .. "> playing sound file <" .. fileName .. "> to coa " .. coa, 30)
+		end 
 	else 
 		-- out to all 
 		if #msg > 0 or theZone.clearScreen then 
 			trigger.action.outText(msg, theZone.duration, theZone.clearScreen)
 		end
 		trigger.action.outSound(fileName)
+		if messenger.verbose or theZone.verbose then 
+			trigger.action.outText("+++msg: messenger in <" .. theZone.name .. "> playing sound file to all <" .. fileName .. ">", 30)
+		end 
 	end
 end
 
 function messenger.update()
 	-- call me in a second to poll triggers
-	timer.scheduleFunction(messenger.update, {}, timer.getTime() + 1)
-		
+	timer.scheduleFunction(messenger.update, {}, timer.getTime() + 1)	
 	for idx, aZone in pairs(messenger.messengers) do
 		-- make sure to re-start before reading time limit
 		-- new trigger code 
@@ -432,9 +444,7 @@ function messenger.readConfigZone()
 		end 
 		theZone =  cfxZones.createSimpleZone("messengerConfig")
 	end 
-	
 	messenger.verbose = theZone:getBoolFromZoneProperty("verbose", false)
-	
 	if messenger.verbose then 
 		trigger.action.outText("+++msgr: read config", 30)
 	end 
@@ -452,16 +462,7 @@ function messenger.start()
 	
 	-- read config 
 	messenger.readConfigZone()
-	
-	-- process messenger Zones 
-	-- old style
---[[--	
-	local attrZones = cfxZones.getZonesWithAttributeNamed("messenger")
-	for k, aZone in pairs(attrZones) do 
-		messenger.createMessengerWithZone(aZone) -- process attributes
-		messenger.addMessenger(aZone) -- add to list
-	end
---]]--	
+
 	-- new style that saves messageOut? flag by reading flags
 	attrZones = cfxZones.getZonesWithAttributeNamed("messenger?")
 	for k, aZone in pairs(attrZones) do 

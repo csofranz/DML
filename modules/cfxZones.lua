@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.4.3" 
+cfxZones.version = "4.4.4" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -33,6 +33,7 @@ cfxZones.version = "4.4.3"
 -4.4.1	  - better verbosity for error in doPollFlag()
 -4.4.2    - twn support for wildcards <twn: > and <loc:>
 -4.4.3    - property name is trimmed (double check)
+-4.4.4    - createGroundUnitsInZoneForCoalition supports drivable 
 --]]--
 
 --
@@ -1397,11 +1398,20 @@ end
 
 
 -- creating units in a zone
-function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, theZone, theUnits, formation, heading, liveries) 
+function cfxZones.createGroundUnitsInZoneForCoalition (theCoalition, groupName, theZone, theUnits, formation, heading, liveries, drivable) 
 	-- theUnits can be string or table of string 
 	if not groupName then groupName = "G_"..theZone.name end 
+	if not drivable then drivable = false end 
 	-- group name will be taken from zone name and prependend with "G_"
 	local theGroup = dcsCommon.createGroundGroupWithUnits(groupName, theUnits, theZone.radius, nil, formation, nil, liveries)
+	
+	theGroup.uncontrollable = false -- just for completeness
+	if drivable then 
+		local units = theGroup.units 
+		for idx, theUnit in pairs(units) do 
+			theUnit.playerCanDrive = drivable
+		end
+	end 
 	
 	-- turn the entire formation to heading
 	if (not heading) then heading = 0 end

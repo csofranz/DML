@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.1.0"
+cfxSpawnZones.version = "2.2.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -31,6 +31,7 @@ cfxSpawnZones.spawnedGroups = {}
    2.0.3 - corrected type in spawnUnits? attribute 
    2.1.0 - masterOwner update for dmlZones. 
 		   since spawners don't extend zones, this is still old-school 
+   2.2.0 - "drivable" spawner attribute
    
   --]]--
   
@@ -109,7 +110,7 @@ function cfxSpawnZones.createSpawner(inZone)
 		end
 		theSpawner.types = theSpawner.types .. repeater 
 	end
-	
+	theSpawner.drivable = inZone:getBoolFromZoneProperty("drivable", false)
 	theSpawner.country = inZone:getNumberFromZoneProperty("country", 0)
 	if inZone:hasProperty("masterOwner") then 
 		theSpawner.masterZoneName = inZone:getStringFromZoneProperty("masterOwner", "")
@@ -299,7 +300,10 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 				aSpawner.zone, 											
 				unitTypes, 
 				aSpawner.formation,
-				aSpawner.heading)
+				aSpawner.heading,
+				nil,  -- liveries 
+				aSpawner.drivable
+	 )
 	if cfxSpawnZones.verbose or theZone.verbose then 
 		-- check created group size versus requested size 
 		trigger.action.outText("+++spwn: created <" .. theGroup:getSize() .. "> units, requested <" .. #unitTypes .. "> units, formation <" .. aSpawner.formation .. ">", 30)

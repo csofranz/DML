@@ -1,5 +1,5 @@
 income = {}
-income.version = "0.0.0"
+income.version = "0.9.8"
 income.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -7,7 +7,6 @@ income.requiredLibs = {
 }
 
 income.sources = {}
-
 
 function income.addIncomeZone(theZone)
 	income.sources[theZone.name] = theZone
@@ -35,12 +34,7 @@ function income.update()
 	-- schedule next round 
 	timer.scheduleFunction(income.update, {}, timer.getTime() + income.interval)
 	
-	local neuI, redI, blueI = income.neutral, income.red, income.blue
-	-- base income 
---	bank.addFunds(0, income.neutral)
---	bank.addFunds(1, income.red)
---	bank.addFunds(2, income.blue)
-	
+	local neuI, redI, blueI = income.neutral, income.red, income.blue	
 	
 	for idx, theZone in pairs(income.sources) do 
 		local ni = income.getIncomeForZoneAndCoa(theZone, 0)
@@ -50,14 +44,26 @@ function income.update()
 		blueI = blueI + bi 
 		neuI = neuI + ni 		
 	end
-
-	bank.addFunds(0, neuI)
-	bank.addFunds(1, redI)
-	bank.addFunds(2, blueI)
-
+	if income.requirePlayers then 
+		local p =  coalition.getPlayers(0)
+		if #p > 0 then 		
+			bank.addFunds(0, neuI)
+		end
+		p =  coalition.getPlayers(1)
+		if #p > 0 then
+			bank.addFunds(1, redI)
+		end
+		p =  coalition.getPlayers(2)
+		if #p > 0 then
+			bank.addFunds(2, blueI)
+		end
+	else 
+		bank.addFunds(0, neuI)
+		bank.addFunds(1, redI)
+		bank.addFunds(2, blueI)
+	end
 	
 	if income.announceTicks then
---		trigger.action.outText(income.tickMessage, 30)
 		local has, balance = bank.getBalance(0)
 		local tick = string.gsub(income.tickMessage, "<i>", neuI)
 		trigger.action.outTextForCoalition(0, "\n" .. tick .. "\nNew balance: §" .. balance .. "\n", 30)
@@ -81,17 +87,15 @@ function income.readConfigZone()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("incomeConfig") 
 	end 
-	
 	income.base = theZone:getNumberFromZoneProperty ("base", 10)
 	income.red = theZone:getNumberFromZoneProperty ("red", income.base)
 	income.blue = theZone:getNumberFromZoneProperty ("blue", income.base)
 	income.neutral = theZone:getNumberFromZoneProperty ("neutral", income.base)
-	
 	income.interval = theZone:getNumberFromZoneProperty("interval", 10 * 60) -- every 10 minutes 
 	income.tickMessage = theZone:getStringFromZoneProperty("tickMessage", "New funds from income available: §<i>")
 	income.announceTicks = theZone:getBoolFromZoneProperty("announceTicks", true)
 	income.reportSound = theZone:getStringFromZoneProperty("reportSound", "<none>")
-	
+	income.requirePlayers = theZone:getBoolFromZoneProperty("requirePlayers", true)
 	income.verbose = theZone.verbose
 end
 
@@ -118,7 +122,6 @@ function income.start()
 		 
 	-- schedule first tick 
 	timer.scheduleFunction(income.update, {}, timer.getTime() + income.interval)
-	
 	trigger.action.outText("income v" .. income.version .. " started.", 30)
 	return true 
 end

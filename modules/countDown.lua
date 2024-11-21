@@ -1,5 +1,5 @@
 countDown = {}
-countDown.version = "2.0.0"
+countDown.version = "2.0.1"
 countDown.verbose = false 
 countDown.ups = 1 
 countDown.requiredLibs = {
@@ -17,6 +17,8 @@ countDown.requiredLibs = {
 			output method defaults to "inc"
 			better config parsing 
 			cleanup 
+	2.0.1 - deconflicting 'count?' attribute: removed 
+	
 --]]--
 
 countDown.counters = {}
@@ -91,19 +93,21 @@ function countDown.createCountDownWithZone(theZone)
 		theZone.ctdwnTriggerMethod = theZone:getStringFromZoneProperty("ctdwnTriggerMethod", "change")
 	end
 	
-	-- trigger flag "count" / "start?"
+	-- using deprecated input "count?"
 	if theZone:hasProperty("count?") then 
-		theZone.triggerCountFlag = theZone:getStringFromZoneProperty("count?", "<none>")
-	elseif theZone:hasProperty("clock?") then 
-		theZone.triggerCountFlag = theZone:getStringFromZoneProperty("clock?", "<none>")
-	-- can also use in? for counting. we always use triggerCountFlag 
-	elseif theZone:hasProperty("in?") then 
-		theZone.triggerCountFlag = theZone:getStringFromZoneProperty("in?", "<none>")
-	end
-	
-	if theZone.triggerCountFlag then 
-		theZone.lastCountTriggerValue = cfxZones.getFlagValue(theZone.triggerCountFlag, theZone) 
-	end
+		trigger.action.outText("+++WARNING: countdown zone <" .. theZone.name .. "> uses deprecated 'count?' input: ignored, will not trigger.", 30)
+	else  	
+		if theZone:hasProperty("clock?") then 
+			theZone.triggerCountFlag = theZone:getStringFromZoneProperty("clock?", "<none>")
+		elseif theZone:hasProperty("in?") then 
+			theZone.triggerCountFlag = theZone:getStringFromZoneProperty("in?", "<none>")
+		else 
+			trigger.action.outText("+++WARNING: countdown zone <" .. theZone.name .. "> requires input: 'clock?' or 'in?', cannot trigger.", 30)
+		end
+		if theZone.triggerCountFlag then 
+			theZone.lastCountTriggerValue = cfxZones.getFlagValue(theZone.triggerCountFlag, theZone) 
+		end
+	end 
 	
 	-- reset 
 	if theZone:hasProperty("reset?") then 

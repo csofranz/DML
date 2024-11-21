@@ -7,6 +7,7 @@ cfxSmokeZone.requiredLibs = {
 --[[--
 	Version History
  2.0.0 - clean up 
+ 2.0.1 - deprecating "f?"
  
 --]]--
 cfxSmokeZone.smokeZones = {}
@@ -37,6 +38,7 @@ function cfxSmokeZone.processSmokeZone(aZone)
 	
 	if aZone:hasProperty("f?") then 
 		aZone.onFlag = aZone:getStringFromZoneProperty("f?", "*<none>")
+		trigger.action.outText("+++smokeZones: WARNING: smoke zone <" .. aZone.name .. "> uses deprecated attribute 'f?' - use 'startSmoke?' instead.", 30)
 	elseif aZone:hasProperty("startSmoke?") then 
 		aZone.onFlag = aZone:getStringFromZoneProperty("startSmoke?", "none")
 	end
