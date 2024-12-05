@@ -1,9 +1,6 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "4.0.0"
+cfxPlayerScore.version = "5.0.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
-cfxPlayerScore.badSound = "Death BRASS.wav"
-cfxPlayerScore.scoreSound = "Quest Snare 3.wav"
-cfxPlayerScore.announcer = true 
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
 	3.0.0 - dmlFlags OOP
@@ -20,7 +17,10 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - cleanup 
 	4.0.0 - own event handling, disco from dcsCommon 
 		  - early landing detection (unitSpawnTime)
-	
+	5.0.0 - resolve killed units via cfxMX to patch DCS error 
+		  - reworked unit2score to use MX 
+	      - code cleanup 
+		  
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore 
 --]]--
@@ -272,11 +272,12 @@ function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
 end
 
 function cfxPlayerScore.unit2score(inUnit)
-	local vicGroup = inUnit:getGroup()
-	local vicCat = vicGroup:getCategory()-- group cat, not 2.9 affected
+	local vicName = "*?*"
+	if inUnit.getName then vicName = inUnit:getName() end
+	--	local vicGroup = inUnit:getGroup()
+	local vicCat = cfxMX.spawnedUnitCatByName[vicName] -- now using MX 
 	local vicType = inUnit:getTypeName()
-	local vicName 
-	if inUnit.getName then vicName = inUnit:getName() else vicName = "*?*" end 
+ 
 	if type(vicName) == "number" then vicName = tostring(vicName) end 
 	
 	-- simply extend by adding items to the typescore table.concat
@@ -284,8 +285,8 @@ function cfxPlayerScore.unit2score(inUnit)
 	-- named hi-value targets to have individual scores 
 	local uScore = cfxPlayerScore.typeScore[vicName:upper()]
 	-- see if all members of group score 
-	if (not uScore) and vicGroup then 
-		local grpName = vicGroup:getName()
+	if (not uScore) then -- and vicGroup then 
+		local grpName = cfxMX.spawnedUnitGroupNameByName[vicName]--vicGroup:getName()
 		uScore = cfxPlayerScore.typeScore[grpName:upper()]
 	end
 	if not uScore then 
@@ -520,7 +521,6 @@ function cfxPlayerScore.scoreTextForAllPlayers(ranked)
 		theText = theText .. "  (No score yet)\n"
 	end
 	if cfxPlayerScore.reportCoalition then 
-		--theText = theText .. "\n"
 		theText = theText .. "\nRED  total: " .. cfxPlayerScore.coalitionScore[1]
 		theText = theText .. "\nBLUE total: " .. cfxPlayerScore.coalitionScore[2]
 	end
@@ -585,156 +585,32 @@ function cfxPlayerScore.unlinkUnit(theUnit)
 	local uName = theUnit:getName()
 	cfxPlayerScore.unit2player[uName] = nil 	
 end
---[[--
-function cfxPlayerScore.preProcessor(theEvent)
-	-- return true if the event should be processed
-	-- by us
-	if theEvent.initiator  == nil then 
-		return false 
-	end 
-	if cfxPlayerScore.verbose then 
-		trigger.action.outText("Event preproc: " .. theEvent.id .. " (" .. dcsCommon.event2text(theEvent.id) .. ")", 30)
-		if theEvent.id == 8 or theEvent.id == 30 then -- dead or lost event 
-			local who = theEvent.initiator
-			local name = "(nil ini)"
-			if who then 
-				name = "(inval object)"
-				if who.getName then name = who:getName() end 
-			end 
-			trigger.action.outText("Dead/Lost subject: <" .. name .. ">", 30)
-		end 
-		if theEvent.id == 2 then -- hit
-			local who = theEvent.initiator
-			local name = "(nil ini)"
-			if who then 
-				name = "(inval initi)"
-				if who.getName then name = who:getName() end 
-				if not name then -- WTF??? could be a weapon 
-					name = "!nil getName!"
-					if who.getTypeName then name = who:getTypeName() end 
-					if not name then 
-						name = "WTFer"
-					end
-				end
-			end
-			
-			local hit = theEvent.object
-			local hname = "(nil ini)"
-			if hit then 
-				hname = "(inval object)"
-				if hit.getName then hname = hit:getName() end 
-			end
-			trigger.action.outText("o:<" .. name .. "> hit <" .. hname .. ">", 30)
-		end
-	end 
-	
-	-- check if this was FORMERLY a player plane 
-	local theUnit = theEvent.initiator 
-	if not theUnit.getName then return end -- fix for DCS update bug 
-	local uName = theUnit:getName()
-	if cfxPlayerScore.unit2player[uName] then 
-		-- this requires special IMMEDIATE handling when event is
-		-- one of the below 		
-		if theEvent.id == 5 or -- crash 
-		   theEvent.id == 8 or -- dead 
-	       theEvent.id == 9 or -- pilot_dead
-		   theEvent.id == 30 or -- unit loss 
-	       theEvent.id == 6 then -- eject 
-			-- these can lead to a pilot demerit
-			-- event does NOT have a player
-			cfxPlayerScore.handlePlayerDeath(theEvent)
-			return false 
-	    end 
-	end
-	-- initiator must be player 
-	if not theUnit.getPlayerName or  
-	   not theUnit:getPlayerName() then 
-	   return false 
-	end 
-	if theEvent.id == 28 then
-		-- we only are interested in kill events where 
-		-- there is a target  
-		local killer = theEvent.initiator 
-		if theEvent.target == nil then 
-			if cfxPlayerScore.verbose then 
-				trigger.action.outText("+++scr pre: nil TARGET", 30) 
-			end 
-			return false 
-		end 
-		-- if there are kill zones, we filter all kills that happen outside of kill zones 
-		if #cfxPlayerScore.killZones > 0 then
-			local pLoc = theUnit:getPoint() 
-			local tLoc = theEvent.target:getPoint()
-			local isIn, percent, dist, theZone = cfxZones.pointInOneOfZones(tLoc, cfxPlayerScore.killZones)
-			if not isIn then 
-				if cfxPlayerScore.verbose then 
-					trigger.action.outText("+++pScr: kill detected, but target <" .. theEvent.target:getName() .. "> was outside of any kill zones", 30)
-				end
-				return false 
-			end
-			if theZone.duet and not cfxZones.pointInZone(pLoc, theZone) then 
-				-- player must be in same zone but was not
-				if cfxPlayerScore.verbose then 
-					trigger.action.outText("+++pScr: kill detected, but player <" .. theUnit:getPlayerName() .. "> was outside of kill zone <" .. theZone.name .. ">", 30)
-				end
-				return false
-			end			
-		end
-		return true 
-	end
-	
-	-- birth event for players initializes score if 
-	-- not existed, and nils the queue 
-	if theEvent.id == 15 then 
-		-- player birth
-		-- link player and unit
-		cfxPlayerScore.linkUnitWithPlayer(theUnit)
-		return true 
-	end
-	
-	-- take off. overwrites timestamp for last landing 
-	-- so a blipping t/o does nor count. Pre-proc only 
-	if theEvent.id == 3 or theEvent.id == 54 then 
-		local now = timer.getTime()
-		local playerName = theUnit:getPlayerName() 
-		cfxPlayerScore.lastPlayerLanding[playerName] = now -- overwrite 
-		return false 
-	end
-	
-	-- landing can score. but only the first landing in x seconds
-	-- landing in safe zone promotes any queued scores to 
-	-- permanent if enabled, then nils queue
-	if theEvent.id == 4 or theEvent.id == 55 then 
-		-- player landed. filter multiple landed events
-		local now = timer.getTime()
-		local playerName = theUnit:getPlayerName() 
-		local lastLanding = cfxPlayerScore.lastPlayerLanding[playerName]
-		cfxPlayerScore.lastPlayerLanding[playerName] = now -- overwrite 
-		if lastLanding and lastLanding + cfxPlayerScore.delayBetweenLandings > now then 
-			if cfxPlayerScore.verbose then 
-				trigger.action.outText("+++pScr: Player <" .. playerName .. "> touch-down ignored: too soon after last.", 30)
-				trigger.action.outText("now is <" .. now .. ">, between is <" .. cfxPlayerScore.delayBetweenLandings .. ">, last + between is <" .. lastLanding + cfxPlayerScore.delayBetweenLandings .. ">", 30)
-			end 
-			-- filter this event 
-			return false 
-		end
-		return true 
-	end
-	
-	return false 
-end
---]]--
 
---[[--
-function cfxPlayerScore.postProcessor(theEvent)
-	-- don't do anything
-end
---]]--
 
 function cfxPlayerScore.isStaticObject(theUnit) 
-	if not theUnit.getGroup then return true end 
+	if not theUnit.getGroup then 
+		if cfxPlayerScore.verbose then trigger.action.outText("isStatic: no <getGroup>", 30) end 
+		return true 
+	end 
 	local aGroup = theUnit:getGroup()
-	if aGroup then return false end 
+	if aGroup then 
+		if cfxPlayerScore.verbose then trigger.action.outText("isStatic: returned group, all fine", 30) end 
+		return false 
+	end 
+	-- now check if this WAS a unit, but has been turned to 
+	-- a non-grouped static by DCS 
+	if theUnit.getName and theUnit:getName() then 
+		local uName = theUnit:getName()
+		if cfxMX.spawnedUnitCoaByName[uName] then 
+			if cfxPlayerScore.verbose then trigger.action.outText("MX resolve for former unit, now static!", 30) end 
+			return false
+		end
+	end 
+	
+	if cfxPlayerScore.verbose then trigger.action.outText("has getGroup method, returned none", 30) end 
+	if cfxPlayerScore.verbose and theUnit.getName and theUnit:getName() then 
+		trigger.action.outText("unit <" .. theUnit:getName() .. "> has getGroup method, returned none", 30)
+	end 
 	return true 
 end
 
@@ -789,12 +665,16 @@ function cfxPlayerScore.killDetected(theEvent)
 		end
 		return 
 	end
-
 	-- was it fratricide?
 	-- if we get here, it CANT be a scenery object 
 	-- but can be a static object, and stO have a coalition
 	local vicSide = victim:getCoalition()
 	local fraternicide = (killSide == vicSide)
+	local neutralKill = (vicSide == 0) -- neutral is 0
+	if cfxPlayerScore.verbose then 
+		if fraternicide then trigger.action.outText("Fratricide detected.", 30) end
+		if neutralKill then trigger.action.outText("NEUTRAL KILL detected.", 30) end
+	end 
 	local vicDesc = victim:getTypeName()
 	local scoreMod = 1 -- start at one 
 
@@ -803,6 +683,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	local isStO = cfxPlayerScore.isStaticObject(victim) 
 	--if not victim.getGroup then
 	if isStO then 
+		if cfxPlayerScore.verbose then trigger.action.outText("Static object detected.", 30) end 
 		-- static objects have no group 		
 		local staticName 
 		if victim.getName then staticName = victim:getName() -- on statics, this returns 
@@ -812,6 +693,7 @@ function cfxPlayerScore.killDetected(theEvent)
 
 		if staticScore > 0 then 
 			-- this was a named static, return the score - unless our own
+			-- we IGNORE neutral object kills here
 			if fraternicide then 
 				scoreMod = cfxPlayerScore.ffMod * scoreMod -- blue on blue static kill
 				trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.badSound)
@@ -830,16 +712,24 @@ function cfxPlayerScore.killDetected(theEvent)
 		return 
 	end 
 	
-	local vicGroup = victim:getGroup()
-	if not vicGroup then 
+	local vicGroup = nil 
+	local vicCat = nil
+	if victim.getGroup then vicGroup = victim:getGroup() end 
+	if not vicGroup and victim.getName and victim:getName() then 
+		vicCat = cfxMX.spawnedUnitCatByName[victim:getName()]
+		if cfxPlayerScore.verbose then trigger.action.outText("re-constitued cat for group", 30) end 
+	else 
+		if vicGroup.getCategory then vicCat = vicGroup:getCategory() end 
+	end
+	if not vicCat then 
 		trigger.action.outText("+++scr: strange stuff:group, outta here", 30)
 		return 
 	end 
-	local vicCat = vicGroup:getCategory() -- group cat is DCS 2.9 safe
-		if not vicCat then 
-		trigger.action.outText("+++scr: strange stuff:cat, outta here", 30)
-		return 
-	end
+--	local vicCat = vicGroup:getCategory() -- group cat is DCS 2.9 safe
+--		if not vicCat then 
+--		trigger.action.outText("+++scr: strange stuff:cat, outta here", 30)
+--		return 
+--	end
 	local unitScore = cfxPlayerScore.unit2score(victim)	
 	if pk then -- player kill - add player's name 
 		vicDesc = victim:getPlayerName() .. " in " .. vicDesc 
@@ -848,12 +738,22 @@ function cfxPlayerScore.killDetected(theEvent)
 	
 	-- if fratricide, times ffMod (friedlyFire) 
 	if fraternicide then
-		scoreMod = scoreMod * cfxPlayerScore.ffMod ---2
+		scoreMod = scoreMod * cfxPlayerScore.ffMod -- -2
 		if cfxPlayerScore.announcer then 
 			trigger.action.outTextForCoalition(killSide, killerName .. " in " .. killVehicle .. " killed FRIENDLY " .. vicDesc .. "!", 30)
 			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.badSound)
 		end 
-	else 
+	elseif neutralKill then 
+		if cfxPlayerScore.verbose then trigger.action.outText("Will apply neutral mod: " .. cfxPlayerScore.nMod, 30) end
+		scoreMod = scoreMod * cfxPlayerScore.nMod -- neutral mod
+		local neuStat = ""
+		if cfxPlayerScore.nMod < 1 then neuStat = " ILLEGALLY" end
+		if cfxPlayerScore.announcer then 
+			trigger.action.outTextForCoalition(killSide, killerName .. " in " .. killVehicle .. neuStat.. " killed NEUTRAL " .. vicDesc .. "!", 30)
+			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.badSound)
+			-- no individual logging of kill
+		end 
+	else
 		if cfxPlayerScore.announcer then 
 			trigger.action.outText(killerName .. " in " .. killVehicle .." killed " .. vicDesc .. "!", 30)
 			trigger.action.outSoundForCoalition(vicSide, cfxPlayerScore.badSound)
@@ -874,7 +774,7 @@ function cfxPlayerScore.killDetected(theEvent)
 	-- if the score is negative, awardScoreTo will automatically
 	-- make it immediate, else depending on deferred 
 	cfxPlayerScore.awardScoreTo(killSide, totalScore, killerName)
-	if not fraternicide then 
+	if not fraternicide or neutralKill then 
 		-- only award kill feats for kills of the enemy
 		cfxPlayerScore.checkKillFeat(killerName, killer, victim, false)
 	end 
@@ -1200,7 +1100,6 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 		-- link player and unit
 		cfxPlayerScore.linkUnitWithPlayer(theUnit)
 		cfxPlayerScore.unitSpawnTime[uName] = timer.getTime() -- to detect 'early landing' 
---		trigger.action.outText("Birth event", 30)
 		return true 
 	end
 	
@@ -1228,10 +1127,9 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 			now - cfxPlayerScore.unitSpawnTime[uName] < 10 
 		then 
 			cfxPlayerScore.lastPlayerLanding[playerName] = now -- just for the sake of it 
---			trigger.action.outText("(DCS early landing bug ignored)", 30)
 			return false 
 		end 		
---		trigger.action.outText("Time since spawn: " .. now - cfxPlayerScore.unitSpawnTime[uName], 30)
+		
 		local lastLanding = cfxPlayerScore.lastPlayerLanding[playerName]
 		cfxPlayerScore.lastPlayerLanding[playerName] = now -- overwrite 
 		if lastLanding and lastLanding + cfxPlayerScore.delayBetweenLandings > now then 
@@ -1311,14 +1209,11 @@ function cfxPlayerScore.readConfigZone(theZone)
 	cfxPlayerScore.landing = theZone:getNumberFromZoneProperty("landing", 0) -- if > 0 then feat 
 	cfxPlayerScore.pkMod = theZone:getNumberFromZoneProperty( "pkMod", 1) -- factor for killing a player
 	cfxPlayerScore.ffMod = theZone:getNumberFromZoneProperty( "ffMod", -2) -- factor for friendly fire 
+	cfxPlayerScore.nMod = theZone:getNumberFromZoneProperty("nMod", 1) -- factor for neutral kill. Should be -100, defaults to 1
 	cfxPlayerScore.planeLoss = theZone:getNumberFromZoneProperty("planeLoss", -10) -- points added when player's plane crashes
 	cfxPlayerScore.announcer = theZone:getBoolFromZoneProperty("announcer", true)
-	if theZone:hasProperty("badSound") then 
-		cfxPlayerScore.badSound = theZone:getStringFromZoneProperty("badSound", "<nosound>")
-	end
-	if theZone:hasProperty("scoreSound") then 
-		cfxPlayerScore.scoreSound = theZone:getStringFromZoneProperty("scoreSound", "<nosound>")
-	end
+	cfxPlayerScore.badSound = theZone:getStringFromZoneProperty("badSound", "Death BRASS.wav")
+	cfxPlayerScore.scoreSound = theZone:getStringFromZoneProperty("scoreSound", "Quest Snare 3.wav")
 	-- triggering saving scores
 	if theZone:hasProperty("saveScore?") then 
 		cfxPlayerScore.saveScore = theZone:getStringFromZoneProperty("saveScore?", "none")
@@ -1614,10 +1509,6 @@ function cfxPlayerScore.start()
 		trigger.action.outText("+++pScr: WARNING - deferred scoring active but no 'scoreSafe' zones set!", 30)
 	end
 
-	-- subscribe to events and use dcsCommon's handler structure
-	-- dcsCommon.addEventHandler(cfxPlayerScore.handlePlayerEvent,
---							  cfxPlayerScore.preProcessor,
---							  cfxPlayerScore.postProcessor) 
 	world.addEventHandler(cfxPlayerScore)
 	-- now load all save data and populate map with troops that
 	-- we deployed last save. 

@@ -1,12 +1,12 @@
 fireFX = {}
-fireFX.version = "2.0.1"
+fireFX.version = "2.1.0"
 fireFX.verbose = false 
 fireFX.ups = 1 
 fireFX.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
-fireFX.fx = {}
+fireFX.fx = {} -- the fx zones 
 
 --[[--
 	Version History 
@@ -16,20 +16,24 @@ fireFX.fx = {}
     2.0.0 - dmlZones OOP 
 		  - rndLoc 
 	2.0.1 - fixed rndLoc determination
+	2.1.0 - supports rnd as fire size 
+		  - rewrote save, backwards compatible to old 
+		  - simplified zone access
 --]]--
 
 function fireFX.addFX(theZone)
-	table.insert(fireFX.fx, theZone)
+--	table.insert(fireFX.fx, theZone)
+	fireFX.fx[theZone.name] = theZone
 end
 
 function fireFX.getFXByName(aName) 
-	for idx, aZone in pairs(fireFX.fx) do 
-		if aName == aZone.name then return aZone end 
-	end
-	if fireFX.verbose then 
-		trigger.action.outText("+++ffx: no fire FX with name <" .. aName ..">", 30)
-	end 
-	
+	return fireFX.fx[aName]
+--	for idx, aZone in pairs(fireFX.fx) do 
+--		if aName == aZone.name then return aZone end 
+--	end
+--	if fireFX.verbose then 
+--		trigger.action.outText("+++ffx: no fire FX with name <" .. aName ..">", 30)
+--	end 
 end
 
 --
@@ -46,51 +50,34 @@ function fireFX.createFXWithZone(theZone)
 	if theSize == "L" or theSize == "LARGE" then fxCode = 3 end 
 	if theSize == "H" or theSize == "HUGE" then fxCode = 4 end
 	if theSize == "XL" then fxCode = 4 end 	
+	if theSize == "RND" then fxCode = -1 end -- randomized
 	
-	local theFire = cfxZones.getBoolFromZoneProperty(theZone, "flames", true)
-	
-	
-	if theFire then 
-		-- code stays as it is
-	else 
-		-- smoke only 
-		fxCode = fxCode + 4
-	end
-	theZone.fxCode = fxCode
+	theZone.fxCode = fxCode -- raw, without flame code 
 	if theZone.verbose or fireFX.verbose then 
 		trigger.action.outText("+++ffx: new FX with code = <" .. fxCode .. ">", 30)
 	end
-
+	theZone.fxData = {} -- used when created 
 	theZone.density = theZone:getNumberFromZoneProperty("density", 0.5)
-
 	theZone.agl = theZone:getNumberFromZoneProperty("AGL", 0)
 	theZone.min, theZone.max = theZone:getPositiveRangeFromZoneProperty("num", 1, 1)
-	
 	if theZone:hasProperty("start?") then 
 		theZone.fxStart = theZone:getStringFromZoneProperty("start?", "*<none>")
 		theZone.fxLastStart = theZone:getFlagValue(theZone.fxStart)
 	end
-
 	if theZone:hasProperty("stop?") then 
 		theZone.fxStop = theZone:getStringFromZoneProperty("stop?", "*<none>")
 		theZone.fxLastStop = theZone:getFlagValue(theZone.fxStop)
 	end
-
 	theZone.fxOnStart = theZone:getBoolFromZoneProperty("onStart", false)
 	theZone.burning = false 
-
 	if not theZone.fxOnStart and not theZone.fxStart then 
 		trigger.action.outText("+++ffx: WARNING - fireFX Zone <" .. theZone.name .. "> can't be started, neither onStart nor 'start?' defined", 30)
 	end
-	
-	-- output method (not needed)
-	
-	-- trigger method
+		
 	theZone.fxTriggerMethod = theZone:getStringFromZoneProperty( "fxTriggerMethod", "change")
 	if theZone:hasProperty("triggerMethod") then 
 		theZone.fxTriggerMethod = theZone:getStringFromZoneProperty( "triggerMethod", "change")
-	end 
-	
+	end 	
 	theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
 	if theZone.max > 1 and (not theZone.rndLoc) then 
 		if theZone.verbose or fireFX.verbose then 
@@ -98,7 +85,6 @@ function fireFX.createFXWithZone(theZone)
 		end 
 		theZone.rndLoc = true 
 	end
-	
 	if fireFX.verbose or theZone.verbose then 
 		trigger.action.outText("+++ffx: new FX <".. theZone.name ..">", 30)
 	end
@@ -111,6 +97,7 @@ end
 function fireFX.startTheFire(theZone)
 	if not theZone.burning then 
 		theZone.fireNames = {}
+		theZone.fxData = {}
 		local num = cfxZones.randomInRange(theZone.min, theZone.max)
 		for i = 1, num do 
 			local p = theZone:getPoint()
@@ -119,10 +106,22 @@ function fireFX.startTheFire(theZone)
 			end
 			p.y = land.getHeight({x = p.x, y = p.z}) + theZone.agl 
 			local preset = theZone.fxCode
+			-- process randomization
+			if preset < 1 then 
+				preset = math.random(4) -- 1..4 
+			end 
+			if theZone:getBoolFromZoneProperty("flames", true) then 
+				--preset = preset
+				--trigger.action.outText("fire <" .. i .. "> with flame: <" .. preset .. ">", 30)
+			else 
+				preset = preset + 4 -- smoke only 
+				--trigger.action.outText("no flames for fire <" .. i .. ">: <" .. preset .. ">", 30)
+			end -- support for 'rnd' as bool 
 			local density = theZone.density
 			local fireName = dcsCommon.uuid(theZone.name)
 			trigger.action.effectSmokeBig(p, preset, density, fireName)
 			theZone.fireNames[i] = fireName 
+			theZone.fxData[i] = {p, preset, density, fireName}
 		end
 		theZone.burning = true 
 	end
@@ -134,6 +133,8 @@ function fireFX.extinguishFire(theZone)
 			trigger.action.effectSmokeStop(aFireName)
 		end
 		theZone.burning = false 
+		theZone.fireNames = {}
+		theZone.fxData = {}
 	end
 end
 
@@ -170,7 +171,7 @@ function fireFX.saveData()
 		local theName = theFX.name 
 		local FXData = {}
  		FXData.burning = theFX.burning
-		
+		fxData.data = theFX.fxData
 		allFX[theName] = FXData 
 	end
 	theData.allFX = allFX
@@ -196,10 +197,29 @@ function fireFX.loadData()
 	end
 	
 	for theName, theData in pairs(allFX) do 
-		local theFX = fireFX.getFXByName(theName)
+		local theFX = fireFX.getFXByName(theName) -- get fx zone
 		if theFX then 
 			if theData.burning then 
-				fireFX.startTheFire(theFX)
+				if theData.data then
+					-- we have new save data, replicate flame fx
+					theZone.fireNames = {}
+					theZone.fxData = {}
+					for idx, fxData in pairs(theData.data) do 
+						local p = fxData[1]
+						local preset = fxData[2]
+						local density = fxData[3]
+						local fireName = dcsCommon.uuid(theZone.name)
+						trigger.action.effectSmokeBig(p, preset, density, fireName)
+						theZone.fireNames[idx] = fireName 
+						theZone.fxData[idx] = {p, preset, density, fireName}
+					end 
+				else
+					fireFX.startTheFire(theFX) -- old save data
+				end 
+			else 
+				theZone.fireNames = {}
+				theZone.fxData = {}
+				theZone.burning = false 
 			end
 			theFX.inited = true -- ensure no onStart overwrite 
 		else 

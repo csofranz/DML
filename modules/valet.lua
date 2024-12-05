@@ -1,5 +1,5 @@
 valet = {}
-valet.version = "1.1.1"
+valet.version = "1.1.2"
 valet.verbose = false 
 valet.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,6 +15,7 @@ valet.valets = {}
 	1.0.3 - outSoundFile now working correctly 
 	1.1.0 - hysteresis is now time-based (10 seconds)
 	1.1.1 - hardening against DCS July-11 update issues 
+	1.1.2 - <u>, <p> and <g>
 --]]--
 
 function valet.addValet(theZone)
@@ -134,9 +135,13 @@ function valet.preprocessWildcards(inMsg, aUnit, theDesc)
 		if pN then pName = pN end 
 	end
 	theMsg = theMsg:gsub("<player>", pName)
+	theMsg = theMsg:gsub("<p>", pName)
 	theMsg = theMsg:gsub("<unit>", aUnit:getName())
+	theMsg = theMsg:gsub("<u>", aUnit:getName())
 	theMsg = theMsg:gsub("<type>", aUnit:getTypeName())
+	--theMsg = theMsg:gsub("<t>", aUnit:getTypeName())
 	theMsg = theMsg:gsub("<group>", aUnit:getGroup():getName())
+	theMsg = theMsg:gsub("<g>", aUnit:getGroup():getName())
 	theMsg = theMsg:gsub("<in>", tostring(theDesc.greets + 1) )
 	theMsg = theMsg:gsub("<out>", tostring(theDesc.byes + 1))
 	return theMsg

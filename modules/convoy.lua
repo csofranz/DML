@@ -1,5 +1,5 @@
 convoy = {}
-convoy.version = "1.2.0"
+convoy.version = "1.3.0"
 convoy.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -34,6 +34,12 @@ VERSION HISTORY
 	  - removed destination attribute 
 1.2.0 - convoyMethod 
 	  - convoyTriggerMethod 
+1.3.0 - typo 'destination' 
+	  - start & arrival messages only with wpUpdates
+	  - new 'listOwn' config attribute 
+	  - convoy destroyed message only if listOwn 
+	  - own convoys only listed if listOwn 
+	  
 --]]--
 
 --[[-- CONVOY Structure
@@ -544,18 +550,21 @@ function convoy.wpReached(gName, convName, idx, wpNum)
 		if idx == 1 then 
 			local distk = math.floor(theConvoy.distance / 1000 + 1.5)
 			local distm = math.floor(0.621371 * theConvoy.distance/1000 + 1)
-
-			trigger.action.outTextForCoalition(coa, "Convoy " .. convName .. " has departed from rallying point " .. theZone.froms .. " towards their destination " .. theConvoy.dest .. " (for a total distance of " .. distk .. "km/" .. distm .. "nm).", 30)
-			trigger.action.outSoundForCoalition(coa, convoy.actionSound)
+			if theZone.wpUpdates or convoy.listOwn then 
+				trigger.action.outTextForCoalition(coa, "Convoy " .. convName .. " has departed from rallying point " .. theZone.froms .. " towards their destination " .. theConvoy.dest .. " (for a total distance of " .. distk .. "km/" .. distm .. "nm).", 30)
+				trigger.action.outSoundForCoalition(coa, convoy.actionSound)
+			end
 			if convoy.listEnemy then 
 				local msg = "Intelligence reports new enemy convoy " .. theConvoy.anon .. " enroute to " ..  theConvoy.destObject:getName()
 				trigger.action.outTextForCoalition(enemy, msg, 30)
 				trigger.action.outSoundForCoalition(enemy, convoy.actionSound)
 			end
 
-		elseif idx == wpNum then  
-			trigger.action.outTextForCoalition(coa, "Convoy " .. convName .. " has arrived at desitation (" .. theConvoy.dest .. ").", 30)
-			trigger.action.outSoundForCoalition(coa, convoy.actionSound)
+		elseif idx == wpNum then 
+			if theZone.wpUpdates or convoy.listOwn then 
+				trigger.action.outTextForCoalition(coa, "Convoy " .. convName .. " has arrived at destination (" .. theConvoy.dest .. ").", 30)
+				trigger.action.outSoundForCoalition(coa, convoy.actionSound)
+			end 
 			if convoy.listEnemy then 
 				local msg = "Enemy convoy " .. theConvoy.anon .. " arrived at " ..  theConvoy.destObject:getName()
 				trigger.action.outTextForCoalition(enemy, msg, 30)
@@ -779,7 +788,7 @@ function convoy.doListConvoys(args)
 	
 	local msg = ""
 	local hasMsg = false 
-	if #mine > 0 then 
+	if convoy.listOwn and #mine > 0 then 
 		-- report my own convoys with location 
 		hasMsg = true 
 		msg = msg .. "\nRUNNING ALLIED CONVOYS:\n"
@@ -915,8 +924,10 @@ function convoy.statusUpdate() -- every 10 seconds
 			if theZone.deadOut then 
 				theZone:pollFlag(theZone.deadOut, theZone.convoyMethod) -- "inc")
 			end
-			trigger.action.outTextForCoalition(theConvoy.coa, "Convoy " .. convName .. " enroute to " .. theConvoy.dest .. " was destroyed.", 30)
-			trigger.action.outSoundForCoalition(theConvoy.coa, convoy.actionSound)
+			if convoy.listOwn then 
+				trigger.action.outTextForCoalition(theConvoy.coa, "Convoy " .. convName .. " enroute to " .. theConvoy.dest .. " was destroyed.", 30)
+				trigger.action.outSoundForCoalition(theConvoy.coa, convoy.actionSound)
+			end 
 			if convoy.listEnemy then 
 				local enemy = 1 
 				if theConvoy.coa == 1 then enemy = 2 end 
@@ -976,6 +987,8 @@ function convoy.readConfigZone()
 
 	convoy.listEnemy = theZone:getBoolFromZoneProperty("listEnemy", true)
 	convoy.listNeutral = theZone:getBoolFromZoneProperty("listNeutral", true)
+	convoy.listOwn = theZone:getBoolFromZoneProperty("listOwn", true)
+	
 	if theZone:hasProperty("attachTo:") then 
 		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
 		if radioMenu then -- requires optional radio menu to have loaded 

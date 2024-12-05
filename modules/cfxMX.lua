@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.2.0"
+cfxMX.version = "3.0.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -19,8 +19,16 @@ cfxMX.verbose = false
 		 - new isMEPlayer() 
 		 - new isMEPlayerGroup()
    2.2.0 - new groupCatByName[]
+   3.0.0 - patch coalition.addGroup() to build unit table for wasUnit
+         - pre-populate spawnedUnits coa, cat from MX 
+		 - spawnedUnitGroupNameByName
    
 --]]--
+
+cfxMX.spawnedUnitCoaByName = {} -- reverse lookup for coas to reconstruct after kill
+cfxMX.spawnedUnitCatByName = {} -- reverse lookup fir cat to recon after kill 
+cfxMX.spawnedUnitGroupNameByName = {}
+
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.unitIDbyName = {}
@@ -43,6 +51,7 @@ cfxMX.playerUnitByName = {} -- returns data only if this is a player unit
 cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
 cfxMX.groups = {} -- all groups indexed b yname, cfxGroups folded into cfxMX 
+
 --[[-- group objects are 
 {
 	name= "", 
@@ -198,6 +207,15 @@ function cfxMX.createCrossReferences()
 					local countryID = cntry_data.id 
 					if type(cntry_data) == 'table' then	-- filter strings .id and .name 
 						for obj_type_name, obj_type_data in pairs(cntry_data) do
+							local gCat = -1 -- "illegal" 
+							if obj_type_name == "helicopter" then gCat = 1  
+							elseif obj_type_name == "ship" then gCat = 3  
+							elseif obj_type_name == "plane" then gCat = 0 
+							elseif obj_type_name == "vehicle" then gCat = 2
+							else -- if obj_type_name == "static" -- what about "cargo"?
+								gCat = -1 -- just for safety. no cat for static, train, cargo
+							end 
+							
 							if obj_type_name == "helicopter" or 
 							   obj_type_name == "ship" or 
 							   obj_type_name == "plane" or 
@@ -293,6 +311,12 @@ function cfxMX.createCrossReferences()
 												end -- if unit skill client
 											end -- if has skill
 											cfxMX.unitIDbyName[unit_data.name] = unit_data.unitId 
+											
+											if gCat >= 0 then -- pre-populate table 
+												cfxMX.spawnedUnitCoaByName[unit_data.name] = coaNum 
+												cfxMX.spawnedUnitCatByName[unit_data.name] = gCat
+											end
+											cfxMX.spawnedUnitGroupNameByName[unit_data.name] = groupName
 										end -- for all units
 										
 										local entry = {}
@@ -424,6 +448,27 @@ function cfxMX.start()
 		trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)
 	end
 	trigger.action.outText("cfxMX v." .. cfxMX.version .. " started.", 30)
+end
+
+--
+-- patch coalition.addGroup so we can record all units by name for their coalition
+--
+coalition.mxAddGroup = coalition.addGroup -- save old 
+
+function coalition.addGroup(cty, cat, data) -- patch addGroup to note all spawned units for DCS static switch-a-roo 
+    local g = coalition.mxAddGroup(cty, cat, data)
+    if not g then return nil end
+	local coa = coalition.getCountryCoalition(cty)
+	local units = g:getUnits()
+	local gName = g:getName() 
+	for idx, u in pairs(units) do 
+		uName = u:getName()
+		cfxMX.spawnedUnitCoaByName[uName] = coa
+		cfxMX.spawnedUnitCatByName[uName] = cat
+		cfxMX.spawnedUnitGroupNameByName[uName] = gName 
+--		trigger.action.outText("MX: Unit <" .. uName .. "> spawned for coa <" .. coa .. ">", 30)
+	end 
+    return g
 end
 
 -- start 

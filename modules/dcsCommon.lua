@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.1.3"
+dcsCommon.version = "3.1.4"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -31,6 +31,8 @@ dcsCommon.version = "3.1.3"
 3.1.2  - isTroopCarrier() hardening against DCS sillieness
 3.1.3  - new dcsCommon.unitIsOfLegalType() analogue to isTroopCarrier 
 	   - new DCS Patch section
+3.1.4  - new processStringWildcardsForUnit
+       - integrated into std wildcard proccing, unit optional 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -3391,7 +3393,7 @@ end
 --
 -- string wildcards 
 --
-function dcsCommon.processStringWildcards(inMsg)
+function dcsCommon.processStringWildcards(inMsg, theUnit)
 	-- Replace STATIC bits of message like CR and zone name 
 	if not inMsg then return "<nil inMsg>" end
 	local formerType = type(inMsg)
@@ -3401,7 +3403,38 @@ function dcsCommon.processStringWildcards(inMsg)
 	-- replace line feeds 
 	outMsg = inMsg:gsub("<n>", "\n")
 
+	if theUnit then 
+		outMsg = dcsCommon.processStringWildcardsForUnit(outMsg, theUnit)
+	end 
+	
 	return outMsg 
+end
+
+function dcsCommon.processStringWildcardsForUnit(msg, theUnit)
+	local uName = theUnit:getName()
+	msg = msg:gsub("<u>", uName)
+	pName = "!AI!"
+	if dcsCommon.isPlayerUnit(theUnit) then 
+		pName = theUnit:getPlayerName()
+	else 
+		return 
+	end
+	msg = msg:gsub("<p>", pName)
+	msg = msg:gsub("<t>", theUnit:getTypeName())
+	local theGroup = theUnit:getGroup()
+	local gName = theGroup:getName()
+	msg = msg:gsub("<g>", gName)
+	local coa = "NEUTRAL"; local e = "NOBODY"
+	local c = theGroup:getCoalition()
+	if c == 1 then coa = "RED"; e = "BLUE" end 
+	if c == 2 then coa = "BLUE"; e = "RED" end 
+	msg = msg:gsub("<C>", coa)
+	msg = msg:gsub ("<E>", e)
+	coa = coa:lower()
+	e = e:lower()
+	msg = msg:gsub("<c>", coa)
+	msg = msg:gsub ("<e>", e)
+	return msg
 end
 
 --

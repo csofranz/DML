@@ -1707,7 +1707,7 @@ end
 function cfxZones.doSetFlagValue(theFlag, theValue, theZone)
 	local zoneName = "<dummy>"
 	if not theZone then 
-		trigger.action.outText("+++Zne: no zone on setFlagValue", 30) -- mod me for detector
+		trigger.action.outText("+++Zne: no zone on doSetFlagValue", 30) -- mod me for detector
 	else 
 		zoneName = theZone.name -- for flag wildcards
 	end

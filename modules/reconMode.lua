@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.3.1"
+cfxReconMode.version = "2.4.0"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -62,7 +62,12 @@ VERSION HISTORY
        - clean-up
  2.3.0 - support for towns/twn when present 
  2.3.1 - simplified reading config 
- 
+ 2.4.0 - added "ground" and "naval" attributes 
+	   - SALT diffs between vehicles and vessels 
+	   - SALT "s" for plural if > 1 vehicle/vessel 
+	   - de-optimized naval visibility check 
+	   - optimization for group check if seen before 
+	   - new bearing and distance callout from pilot 
 --]]--
 
 cfxReconMode.detectionMinRange = 3000 -- meters at ground level
@@ -268,12 +273,13 @@ function cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 	-- determine if a member of theGroup can be seen from 
 	-- scoutPos at visRange 
 	-- returns true and pos when detected
+	local cat = theGroup:getCategory()
 	local allUnits = theGroup:getUnits()
 	for idx, aUnit in pairs(allUnits) do
 		if Unit.isExist(aUnit) and aUnit:isActive() and aUnit:getLife() >= 1 then 
 			local uPos = aUnit:getPoint()
 			uPos.y = uPos.y + 3 -- raise my 3 meters
-			local d = dcsCommon.distFlat(scoutPos, uPos) 
+			local d = math.floor(dcsCommon.distFlat(scoutPos, uPos)) 
 			if d < visRange then 
 				-- is in visual range. do we have LOS?
 				if land.isVisible(scoutPos, uPos) then 
@@ -285,7 +291,11 @@ function cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 				-- detect range, we assume that entire group 
 				-- is, since they are bunched together
 				-- edge cases may get lucky tests
-				return false, nil 
+				-- only for land units, not naval since they are 
+				-- usually dispersed
+				if cat == 2 then 
+					return false, nil
+				end 
 			end
 		end		
 	end
@@ -329,6 +339,7 @@ function cfxReconMode.removeMarkForArgs(args)
 end 
 
 function cfxReconMode.getSit(theGroup)
+	local cat = theGroup:getCategory()
 	local msg = ""
 		-- analyse the group we just discovered. We know it's a ground troop, so simply differentiate between vehicles and infantry 
 		local theUnits = theGroup:getUnits()
@@ -343,13 +354,16 @@ function cfxReconMode.getSit(theGroup)
 		end
 		if numInf > 0 and numVehicles > 0 then 
 			-- mixed infantry and vehicles 
-			msg = numInf .. " infantry and " .. numVehicles .. " vehicles" 
+			msg = numInf .. " infantry and " .. numVehicles 
+			if cat == 2 then msg = msg .. " vehicles" else msg = msg .. " vessels" end  
 		elseif numInf > 0 then
 			-- only infantry
 			msg = numInf .. " infantry"
 		else 
 			-- only vehicles
-			msg = numVehicles .. " vehicles"
+			msg = numVehicles --.. " vehicles"
+			if cat == 2 then msg = msg .. " vehicle" else msg = msg .. " vessel" end
+			if numVehicles > 1 then msg = msg .. "s" end 
 		end 
 	return msg
 end
@@ -422,9 +436,19 @@ function cfxReconMode.getTimeData()
 end
 
 function cfxReconMode.generateSALT(theScout, theGroup)
-	local msg = theScout:getName() .. " reports new ground contact" 
+	local cat = theGroup:getCategory() -- 2 (gnd) or 3 (naval)
+	local msg = theScout:getName() .. " reports new "
+	if cat == 2 then msg = msg .. "ground contact" else msg = msg .. "surface contact" end  
 	if cfxReconMode.groupNames then msg = msg .. " " .. theGroup:getName() end 
-	msg = msg .. ":\n"
+	-- at bearing and dist 
+	local p = theScout:getPoint()
+	local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
+	local up = theUnit:getPoint()
+--	local d = math.floor(dcsCommon.dist(p, up)/1000)
+	local dg = math.floor(dcsCommon.distFlat(p, up)/1000)
+	local b = dcsCommon.bearingInDegreesFromAtoB(p, up)
+	msg = msg .. ", bearing " .. b .. "°, " .. dg .. "km:\n"
+--	msg = msg .. ":\n"
 	-- SALT: S = Situation or number of units A = action they are doing L = Location T = Time 
 	msg = msg .. cfxReconMode.getSit(theGroup) .. ", "-- S 
 	msg = msg .. cfxReconMode.getAction(theGroup) .. ", " -- A 
@@ -490,7 +514,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 		local zInfo = cfxReconMode.zoneInfo[gName]
 		silent = zInfo.silent
 	end
-	
+
 	-- put a mark on the map 
 	if (not silent) and cfxReconMode.applyMarks then 
 		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup)
@@ -564,38 +588,40 @@ function cfxReconMode.performReconForUnit(theScout)
 	if not theScout then return end 
 	if not theScout:isExist() then return end -- will be gc'd soon
 	-- get altitude above ground to calculate visual range 
-	local alt = dcsCommon.getUnitAGL(theScout)
-	local visRange = dcsCommon.lerp(cfxReconMode.detectionMinRange, cfxReconMode.detectionMaxRange, alt/cfxReconMode.maxAlt)
+	local alt = math.floor(dcsCommon.getUnitAGL(theScout))
+	local visRange = math.floor(dcsCommon.lerp(cfxReconMode.detectionMinRange, cfxReconMode.detectionMaxRange, alt/cfxReconMode.maxAlt))
 	local scoutPos = theScout:getPoint()
 	-- figure out which groups we are looking for
 	local myCoal = theScout:getCoalition()
 	local enemyCoal = 1 
 	if myCoal == 1 then enemyCoal = 2 end 
 	
+--	trigger.action.outText("scout <" .. theScout:getName() .."> at alt <" .. alt .. "> has visRange <" .. visRange .. ">", 30)
 	-- iterate all enemy units until we find one 
 	-- and then stop this iteration (can only detect one 
 	-- group per pass)
 	local enemyGroups = coalition.getGroups(enemyCoal)
 	for idx, theGroup in pairs (enemyGroups) do 
 		-- make sure it's a ground unit 
-		local isGround = theGroup:getCategory() == 2
-		if theGroup:isExist() and isGround then 
+		local cat = theGroup:getCategory()
+		local isGround = cfxReconMode.rGround and cat == 2
+		local isNaval = cfxReconMode.rNaval and cat == 3 
+		local found = isGround or isNaval
+		local groupName = theGroup:getName()
+		found = found and (not cfxReconMode.detectedGroups[groupName]) -- optimization: skip if already detected 
+		if found then 
 			local visible, location = cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 			if visible then 
-				-- see if we already detected this one 
-				local groupName = theGroup:getName()
-				if cfxReconMode.detectedGroups[groupName] == nil then 
-					-- only now check against blackList
-					local inList, gName = cfxReconMode.isStringInList(groupName, cfxReconMode.blackList) 
-					if not inList then 
-						-- visible and not yet seen 
-						-- perhaps add some percent chance now 
-						-- remember that we know this group 
-						cfxReconMode.detectedGroups[groupName] = theGroup
-						cfxReconMode.detectedGroup(myCoal, theScout, theGroup, location)
-						return -- stop, as we only detect one group per pass
-					end 
-				end
+				-- blacklist check
+				local inList, gName = cfxReconMode.isStringInList(groupName, cfxReconMode.blackList) 
+				if not inList then 
+					-- visible, not yet seen, not blacklisted 
+					-- perhaps add some percent chance now 
+					-- remember that we know this group 
+					cfxReconMode.detectedGroups[groupName] = theGroup
+					cfxReconMode.detectedGroup(myCoal, theScout, theGroup, location)
+					return -- stop, as we only detect one group per pass
+				end 
 			end
 		end
 	end
@@ -1000,6 +1026,8 @@ function cfxReconMode.readConfigZone()
 		cfxReconMode.imperialUnits = theZone:getBoolFromZoneProperty( "imperialUnits", false)
 	end
 	cfxReconMode.groupNames = theZone:getBoolFromZoneProperty( "groupNames", true)
+	cfxReconMode.rGround = theZone:getBoolFromZoneProperty("ground", true)
+	cfxReconMode.rNaval = theZone:getBoolFromZoneProperty("naval", false)
 	cfxReconMode.theZone = theZone -- save this zone 
 end
 
