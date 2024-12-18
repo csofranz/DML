@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.0.0"
+cfxPlayerScore.version = "5.0.1"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -20,6 +20,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	5.0.0 - resolve killed units via cfxMX to patch DCS error 
 		  - reworked unit2score to use MX 
 	      - code cleanup 
+	5.0.1 - code hardening against name, type nilling 
 		  
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore 
@@ -283,15 +284,16 @@ function cfxPlayerScore.unit2score(inUnit)
 	-- simply extend by adding items to the typescore table.concat
 	-- we first try by unit name. This allows individual
 	-- named hi-value targets to have individual scores 
-	local uScore = cfxPlayerScore.typeScore[vicName:upper()]
+	local uScore 
+	if vicName then uScore = cfxPlayerScore.typeScore[vicName:upper()] end 
 	-- see if all members of group score 
 	if (not uScore) then -- and vicGroup then 
 		local grpName = cfxMX.spawnedUnitGroupNameByName[vicName]--vicGroup:getName()
-		uScore = cfxPlayerScore.typeScore[grpName:upper()]
+		if grpName then uScore = cfxPlayerScore.typeScore[grpName:upper()] 	end 
 	end
 	if not uScore then 
-		-- WE NOW TRY TO ACCESS BY VICTIM'S TYPE STRING		
-		uScore = cfxPlayerScore.typeScore[vicType:upper()]
+		-- WE NOW TRY TO ACCESS BY VICTIM'S TYPE STRING	
+		if vicType then uScore = cfxPlayerScore.typeScore[vicType:upper()] 	end 
 	end 
 	if type(uScore) == "string" then 
 		-- convert string to number 

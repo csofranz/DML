@@ -59,6 +59,7 @@ cloneZones.respawnOnGroupID = true
 	2.4.0 - reworked masterOwner to fit with dmlZone 
 	2.5.0 - re-establish spawn zone in persistence to provide 
 	        empty! detection through saves (missed hasClones)
+	2.5.1 - f? and in? put on notice for depreciation
 --]]--
 
 --
@@ -215,9 +216,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.cloneTriggerMethod = theZone:getStringFromZoneProperty("cloneTriggerMethod", "change")
 	end
 	
-	if theZone:hasProperty("f?") then 
+	if theZone:hasProperty("f?") then -- deprecated!
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("f?", "none")
-	elseif theZone:hasProperty("in?") then 
+	elseif theZone:hasProperty("in?") then -- deprecated 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("in?", "none")
 	elseif theZone:hasProperty("spawn?") then 
 		theZone.spawnFlag = theZone:getStringFromZoneProperty("spawn?", "none")
