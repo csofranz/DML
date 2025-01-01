@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.1.4"
+dcsCommon.version = "3.1.5"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -33,6 +33,8 @@ dcsCommon.version = "3.1.4"
 	   - new DCS Patch section
 3.1.4  - new processStringWildcardsForUnit
        - integrated into std wildcard proccing, unit optional 
+3.1.5  - more verbosity on unitID2X
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -155,6 +157,9 @@ end
 	end
 	
 	function dcsCommon.getOrigPositionByID(theID)
+		if not dcsCommon.unitID2X[theID] then 
+			trigger.action.outText("common: getOrigPos - no unit by id for <" .. theID .. ">, type is <" .. type(theID) .. ">", 30)
+		end
 		local p = {x=dcsCommon.unitID2X[theID], y=0, z=dcsCommon.unitID2Y[theID]}
 		return p 
 	end 

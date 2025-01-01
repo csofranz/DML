@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.4.4" 
+cfxZones.version = "4.5.0" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -34,6 +34,12 @@ cfxZones.version = "4.4.4"
 -4.4.2    - twn support for wildcards <twn: > and <loc:>
 -4.4.3    - property name is trimmed (double check)
 -4.4.4    - createGroundUnitsInZoneForCoalition supports drivable 
+-4.4.5    - corrected startMovingZones() for linked zones via ME's LINKZONE drop-down 
+-4.4.6	  - corrected pattern bug in processDynamicAB()
+-4.5.0    - corrected bug in getBoolFromZoneProperty for default = false and "rnd"
+		  - rnd in bool can have = xxx param for percentage
+		  - getSmokeColorNumberFromZoneProperty()
+
 --]]--
 
 --
@@ -2467,31 +2473,46 @@ function cfxZones.getBoolFromZoneProperty(theZone, theProperty, defaultVal)
 	if type(defaultVal) ~= "boolean" then 
 		defaultVal = false 
 	end
-
 	if not theZone then 
 		trigger.action.outText("WARNING: NIL Zone in getBoolFromZoneProperty", 30)
 		return defaultVal
 	end
-
-
 	local p = cfxZones.getZoneProperty(theZone, theProperty)
 	if not p then return defaultVal end
-
 	-- make sure we compare so default always works when 
 	-- answer isn't exactly the opposite
 	p = p:lower() 
 	p = dcsCommon.trim(p) 
+	local p1 = p:find("=") -- pre-proccing for random 
+	if p1 then 
+		local r = p:sub(p1+1, -1)
+		p = p:sub(1,p1-1)
+		if r and string.len(r) > 0 then p1 = math.floor(tonumber(r)) else p1 = nil end 
+		p = dcsCommon.trim(p)
+	end 
+	
+	-- special: return a random value if p == "rnd" or "?" or "maybe"
+	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
+		local matchVal = 500 -- 50%
+		local theRnd = math.random(1000)
+		if p1 then 
+			-- we have a numeric rnd=xxx. 
+			matchVal = p1 * 10
+		end 
+		if theZone.verbose then 
+			trigger.action.outText("+++Zne: zone <" .. theZone.name .. "> getBool RND resolve for attr <" .. theProperty .. ">", 30)
+			if p1 then trigger.action.outText("rnd range set to <" .. p1 .. ">%", 30) end
+			trigger.action.outText("is rnd <" .. theRnd .. "> < match <" .. matchVal .. ">?", 30)
+		end 
+		return (theRnd < matchVal)
+	end 	
+	
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 
 		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p == 'on')
 		return theBool
 	end
-	
-	-- special: return a random value if p == "rnd" or "?" or "maybe"
-	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
-		return (math.random(1000) < 500) -- 50:50
-	end 	
 	
 	local theBool = true 
 	-- only go false if exactly no or false or "0"
@@ -2504,24 +2525,40 @@ function dmlZone:getBoolFromZoneProperty(theProperty, defaultVal)
 	if type(defaultVal) ~= "boolean" then 
 		defaultVal = false 
 	end
-
 	local p = self:getZoneProperty(theProperty)
 	if not p then return defaultVal end
-
 	-- make sure we compare so default always works when 
 	-- answer isn't exactly the opposite
 	p = p:lower() 
 	p = dcsCommon.trim(p) 
+	local p1 = p:find("=") -- pre-proccing for random 
+	if p1 then 
+		local r = p:sub(p1+1, -1)
+		p = p:sub(1,p1-1)
+		if r and string.len(r) > 0 then p1 = math.floor(tonumber(r)) else p1 = nil end 
+		p = dcsCommon.trim(p)
+	end 
+	-- special: return a random value if p == "rnd" or "?" or "maybe"
+	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
+		local matchVal = 500 -- 50%
+		local theRnd = math.random(1000)
+		if p1 then 
+			-- we have a numeric rnd=xxx. 
+			matchVal = p1 * 10
+		end 
+		if self.verbose then 
+			trigger.action.outText("+++Zne: zone <" .. self.name .. "> getBool RND resolve for attr <" .. theProperty .. ">", 30)
+			if p1 then trigger.action.outText("rnd range set to <" .. p1 .. ">%", 30) end
+			trigger.action.outText("is rnd <" .. theRnd .. "> < match <" .. matchVal .. ">?", 30)
+		end 
+		return (theRnd < matchVal) 
+	end
+
 	if defaultVal == false then 
 		-- only go true if exact match to yes or true 
 		theBool = false 
 		theBool = (p == 'true') or (p == 'yes') or (p == "1") or (p=="on")
 		return theBool
-	end
-	
-	-- special: return a random value if p == "rnd" or "?" or "maybe"
-	if (p == "?") or (p == "rnd") or (p == "random") or (p == "maybe") then 
-		return (math.random(1000) < 500) -- 50:50
 	end 	
 	
 	local theBool = true 
@@ -2776,6 +2813,8 @@ function cfxZones.getSmokeColorStringFromZoneProperty(theZone, theProperty, defa
 end
 
 function dmlZone:getSmokeColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
+	return cfxZones.getSmokeColorStringFromZoneProperty(self, theProperty, default)
+	--[[
 	if not default then default = "red" end 
 	local s = self:getStringFromZoneProperty(theProperty, default)
 	s = s:lower()
@@ -2794,7 +2833,38 @@ function dmlZone:getSmokeColorStringFromZoneProperty(theProperty, default) -- sm
 	   s == "blue" then return s end
 
 	return default 
+	--]]
 end
+
+function cfxZones.getSmokeColorNumberFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
+-- NOT identical to smoke numbers used in ctf!!!!
+	if not default then default = "red" end 
+	local s = cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
+	if not s or string.len(s) < 1 then s = default end 
+	
+	s = s:lower()
+	s = dcsCommon.trim(s)
+	-- check numbers 
+	local n = tonumber(s)
+	if n then 
+		if n >= 0 and n < 5 then return math.floor(n) end 
+		return -1 -- random 
+	end
+	
+	if s == "green" then return 0 
+	elseif s == "red" then return 1  
+	elseif s == "white" then return 2  
+	elseif s == "orange" then return 3  
+	elseif s == "blue" then return 4 
+	elseif s == "?" or s == "rnd" or s == "random" then return -1  
+	else return -1 -- should NEVER happen
+	end
+end
+
+function dmlZone:getSmokeColorNumberFromZoneProperty(theProperty, default)
+	return cfxZones.getSmokeColorNumberFromZoneProperty(self, theProperty, default)
+end
+
 
 function cfxZones.getFlareColorStringFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
 	if not default then default = "red" end 
@@ -2820,6 +2890,8 @@ function cfxZones.getFlareColorStringFromZoneProperty(theZone, theProperty, defa
 end
 
 function dmlZone:getFlareColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
+	return cfxZones.getFlareColorStringFromZoneProperty(self, theProperty, default)
+	--[[--
 	if not default then default = "red" end 
 	local s = self:getStringFromZoneProperty(theProperty, default)
 	s = s:lower()
@@ -2840,6 +2912,7 @@ function dmlZone:getFlareColorStringFromZoneProperty(theProperty, default) -- sm
 	return s end
 
 	return default 
+	--]]--
 end
 
 --
@@ -3166,21 +3239,37 @@ end
 
 function cfxZones.processDynamicAB(inMsg, locale)
 	local outMsg = inMsg
+	local startLoc 
+	local endLoc
+	local iter = 0
 	if not locale then locale = "A/B" end 
-	
-	-- <A/B: flagOrUnitName [val A | val B]>
-	local replacerValPattern = "<".. locale .. ":%s*[%s%w%*%d%.%-_]+" .. "%[[%s%w]+|[%s%w]+%]"..">"
+	-- FULL REWORK: find has bugs in grep 
+	-- <A/B: flagOrUnitName [text A | text B]>
+	local replacerValPattern = "<".. locale .. ":%s*[%s%w%*%d%.%-_]+" .. 
+	      "%[[%s%w%p%-%._]+" .. "|" .. 
+		    "[%s%w%p%-%._]+%]" .. ">" -- now with captures
 	repeat 
-		local startLoc, endLoc = string.find(outMsg, replacerValPattern)
+		startLoc, endLoc = string.find(outMsg, replacerValPattern, 1) -- note "1"
 		if startLoc then 
-			local rp = string.sub(outMsg, startLoc, endLoc)
-			-- get val/unit name 
+			iter = iter + 1
+			-- let's find the "real" endloc, since find returns all if more than one hit 
+			local e1 = string.find(outMsg, "|", startLoc)
+			-- from there, find the end "]>" -- no blanks between them
+			if not e1 then trigger.action.outText("wildcard a/B : no delim | in <" .. outMsg .. "> after <" .. startLoc .. ">, returning", 30); return "err1" end 
+			local e2 = string.find(outMsg, "%]>", e1)
+			if not e2 then trigger.action.outText("wildcard A/B: no lim %]> in <" .. outMsg .. "> after <" .. e2 .. ">, returning", 30); return "err3" end 
+			local e3 = e2 + 1
+			local rp = string.sub(outMsg, startLoc, e3) -- endLoc) -- whole shebang
+			local asmLeft = "" -- instead of gsub we re-assemble
+			if startLoc > 1 then asmLeft = string.sub(outMsg, 1, startLoc-1) end -- left side
+			local asmRight = string.sub(outMsg, e3 + 1, -1) -- right side 
+			-- get flag/unit name 
 			local valA, valB = string.find(rp, ":%s*[%s%w%*%d%.%-_]+%[")
 			local val = string.sub(rp, valA+1, valB-1)
 			val = dcsCommon.trim(val)
 			-- get left and right 
-			local leftA, leftB = string.find(rp, "%[[%s%w]+|" ) -- from "[" to "|"
-			local rightA, rightB = string.find(rp, "|[%s%w]+%]") -- from "|" to "]"
+			local leftA, leftB = string.find(rp,  "%[[%s%w%p%-%._]+|" ) -- from "[" to "|"
+			local rightA, rightB = string.find(rp, "|[%s%w%p%-%._]+%]") -- from "|" to "]"
 			left = string.sub(rp, leftA+1, leftB-1)
 			left = dcsCommon.trim(left)
 			right = string.sub(rp, rightA+1, rightB-1)
@@ -3196,9 +3285,10 @@ function cfxZones.processDynamicAB(inMsg, locale)
 
 			local locString = left 
 			if yesno then locString = right end 
-			outMsg = string.gsub(outMsg, replacerValPattern, locString, 1)
+			local tmp = asmLeft .. locString .. asmRight 
+			outMsg = tmp 
 		end
-	until not startLoc 
+	until (not startLoc) or (iter > 10) -- max 2 iters 
 	return outMsg
 end
 
@@ -3528,8 +3618,15 @@ function cfxZones.initLink(theZone)
 		local dz = 0
 		if theZone.useOffset or theZone.useHeading then 
 			local A = cfxZones.getDCSOrigin(theZone)
+			if not A.x then 
+				trigger.action.outText("+++ zones: initlink - can't access orig pos.x for A", 30)
+				return 
+			end 
 			local B = dcsCommon.getOrigPositionByID(theZone.linkedUID)
-
+			if not B.x then 
+				trigger.action.outText("+++ zones: initlink - can't access orig.x unit for B", 30)
+				return 
+			end
 			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
@@ -3592,7 +3689,8 @@ function cfxZones.startMovingZones()
 				trigger.action.outText("WARNING: Zone <" .. aZone.name .. ">: cannot resolve linked unit ID <" .. theID .. ">", 30)
 				lU = "***DML link err***"
 			end
-			aZone.linkedUID = lU
+			--aZone.linkedUID = lU -- wrong! must be UID, not name 
+			aZone.linkedUID = theID
 		elseif aZone:hasProperty("linkedUnit") then 
 			lU = aZone:getZoneProperty("linkedUnit") -- getString: name of unit
 			local luid = dcsCommon.unitName2ID[lU]
