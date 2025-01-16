@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.5.0"
+cloneZones.version = "2.5.2"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -60,6 +60,7 @@ cloneZones.respawnOnGroupID = true
 	2.5.0 - re-establish spawn zone in persistence to provide 
 	        empty! detection through saves (missed hasClones)
 	2.5.1 - f? and in? put on notice for depreciation
+	2.5.2 - removed bug when checking damaged! and no units cloned 
 --]]--
 
 --
@@ -1715,9 +1716,10 @@ function cloneZones.update()
 		end
 		
 		-- handling of damaged! and #health  
-		if aZone.damaged or aZone.health then
+		if aZone.hasClones and (aZone.damaged or aZone.health) then
 			-- calculate current health 
 			local currSize = cloneZones.countLiveAIUnits(aZone)
+			if not aZone.oSize then aZone.oSize = 0 end 
 			if aZone.oSize < 1 then 
 				if aZone.verbose or cloneZones.verbose then 
 					trigger.action.outText("+++clnZ: Warning: zero oZize for cloner <" .. aZone.name .. ">, no health info, no damage alert", 30)

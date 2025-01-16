@@ -1,5 +1,5 @@
 cfxGroundTroops = {}
-cfxGroundTroops.version = "2.2.1"
+cfxGroundTroops.version = "3.0.0"
 cfxGroundTroops.ups = 0.25 -- every 4 seconds 
 cfxGroundTroops.verbose = false 
 cfxGroundTroops.requiredLibs = {
@@ -26,15 +26,8 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
 
 --[[--
  version history
-
-   2.0.0 - dmlZones 
-	     - jtacSound 
-		 - cleanup 
-		 - jtacVerbose 
-   2.0.1 - small fiex ti checkPileUp()
-   2.1.0 - captureandhold - oneshot attackowned 
-   2.2.0 - moveFormation support 
-   2.2.1 - reduced verbosity 
+   3.0.0 - support for troop-individual laser codes 
+         - support for isDrivable CA troop spawns 
 
   an entry into the deployed troop table has the following attributes
   - group - the group 
@@ -55,8 +48,10 @@ cfxGroundTroops.jtacCB = {} -- jtac callbacks, to be implemented
   - signature - "cfx" to tell apart from dcs groups 
   - range = range to look for enemies. default is 300m. In "laze" orders, range to laze
   - lazeTarget - target currently lazing
-  - lazeCode - laser code. default is 1688
+  - ??lazeCode?? - laser code. default is 1688
   - moving - has been given orders to move somewhere already. used for first movement order with attack orders 
+  - code - laser code 
+  - canDrive - for spawning if CA supported
   -- reduced ups to 0.24, updating troops every 4 seconds is fast enough 
 
  
@@ -469,11 +464,13 @@ function cfxGroundTroops.trackLazer(troop)
 	end
 	
 	if not troop.lazerPointer then
+		local code = troop.code
+		if not code then code = cfxGroundTroops.laseCode end -- default
 		local there = troop.lazeTarget:getPoint()
-		troop.lazerPointer = Spot.createLaser(troop.lazingUnit,{x = 0, y = 2, z = 0}, there, cfxGroundTroops.laseCode)
+		troop.lazerPointer = Spot.createLaser(troop.lazingUnit,{x = 0, y = 2, z = 0}, there, code)
 		troop.lazeTargetType = troop.lazeTarget:getTypeName()
 		if cfxGroundTroops.jtacVerbose then 
-			trigger.action.outTextForCoalition(troop.side, troop.name .. " tally target - lasing " .. troop.lazeTargetType .. ", code " .. cfxGroundTroops.laseCode .. "!", 30)
+			trigger.action.outTextForCoalition(troop.side, troop.name .. " tally target - lasing " .. troop.lazeTargetType .. ", code " .. code .. "!", 30)
 			trigger.action.outSoundForCoalition(troop.side, cfxGroundTroops.jtacSound) -- "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav")
 		end 
 		troop.lastLazerSpot = there -- remember last spot
@@ -918,7 +915,7 @@ end
 -- createGroundTroop
 -- use this to create a cfxGroundTroops from a dcs group
 --
-function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormation) 
+function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormation, code, canDrive) 
 	local newTroops = {}
 	if not orders then 
 		orders = "guard" 
@@ -927,7 +924,6 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormatio
 	if orders:lower() == "lase" then 
 		orders = "laze" -- we use WRONG spelling here, cause we're cool. yeah, right.
 	end
---	trigger.action.outText("Enter createGT group <" .. inGroup:getName() .. "> with o=<" .. orders .. ">, mf=<" .. moveFormation .. ">", 30)
 	newTroops.insideDestination = false
 	newTroops.unscheduleCount = 0 -- will count up as we aren't scheduled
 	newTroops.speedWarning = 0
@@ -942,6 +938,10 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormatio
 	newTroops.signature = "cfx" -- to verify this is groundTroop group, not dcs groups
 	if not range then range = 300 end
 	newTroops.range = range
+	if not code then code = cfxGroundTroops.laseCode end 
+	newTroops.code = code 
+	newTroops.canDrive = canDrive
+--	trigger.action.outText("createGndT with code = <" .. code .. ">", 30)
 	return newTroops
 end
 

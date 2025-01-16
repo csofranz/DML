@@ -1,11 +1,11 @@
 cfxZones = {}
-cfxZones.version = "4.5.0" 
+cfxZones.version = "4.5.1" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
 -- by scripting.
 --
--- Copyright (c) 2021 - 2024 by Christian Franz and cf/x AG
+-- Copyright (c) 2021 - 2025 by Christian Franz and cf/x AG
 --
 
 --[[-- VERSION HISTORY
@@ -39,6 +39,7 @@ cfxZones.version = "4.5.0"
 -4.5.0    - corrected bug in getBoolFromZoneProperty for default = false and "rnd"
 		  - rnd in bool can have = xxx param for percentage
 		  - getSmokeColorNumberFromZoneProperty()
+-4.5.1    - moved processSimpleZoneDynamics to common 
 
 --]]--
 
@@ -2934,6 +2935,9 @@ end
 
 -- process <t>, <lat>, <lon>, <ele>, <mgrs> 
 function cfxZones.processSimpleZoneDynamics(inMsg, theZone, timeFormat, imperialUnits)
+	local p = theZone:getPoint()
+	return dcsCommon.processTimeLocWildCards(inMsg, p, timeFormat, imperialUnits)
+	--[[--
 	if not inMsg then return "<nil inMsg>" end
 	-- replace <t> with current mission time HMS
 	local absSecs = timer.getAbsTime()-- + env.mission.start_time
@@ -2962,6 +2966,7 @@ function cfxZones.processSimpleZoneDynamics(inMsg, theZone, timeFormat, imperial
 	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
 	outMsg = outMsg:gsub("<mgrs>", mgrs)
 	return outMsg
+	--]]--
 end 
 
 -- process <v: flag>, <rsp: flag> <rrnd>

@@ -7,7 +7,7 @@ fogger.requiredLibs = {
 fogger.zones = {}
 
 --[[-- Version history
-  A DML module (c) 2024 by Christian FRanz 
+  A DML module (c) 2024-25 by Christian FRanz 
 
 - 1.0.0 - Initial version
 - 1.1.0 - added lcl attribute  
@@ -27,18 +27,13 @@ function fogger.createFogZone(theZone)
 	theZone.lcl = theZone:getBoolFromZoneProperty("lcl", false)
 	theZone.durMin, theZone.durMax = theZone:getPositiveRangeFromZoneProperty ("duration", 1, 1)
 	if theZone:hasProperty("onStart") then 
-		--trigger.action.outText("+++fog: zone <" .. theZone.name .. "> HAS 'onStart' attribute", 30)
 		theZone.onStart = theZone:getBoolFromZoneProperty("onStart", false)
 		if theZone.onStart then 
 			if theZone.verbose then 
 				trigger.action.outText("+++fog: will schedule onStart fog in zone <" .. theZone.name .. ">", 30)
 			end
 			timer.scheduleFunction(fogger.doFog, theZone, timer.getTime() + 0.5)
-		else 
-			--trigger.action.outText("+++ fog: onstart turned OFF", 30)
 		end 
-	else 
-		--trigger.action.outText("+++fog: zone <" .. theZone.name .. "> no 'onStart' attribute, turned off", 30)
 	end 
 	if theZone.verbose then 
 		trigger.action.outText("+++fog: zone <" .. theZone.name .. "> processed.", 30)

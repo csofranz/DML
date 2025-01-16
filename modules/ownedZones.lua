@@ -607,7 +607,7 @@ end
 
 -- getting closest owned zones etc
 -- required for groundTroops and factory attackers 
--- methods provided only for other modules (e.g. cfxGroundTroops or 
+-- methods provided only for other modules (e.g. cfxGroundTroops, jtacGrpGUI or 
 -- factoryZone 
 --
 
@@ -658,7 +658,7 @@ function cfxOwnedZones.collectZones(mode)
 	end
 end 
 
--- getNearestOwnedZoneToPoint invoked by heloTroops
+-- getNearestOwnedZoneToPoint invoked by heloTroops and jtacGUI
 function cfxOwnedZones.getNearestOwnedZoneToPoint(p)
 	local allZones = cfxOwnedZones.collectZones()
 	return cfxZones.getClosestZone(p, allZones)

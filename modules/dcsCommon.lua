@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.1.5"
+dcsCommon.version = "3.2.0"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -34,12 +34,16 @@ dcsCommon.version = "3.1.5"
 3.1.4  - new processStringWildcardsForUnit
        - integrated into std wildcard proccing, unit optional 
 3.1.5  - more verbosity on unitID2X
-
+3.2.0  - support for twn in processStringWildcardsForUnit()
+	   - new processTimeLocWildCards()
+	   - cfxZones links to processTimeLocWildCards 
+	   - new processAtoBWildCards()
+	   - tons of new wildcards like <eleft> 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
 	-- for easy access and simple mission programming
-	-- (c) 2021 - 2024 by Christian Franz and cf/x AG
+	-- (c) 2021 - 2025 by Christian Franz and cf/x AG
 
 --
 -- DCS API PATCHES FOR DCS-INTERNAL BUGS
@@ -3396,7 +3400,7 @@ function dcsCommon.LSR(a, num)
 end
 
 --
--- string wildcards 
+-- string wildcard processing
 --
 function dcsCommon.processStringWildcards(inMsg, theUnit)
 	-- Replace STATIC bits of message like CR and zone name 
@@ -3414,18 +3418,17 @@ function dcsCommon.processStringWildcards(inMsg, theUnit)
 	
 	return outMsg 
 end
-
+-- <u>, <p>, <g>, <typ>, <c>, <e>, <twn>, <twnkm>, <twnnm>
 function dcsCommon.processStringWildcardsForUnit(msg, theUnit)
 	local uName = theUnit:getName()
 	msg = msg:gsub("<u>", uName)
-	pName = "!AI!"
+	pName = "AI"
 	if dcsCommon.isPlayerUnit(theUnit) then 
 		pName = theUnit:getPlayerName()
-	else 
-		return 
 	end
 	msg = msg:gsub("<p>", pName)
-	msg = msg:gsub("<t>", theUnit:getTypeName())
+	msg = msg:gsub("<t>", theUnit:getTypeName()) -- WARNING! <t> is conflicted
+	msg = msg:gsub("<typ>", theUnit:getTypeName())
 	local theGroup = theUnit:getGroup()
 	local gName = theGroup:getName()
 	msg = msg:gsub("<g>", gName)
@@ -3439,9 +3442,73 @@ function dcsCommon.processStringWildcardsForUnit(msg, theUnit)
 	e = e:lower()
 	msg = msg:gsub("<c>", coa)
 	msg = msg:gsub ("<e>", e)
+	local locString = ""
+	local locStingnm = ""
+	local p = theUnit:getPoint()
+	if twn and towns then locString = " " .. twn.closestTownTo(p) end
+	msg = msg:gsub("<twn>", locString)
+	if twn and towns then
+		local name, data, dist = twn.closestTownTo(p)
+		local mdist= dist * 0.539957
+		dist = math.floor(dist/100) / 10
+		mdist = math.floor(mdist/100) / 10		
+		local bear = dcsCommon.compassPositionOfARelativeToB(p, data.p)
+		locString = " " .. dist .. "km " .. bear .. " of " .. name
+		locStringnm = " " .. mdist .."nm " .. bear .. " of " .. name
+	end 
+	msg = msg:gsub("<twnkm>", locString)
+	msg = msg:gsub("<twnnm>", locString)
 	return msg
 end
 
+-- process <tme>, <t>, <lat>, <lon>, <ele>, <mgrs> 
+function dcsCommon.processTimeLocWildCards(inMsg, p, timeFormat, imperialUnits)
+	if not inMsg then return "<nil inMsg tloc>" end
+	-- replace <t> with current mission time HMS
+	local absSecs = timer.getAbsTime()-- + env.mission.start_time
+	while absSecs > 86400 do 
+		absSecs = absSecs - 86400 -- subtract out all days 
+	end
+	if not timeFormat then timeFormat = "<:h>:<:m>:<:s>" end 
+	local timeString  = dcsCommon.processHMS(timeFormat, absSecs)
+	local outMsg = inMsg:gsub("<tme>", timeString)
+	local outMsg = inMsg:gsub("<t>", timeString) -- WARNING! <t> is conflicted
+	-- replace <lat> with lat and <lon> with lon of point 
+	-- and <mgrs> with mgrs coords of point 
+	local currPoint = p
+	local lat, lon = coord.LOtoLL(currPoint)
+	lat, lon = dcsCommon.latLon2Text(lat, lon)
+	local alt = land.getHeight({x = currPoint.x, y = currPoint.z})
+	outMsg = outMsg:gsub("<elem>", alt)
+	local altft = math.floor(alt * 3.28084) -- feet
+	if imperialUnits then 
+		alt = math.floor(alt * 3.28084) -- feet 
+	else 
+		alt = math.floor(alt) -- meters 
+	end 
+	outMsg = outMsg:gsub("<lat>", lat)
+	outMsg = outMsg:gsub("<lon>", lon)
+	outMsg = outMsg:gsub("<ele>", alt)
+	outMsg = outMsg:gsub("<eleft>", alt)
+	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
+	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
+	outMsg = outMsg:gsub("<mgrs>", mgrs)
+	return outMsg
+end
+
+-- process A to B: <rng>, <rngnm>, <bea> 
+function dcsCommon.processAtoBWildCards(inMsg, A, B)
+	if not inMsg then return "<nil inMsg AtB>" end
+	local outMsg = inMsg 
+	local bea = dcsCommon.bearingInDegreesFromAtoB(A, B)
+	local range = dcsCommon.dist(A, B) / 1000 -- km
+	local rangenm = math.floor(range * 5.39957) / 10
+	range = math.floor(range * 10) / 10
+	outMsg = outMsg:gsub("<bea>", bea)
+	outMsg = outMsg:gsub("<rng>", range)
+	outMsg = outMsg:gsub("<rngnm>", rangenm)
+	return outMsg
+end
 --
 -- phonetic alphabet 
 --

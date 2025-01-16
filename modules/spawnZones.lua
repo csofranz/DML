@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "2.2.0"
+cfxSpawnZones.version = "3.0.0"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -18,20 +18,12 @@ cfxSpawnZones.spawnedGroups = {}
 
 --
 -- Zones that conform with this requirements spawn toops automatically
---   *** DOES NOT EXTEND ZONES *** LINKED OWNER via masterOwner ***
+--   *** DOES !NOT! EXTEND ZONES *** LINKED OWNER via masterOwner ***
 -- 
 --[[--
 -- version history 
-   2.0.0 - dmlZones
-		 - moved "types" to spawner 
-		 - baseName defaults to zone name, as it is safe for naming
-         - spawnWithSpawner direct link in spawner to spawnZones
-   2.0.1 - fix in verifySpawnOwnership() when not master zone found 
-   2.0.2 - new "moveFormation" attribute 
-   2.0.3 - corrected type in spawnUnits? attribute 
-   2.1.0 - masterOwner update for dmlZones. 
-		   since spawners don't extend zones, this is still old-school 
-   2.2.0 - "drivable" spawner attribute
+   3.0.0 - supports zone-individual laser code for "lase" orders 
+		 - drivable attribute passed to groundTroops 
    
   --]]--
   
@@ -176,6 +168,12 @@ function cfxSpawnZones.createSpawner(inZone)
 		end
 	end 
 	
+	if inZone:hasProperty("code") then -- lase code
+		theSpawner.code = inZone:getNumberFromZoneProperty("code", 1688)
+	elseif inZone:hasProperty("lcode") then -- lase code
+		theSpawner.code = inZone:getNumberFromZoneProperty("lcode", 1688)
+	end 
+	
 	if cfxSpawnZones.verbose or inZone.verbose then 
 		trigger.action.outText("+++spwn: created spawner for <" .. inZone.name .. ">", 30)
 	end	
@@ -207,19 +205,24 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 	if not aSide then aSide = 0 end  
 	if not aRange then aRange = 200 end 
 	if not aPoint then return {} end 
-
+	
 	local theSpawners = {}
 	for aZone, aSpawner in pairs(cfxSpawnZones.allSpawners) do 
 		-- iterate all zones and collect those that match 
 		local hasMatch = true 
+		local reasons = ""
 		local delta = dcsCommon.distFlat(aPoint, cfxZones.getPoint(aZone))
-		if delta>aRange then hasMatch = false end 
+		if delta>aRange then 
+			hasMatch = false
+--			reasons = reasons .. "[distance " .. math.floor(delta) .. "]
+		end 
 		if aSide ~= 0 then 
 			-- check if side is correct for owned zone 
 			if not cfxSpawnZones.verifySpawnOwnership(aSpawner) then 
 				-- failed ownership test. owner of master 
 				-- is not my own zone 
 				hasMatch = false 
+--				reasons = reasons .. "[sawnOwnership] "
 			end
 		end
 		
@@ -227,6 +230,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 			-- only return spawners with this side
 			-- note: this will NOT work with neutral players 
 			hasMatch = false 
+--			reasons = reasons .. "[rawOwner] "
 		end
 		
 		if not aSpawner.requestable then 
@@ -235,6 +239,9 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 		
 		if hasMatch then 
 			table.insert(theSpawners, aSpawner)
+--			trigger.action.outText("+++Spwn: ELIGIBLE spawner <" .. aSpawner.name .. ">", 30)
+--		else 
+--			trigger.action.outText("+++Spwn: spawner <" .. aSpawner.name .. "> not eligible because " .. reasons, 30)
 		end
 	end
 	
@@ -327,6 +334,9 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 	troopData.target = aSpawner.target -- can be nil!
 	troopData.tracker = theZone.trackWith -- taken from ZONE!!, can be nil
 	troopData.range = aSpawner.range
+	troopData.code = aSpawner.code 
+	troopData.drivable = aSpawner.drivable 
+	
 	cfxSpawnZones.spawnedGroups[theData.name] = troopData 
 	
 	-- remember: orders are always lower case only 
@@ -345,7 +355,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 			AI.Option.Ground.val.ROE.WEAPON_HOLD, 
 			1.0)
 	else 
-		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders, aSpawner.moveFormation) 
+		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders, aSpawner.moveFormation, aSpawner.code, aSpawner.drivable) 
 		cfxGroundTroops.addGroundTroopsToPool(newTroops)
 		
 		-- see if we have defined a target zone as destination
@@ -610,6 +620,7 @@ function cfxSpawnZones.loadData()
 		local range = gdTroop.range
 		local cty = gData.cty 
 		local cat = gData.cat  
+		local code = gdTroop.code 
 		
 		-- now spawn, but first 
 		-- add to my own attacker queue so we can save later 
