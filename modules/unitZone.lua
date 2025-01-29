@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "2.0.0"
+unitZone.version = "2.0.1"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -8,16 +8,6 @@ unitZone.requiredLibs = {
 }
 --[[--
 	Version History 
-	1.0.0 - Initial Version
-	1.1.0 - DML flag integration 
-		  - method/uzMethod 
-	1.2.0 - uzOn?, uzOff?, triggerMethod
-	1.2.1 - uzDirect
-	1.2.2 - uzDirectInv 
-	1.2.3 - better guards for enterZone!, exitZone!, changeZone!
-		  - better guards for uzOn? and uzOff?
-	1.2.4 - more verbosity on uzDirect 
-	1.2.5 - reading config improvement
 	2.0.0 - matchAll option (internal, automatic look for "*" in names)
 		  - lookFor defaults to "*"
 		  - OOP dmlZones
@@ -27,6 +17,7 @@ unitZone.requiredLibs = {
 		  - unitZone now used to define the coalition, coalition DEPRECATED
 		  - filter synonym 
 		  - direct#, directInv# synonyms 
+	2.0.1 - code hardening 
 --]]--
 
 unitZone.unitZones = {}
@@ -182,15 +173,11 @@ function unitZone.createUnitZone(theZone)
 	
 	if unitZone.verbose or theZone.verbose then 
 		trigger.action.outText("+++uZne: processsed unit zone <" .. theZone.name .. "> with status = (" .. dcsCommon.bool2Text(theZone.lastStatus) .. ")", 30)
-	end
-	
+	end	
 end
-
-
 --
 -- process zone 
 --
-
 function unitZone.collectGroups(theZone)
 	local collector = {} -- players: units, groups: groups
 	if theZone.matching == "player" then 
@@ -231,7 +218,6 @@ end
 function unitZone.checkZoneStatus(theZone)
 	-- returns true (at least one unit found in zone)
 	-- or false (no unit found in zone)
-	
 	-- collect all groups to inspect 
 	local theGroups = unitZone.collectGroups(theZone)
 	local lookFor = theZone.lookFor
@@ -241,40 +227,44 @@ function unitZone.checkZoneStatus(theZone)
 		-- we check the names for players only 
 		-- collector holds units for players, not groups 
 		for idx, pUnit in pairs(theGroups) do
-			local puName = pUnit:getName()
-			local hasMatch = theZone.matchAll 
-			if not hasMatch then 
-				if theZone.lookForBeginsWith then 
-					hasMatch = dcsCommon.stringStartsWith(puName, lookFor)
-				else 
-					hasMatch = puName == lookFor 
+			if Unit.isExist(pUnit) then 
+				local puName = pUnit:getName()
+				local hasMatch = theZone.matchAll 
+				if not hasMatch then 
+					if theZone.lookForBeginsWith then 
+						hasMatch = dcsCommon.stringStartsWith(puName, lookFor)
+					else 
+						hasMatch = puName == lookFor 
+					end
+				end 
+				if hasMatch then 
+					if cfxZones.unitInZone(pUnit, theZone) then 
+						return true
+					end
 				end
 			end 
-			if hasMatch then 
-				if cfxZones.unitInZone(pUnit, theZone) then 
-					return true
-				end
-			end
 		end 
         
 	else 
 		-- we perform group check. 
 		for idx, aGroup in pairs(theGroups) do 
-			local gName=aGroup:getName()
-			local hasMatch = theZone.matchAll
-			if not hasMatch then 
-				if theZone.lookForBeginsWith then 
-					hasMatch = dcsCommon.stringStartsWith(gName, lookFor)
-				else 
-					hasMatch = gName == lookFor 
-				end
-			end 
-			if hasMatch and aGroup:isExist() then 
-				-- check all living units in zone 
-				local gUnits = aGroup:getUnits()
-				for idy, aUnit in pairs (gUnits) do
-					if cfxZones.unitInZone(aUnit, theZone) then 
-						return true
+			if Group.isExist(aGroup) then 
+				local gName=aGroup:getName()
+				local hasMatch = theZone.matchAll
+				if not hasMatch then 
+					if theZone.lookForBeginsWith then 
+						hasMatch = dcsCommon.stringStartsWith(gName, lookFor)
+					else 
+						hasMatch = gName == lookFor 
+					end
+				end 
+				if hasMatch and aGroup:isExist() then 
+					-- check all living units in zone 
+					local gUnits = aGroup:getUnits()
+					for idy, aUnit in pairs (gUnits) do
+						if cfxZones.unitInZone(aUnit, theZone) then 
+							return true
+						end
 					end
 				end
 			end
@@ -282,7 +272,6 @@ function unitZone.checkZoneStatus(theZone)
 	end
 	return false 
 end
-
 --
 -- update 
 --
@@ -365,7 +354,6 @@ function unitZone.update()
 		end 
 	end
 end
-
 --
 -- Config & Start
 --
@@ -375,11 +363,8 @@ function unitZone.readConfigZone()
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("unitZoneConfig")
 	end 
-	
 	unitZone.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	
 	unitZone.ups = cfxZones.getNumberFromZoneProperty(theZone, "ups", 1)
-	
 	if unitZone.verbose then 
 		trigger.action.outText("+++uZne: read config", 30)
 	end 
@@ -394,20 +379,16 @@ function unitZone.start()
 	if not dcsCommon.libCheck("cfx Unit Zone", unitZone.requiredLibs) then
 		return false 
 	end
-	
 	-- read config 
 	unitZone.readConfigZone()
-	
 	-- process cloner Zones 
 	local attrZones = cfxZones.getZonesWithAttributeNamed("unitZone")
 	for k, aZone in pairs(attrZones) do 
 		unitZone.createUnitZone(aZone) -- process attributes
 		unitZone.addUnitZone(aZone) -- add to list
 	end
-	
 	-- start update 
 	unitZone.update()
-	
 	trigger.action.outText("cfx Unit Zone v" .. unitZone.version .. " started.", 30)
 	return true 
 end
@@ -417,7 +398,6 @@ if not unitZone.start() then
 	trigger.action.outText("cfx Unit Zone aborted: missing libraries", 30)
 	unitZone = nil 
 end
-
 
 --ToDo: add 'neutral' support and add 'both' option 
 --ToDo: add API 

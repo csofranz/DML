@@ -1,5 +1,5 @@
 radioMenu = {}
-radioMenu.version = "4.0.2"
+radioMenu.version = "4.1.0"
 radioMenu.verbose = false 
 radioMenu.ups = 1 
 radioMenu.requiredLibs = {

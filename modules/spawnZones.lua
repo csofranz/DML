@@ -1,5 +1,5 @@
 cfxSpawnZones = {}
-cfxSpawnZones.version = "3.0.0"
+cfxSpawnZones.version = "3.0.1"
 cfxSpawnZones.requiredLibs = {
 	"dcsCommon", -- common is of course needed for everything
 	             -- pretty stupid to check for this since we 
@@ -19,11 +19,13 @@ cfxSpawnZones.spawnedGroups = {}
 --
 -- Zones that conform with this requirements spawn toops automatically
 --   *** DOES !NOT! EXTEND ZONES *** LINKED OWNER via masterOwner ***
+--       theSpawner.zone links back to dml zone that created spawner
 -- 
 --[[--
 -- version history 
    3.0.0 - supports zone-individual laser code for "lase" orders 
 		 - drivable attribute passed to groundTroops 
+   3.0.1 - increased vorbosity 
    
   --]]--
   
@@ -214,7 +216,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 		local delta = dcsCommon.distFlat(aPoint, cfxZones.getPoint(aZone))
 		if delta>aRange then 
 			hasMatch = false
---			reasons = reasons .. "[distance " .. math.floor(delta) .. "]
+			reasons = reasons .. "[distance " .. math.floor(delta) .. "] "
 		end 
 		if aSide ~= 0 then 
 			-- check if side is correct for owned zone 
@@ -222,7 +224,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 				-- failed ownership test. owner of master 
 				-- is not my own zone 
 				hasMatch = false 
---				reasons = reasons .. "[sawnOwnership] "
+				reasons = reasons .. "[spawnOwnership] "
 			end
 		end
 		
@@ -230,7 +232,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 			-- only return spawners with this side
 			-- note: this will NOT work with neutral players 
 			hasMatch = false 
---			reasons = reasons .. "[rawOwner] "
+			reasons = reasons .. "[rawOwner] "
 		end
 		
 		if not aSpawner.requestable then 
@@ -239,9 +241,13 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 		
 		if hasMatch then 
 			table.insert(theSpawners, aSpawner)
---			trigger.action.outText("+++Spwn: ELIGIBLE spawner <" .. aSpawner.name .. ">", 30)
---		else 
---			trigger.action.outText("+++Spwn: spawner <" .. aSpawner.name .. "> not eligible because " .. reasons, 30)
+			if aSpawner.zone.verbose then 
+				trigger.action.outText("+++Spwn: ELIGIBLE spawner <" .. aSpawner.name .. ">", 30)
+			end 
+		else 
+			if aSpawner.zone.verbose then 
+				trigger.action.outText("+++Spwn: spawner <" .. aSpawner.name .. "> not eligible because " .. reasons, 30)
+			end 
 		end
 	end
 	

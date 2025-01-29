@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "3.0.0"
+cfxMX.version = "3.0.1"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -22,6 +22,7 @@ cfxMX.verbose = false
    3.0.0 - patch coalition.addGroup() to build unit table for wasUnit
          - pre-populate spawnedUnits coa, cat from MX 
 		 - spawnedUnitGroupNameByName
+   3.0.1 - new getClosestUnitToPoint()
    
 --]]--
 
@@ -33,7 +34,7 @@ cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.unitIDbyName = {}
 cfxMX.groupCatByName = {}
-cfxMX.groupDataByName = {}
+cfxMX.groupDataByName = {} -- includes static groups!
 cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
 cfxMX.groupCoalitionByName = {}
 cfxMX.groupHotByName = {}
@@ -411,6 +412,34 @@ function cfxMX.allGroupsInZoneByData(theZone, cat) -- returns groups indexed by 
 		end
 	end
 	return theGroupsInZone, count 
+end
+
+function cfxMX.getClosestUnitToPoint(A, filter) -- uses MX!
+	if not A then return nil end 
+	if not filter then filter = "all" end 
+	local theUnit = nil
+	local uIdx = nil 
+	local theGroup = nil 
+	local ax = A.x 
+	local az = A.z 
+	local closest = math.huge 
+	for name, gData in pairs(cfxMX.groupDataByName) do 
+		if filter == "all" or filter == cfxMX.groupTypeByName[name] then 
+			for idx, uData in pairs(gData.units) do 
+				-- use square delta, immediate 
+				local dx = ax - uData.x
+				local dz = az - uData.y -- !!
+				local d = dx * dx + dz * dz 
+				if d < closest then 
+					theUnit = uData
+					theGroup = gData
+					closest = d 
+					uIdx = idx 
+				end 
+			end 
+		end
+	end
+	return theUnit, theGroup, uIdx, closest^0.5 
 end
 
 function cfxMX.isDynamicPlayer(theUnit)

@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "4.2.0"
+cfxHeloTroops.version = "4.2.1"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -19,6 +19,8 @@ cfxHeloTroops.requestRange = 500 -- meters
 	   - code cleanup
  4.2.0 - support for individual lase codes 
        - support for drivable 
+ 4.2.1 - increased verbosity
+	   - also supports 'pickupRang" for reverse-compatibility with manual typo.
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -492,9 +494,11 @@ function cfxHeloTroops.addGroundMenu(conf)
 end
 
 function cfxHeloTroops.filterTroopsByType(unitsToLoad)
+	if cfxHeloTroops.verbose then  trigger.action.outText("+++heloT: enter filterTroops", 30) end 
 	local filteredGroups = {}
 	for idx, aTeam in pairs(unitsToLoad) do 
 		local group = aTeam.group
+		if cfxHeloTroops.verbose then trigger.action.outText("+++heloT: testing group <" .. group:getName() .. ">", 30) end 
 		local theTypes = dcsCommon.getGroupTypeString(group)
 
 		local aT = dcsCommon.splitString(theTypes, ",")
@@ -504,11 +508,19 @@ function cfxHeloTroops.filterTroopsByType(unitsToLoad)
 			if cfxHeloTroops.legalTroops then 
 				if not dcsCommon.arrayContainsString(cfxHeloTroops.legalTroops, sT) then 
 					pass = false
+					if cfxHeloTroops.verbose then 
+						local gName = group:getName()
+						trigger.action.outText("+++heloT[legal]: type <" .. sT .. "> not in legalTroops, group <" .. gName .. "> discarded.", 30)
+					end
 					break 
 				end
 			else 
 				if not dcsCommon.typeIsInfantry(sT) then 
 					pass = false
+					if cfxHeloTroops.verbose then 
+						local gName = group:getName()
+						trigger.action.outText("+++heloT[common]: type <" .. sT .. "> not in dcsC.infantry, group <" .. gName .. "> discarded.", 30)
+					end
 					break 
 				end
 			end
@@ -519,12 +531,23 @@ function cfxHeloTroops.filterTroopsByType(unitsToLoad)
 				-- this one is managed by csarManager,
 				-- don't load it for helo troops
 				pass = false 
+				if cfxHeloTroops.verbose then 
+					local gName = group:getName()
+					trigger.action.outText("+++heloT[csar]: group <" .. gName .. "> filtered: is CSAR target.", 30)
+				end
 			end
 		end
 			
 		if pass then 
 			table.insert(filteredGroups, aTeam)
+			if cfxHeloTroops.verbose then 
+				local gName = group:getName()
+				trigger.action.outText("+++heloT[menu]: group <" .. gName .. "> added to available troops.", 30)
+			end
 		end
+	end
+	if cfxHeloTroops.verbose then 
+		trigger.action.outText("+++heloT[menu]: returning with <" .. #filteredGroups .. "> available groups", 30)
 	end
 	return filteredGroups
 end
@@ -981,6 +1004,9 @@ function cfxHeloTroops.readConfigZone()
 	cfxHeloTroops.autoDrop = theZone:getBoolFromZoneProperty("autoDrop", false)	
 	cfxHeloTroops.autoPickup = theZone:getBoolFromZoneProperty("autoPickup", false)
 	cfxHeloTroops.pickupRange = theZone:getNumberFromZoneProperty("pickupRange", 100)
+	if theZone:hasProperty("pickupRang") then 
+		cfxHeloTroops.pickupRange = theZone:getNumberFromZoneProperty("pickupRang", 100)
+	end 
 	cfxHeloTroops.combatDropScore = theZone:getNumberFromZoneProperty( "combatDropScore", 200)
 	
 	cfxHeloTroops.actionSound = theZone:getStringFromZoneProperty("actionSound", "Quest Snare 3.wav")

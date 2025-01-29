@@ -144,7 +144,7 @@ function jtacGrpUI.doCommandX(args)
 	local targetList = jtacGrpUI.collectJTACtargets(conf, true)
 	-- iterate the list
 	if #targetList < 1 then 
-		trigger.action.outTextForGroup(conf.id, "No targets are currently being lased", 30)
+		trigger.action.outTextForGroup(conf.id, "No targets are currently being lased by ground forces", 30)
 		trigger.action.outSoundForGroup(conf.id, jtacGrpUI.jtacSound)
 		return 
 	end

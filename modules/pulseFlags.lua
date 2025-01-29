@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "2.0.1"
+pulseFlags.version = "2.0.2"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -14,7 +14,7 @@ pulseFlags.requiredLibs = {
 	- 2.0.0 dmlZones / OOP
 	        using method on all outputs
 	- 2.0.1 activateZoneFlag now works correctly
-	
+	- 2.0.2 fixed scheduledTime bug while persisting 
 --]]--
 
 pulseFlags.pulses = {}
@@ -264,7 +264,11 @@ function pulseFlags.saveData()
  		pulseData.pulsePaused = thePulse.pulsePaused
 		pulseData.pulsesLeft = thePulse.pulsesLeft
 		pulseData.pulsing = thePulse.pulsing 
-		pulseData.scheduledTime = thePulse.scheduledTime - now 
+		if thePulse.scheduledTime then 
+			pulseData.scheduledTime = thePulse.scheduledTime - now 
+		else 
+			pulseData.scheduledTime = -1
+		end 
 		pulseData.hasPulsed = thePulse.hasPulsed
 		
 		allPulses[theName] = pulseData 
