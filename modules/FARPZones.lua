@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.2.0"
+FARPZones.version = "2.3.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -26,6 +26,8 @@ FARPZones.verbose = false
   2.1.0 - integration with camp: needs repairs, produceResourceVehicles()
   2.1.1 - loading a farp from data respaws all defenders and resource vehicles
   2.2.0 - changing a FARP's owner invokes SSBClient if it is loaded 
+  2.3.0 - new attributes redCap!, blueCap! captured! and farpMethod
+		- send out signals 
   
 --]]--
 
@@ -209,6 +211,19 @@ function FARPZones.createFARPFromZone(aZone)
 	theFarp.hidden = aZone:getBoolFromZoneProperty("hidden", false)
 	theFarp.showTitle = aZone:getBoolFromZoneProperty("showTitle", true)
 	theFarp.neutralProduction = aZone:getBoolFromZoneProperty("neutralProduction", false)
+	
+	-- capture signals 
+	if aZone:hasProperty("redCap!") then 
+		theFarp.redCap = aZone:getStringFromZoneProperty("redCap!", "none")
+	end 
+	if aZone:hasProperty("blueCap!") then 
+		theFarp.blueCap = aZone:getStringFromZoneProperty("blueCap!")
+	end
+	if aZone:hasProperty("captured!") then 
+		theFarp.captured = aZone:getStringFromZoneProperty("captured!", "none")
+	end 
+	theFarp.outMethod = aZone:getStringFromZoneProperty("farpMethod", "inc")
+	
 	return theFarp 
 end
 
@@ -415,7 +430,7 @@ function FARPZones.somethingHappened(event)
 	local ID = event.id
 	
 	--trigger.action.outText("FZ: something happened", 30) 
-	local aFarp = event.place
+	local aFarp = event.place -- place is type Airbase 
 	local zonedFarp = FARPZones.getFARPZoneForFARP(aFarp) 
 
 	if not zonedFarp then
@@ -447,6 +462,18 @@ function FARPZones.somethingHappened(event)
 	if newOwner == 2 then blueRed = "Blue" end 
 	trigger.action.outText("FARP " .. zonedFarp.zone.name .. " captured by " .. blueRed .."!", 30)
 	trigger.action.outSound("Quest Snare 3.wav")
+	
+	-- send out signals 
+	if zonedFarp.redCap and newOwner == 1 then 
+		cfxZones.pollFlag(zonedFarp.redCap, zonedFarp.outMethod, zonedFarp.zone) 
+	end 
+	if zonedFarp.blueCap and newOwner == 2 then 
+		cfxZones.pollFlag(zonedFarp.blueCap, zonedFarp.outMethod, zonedFarp.zone) 
+	end 
+	if zonedFarp.captured then 
+		cfxZones.pollFlag(zonedFarp.captured, zonedFarp.outMethod, zonedFarp.zone) 
+	end
+	
 	zonedFarp.owner = newOwner
 	zonedFarp.zone.owner = newOwner 
 	-- update color in map 

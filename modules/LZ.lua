@@ -99,7 +99,8 @@ function LZ.createLZWithZone(theZone)
 	if LZ.verbose or theZone.verbose then 
 		trigger.action.outText("+++LZ: new LZ <".. theZone.name ..">", 30)
 	end
-	
+
+	trigger.action.outText("zone <" .. theZone.name .. "> type of radius is <" .. type(theZone.radius) .. ">, val = " .. tonumber(theZone.radius), 30)
 end
 
 function LZ.nameMatchForArray(theName, theArray, wildcard)
@@ -226,9 +227,13 @@ function LZ:onEvent(event)
 	local theUnit = event.initiator
 	if not Unit.isExist(theUnit) then return end 
 	local p = theUnit:getPoint()
-	
+
     for idx, aZone in pairs(LZ.LZs) do 
 		-- see if inside the zone 
+		if LZ.verbose then 
+			trigger.action.outText("+++LZ: zone <" .. aZone.name .. "> for unit <" .. theUnit:getName() .. "> proccing", 30)
+		end 
+		if true then return end 
 		local inZone, percent, dist = cfxZones.pointInZone(p, aZone)
 		if inZone then 
 			-- see if this unit interests us at all 

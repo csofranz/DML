@@ -164,7 +164,8 @@ function cfxSmokeZone.start()
 	timer.scheduleFunction(cfxSmokeZone.checkFlags, {}, timer.getTime() + 1)
 	
 	-- say hi
-	trigger.action.outText("cfx Smoke Zones v" .. cfxSmokeZone.version .. " started.", 30)
+
+	trigger.action.outText("cfx smoke zones v" .. cfxSmokeZone.version .. " started.", 30)
 	return true 
 end
 

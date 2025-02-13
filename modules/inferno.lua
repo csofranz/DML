@@ -1,9 +1,14 @@
 inferno = {}
-inferno.version = "1.0.0"
+inferno.version = "1.0.1"
 inferno.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
 }
+
+--[[-- Version History
+	1.0.0 - Initial version 
+	1.0.1 - cleanup 
+--]]--
 --
 -- Inferno models fires inside inferno zones. Fires can spread and 
 -- be extinguished by aircraft from the airtank module 
@@ -91,19 +96,9 @@ function inferno.buildGrid(theZone)
 			local lp = {x=xc, y=zc}
 			local yc = land.getHeight(lp)
 			ele.center = {x=xc, y=yc, z=zc}
-			--[[--
-			if theZone.markCell then 
-				dcsCommon.createStaticObjectForCoalitionAtLocation(0, ele.center, dcsCommon.uuid(theZone.name), "Black_Tyre_RF", 0, false) 
-				
-				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x - cellx/2, y=0, z=ele.center.z - cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
-				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x + cellx/2, y=0, z=ele.center.z - cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
-				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x - cellx/2, y=0, z=ele.center.z + cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
-				dcsCommon.createStaticObjectForCoalitionAtLocation(0, {x=ele.center.x + cellx/2, y=0, z=ele.center.z + cellz/2}, dcsCommon.uuid(theZone.name), "Windsock", 0, false)
-			end
-			--]]--
 			ele.fxpos = {x=xf, y=yc, z=zf}
 			ele.myType = land.getSurfaceType(lp) -- LAND=1, SHALLOW_WATER=2, WATER=3, ROAD=4, RUNWAY=5
-			-- we don not burn if a cell has shallow or deep water, or roads or runways 
+			-- we do not burn if a cell has shallow or deep water, or roads or runways 
 			ele.inside = theZone:pointInZone(ele.center)
 			if theZone.freeBorder then 
 				if x == 1 or x == numX then ele.inside = false end
@@ -120,15 +115,6 @@ function inferno.buildGrid(theZone)
 					until land.getSurfaceType(lp) == 1 
 					ele.fxpos = {x=xf, y=yc, z=zf}
 				end
-				
-				-- place a fire on the cell
-				if theZone.fullBlaze then 
-					ele.fxname = dcsCommon.uuid(theZone.name)
-					trigger.action.effectSmokeBig(ele.fxpos, 4, 0.5 , ele.fxname)
-					ele.myStage = inferno.maxStages 
-					ele.fxsize = 4 
-					theZone.burning = true 
-				end 
 				local sparkable = {x=x, z=z}
 				table.insert(goodCells, sparkable)
 				fCount = fCount + 1 
@@ -180,7 +166,7 @@ function inferno.readZone(theZone)
 	theZone.freeBorder = theZone:getBoolFromZoneProperty("freeBorder", true) -- ring zone with non-burning zones
 	theZone.eternal = theZone:getBoolFromZoneProperty("eternal", true)
 	theZone.stagger = theZone:getBoolFromZoneProperty("stagger", true) -- randomize inside cell
-	theZone.fullBlaze = theZone:getBoolFromZoneProperty("fullBlaze", false )
+--	theZone.fullBlaze = theZone:getBoolFromZoneProperty("fullBlaze", false )
 	theZone.canSpread = theZone:getBoolFromZoneProperty("canSpread", true)
 	theZone.maxSpread = theZone:getNumberFromZoneProperty("maxSpread", 999999)
 	theZone.impactSmoke = theZone:getBoolFromZoneProperty("impactSmoke", inferno.impactSmoke)
@@ -201,7 +187,6 @@ function inferno.readZone(theZone)
 	end
 	
 end
-
 --
 -- API for water droppers 
 --
@@ -234,7 +219,6 @@ function inferno.waterInZone(theZone, p, amount)
 	end 
 	local ele = row[zc]
 	
---	local ele = theZone.grid[xc][zc]
 	if not ele then 
 		trigger.action.outText("Inferno: no ele for <" .. theZone.name .. ">: x<" .. x .. ">z<" .. z .. ">", 30)
 		trigger.action.outText("with xc = " .. xc .. ", numX 0 " .. theZone.numX .. ", zc = " .. zc .. ", numZ=" .. theZone.numZ, 30)
@@ -264,8 +248,6 @@ function inferno.waterInZone(theZone, p, amount)
 		xc = xc + ofx 
 		zc = zc + ofz 
 		ele = theZone.grid[xc][zc]
---	else 
---		trigger.action.outText("inferno dropper: NO ALIGNMENT, beds are burning.", 30)
 	end 
 	if theZone.impactSmoke then 
 		if inferno.verbose then 
@@ -332,16 +314,13 @@ function inferno.waterDropped(p, amount, data) -- if returns non-nil, has hit a 
 	end
 	return nil 
 end
-
 --
 -- IGNITE & DOUSE 
 --
 function inferno.sparkCell(theZone, x, z)
 	local ele = theZone.grid[x][z]
 	if not ele.inside then 
-		if theZone.verbose then 
-			trigger.action.outText("ele x<" .. x .. ">z<" .. z .. "> is outside, no spark!", 30)
-		end 
+		if theZone.verbose then trigger.action.outText("ele x<" .. x .. ">z<" .. z .. "> is outside, no spark!", 30) end 
 		return 
 	false end 
 	ele.fxname = dcsCommon.uuid(theZone.name)
@@ -383,16 +362,11 @@ function inferno.ignite(theZone)
 end
 
 function inferno.startFire(theZone)
-	if theZone.burning then 
-		return 
-	end
+	if theZone.burning then return end
 	inferno.ignite(theZone)
 end
 
 function inferno.douseFire(theZone)
---	if not theZone.burning then 
---		return 
---	end
 	-- walk the grid, and kill all flames, set all eles 
 	-- to end state 
 	for x=1, theZone.numX do
@@ -660,24 +634,7 @@ function inferno.readConfigZone()
 	inferno.ups = theZone:getNumberFromZoneProperty("ups", 1)
 	inferno.fireTick = theZone:getNumberFromZoneProperty("fireTick", 10)
 	inferno.cellSize = theZone:getNumberFromZoneProperty("cellSize", 100)
-	--[[
-	inferno.menuName = theZone:getStringFromZoneProperty("menuName", "Firefighting")
-	inferno.impactSmoke = theZone:getBoolFromZoneProperty("impactSmoke", false) 
 
-	if theZone:hasProperty("attachTo:") then 
-		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
-		if radioMenu then -- requires optional radio menu to have loaded 
-			local mainMenu = radioMenu.mainMenus[attachTo]
-			if mainMenu then 
-				inferno.mainMenu = mainMenu 
-			else 
-				trigger.action.outText("+++inferno: cannot find super menu <" .. attachTo .. ">", 30)
-			end
-		else 
-			trigger.action.outText("+++inferno: REQUIRES radioMenu to run before inferno. 'AttachTo:' ignored.", 30)
-		end 
-	end 
-	--]]--
 	if theZone:hasProperty("fire#") then 
 		inferno.fireNum = theZone:getStringFromZoneProperty("fire#", "none")
 	end 

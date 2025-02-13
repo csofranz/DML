@@ -1,11 +1,19 @@
 airtank = {}
-airtank.version = "1.0.0"
+airtank.version = "1.0.1"
 -- Module to extinguish fires controlled by the 'inferno' module.
 -- For 'airtank' fire extinguisher aircraft modules. 
 airtank.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
 }
+
+--[[--
+	Version History
+	1.0.0 - Initial release 
+	1.0.1 - removed attachTo: bug 
+	
+--]]--
+
 airtank.tanks = {} -- player data by GROUP name, will break with multi-unit groups 
 -- tank attributes 
 -- pumpArmed -- for hovering fills. 
@@ -192,9 +200,20 @@ function airtank.installMenusForUnit(theUnit) -- assumes all unfit types are wee
 	local pRoot = airtank.roots[gName]
 	if pRoot then 
 		missionCommands.removeItemForGroup(gID, pRoot)
+		pRoot = nil
 	end
+	
+	-- handle main menu 
+	local mainMenu = nil 
+	if airtank.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(airtank.mainMenu) 
+	end 
+	
 	-- now add the airtank menu 
-	pRoot = missionCommands.addSubMenuForGroup(gID, airtank.menuName, airtank.mainMenu) 
+	pRoot = missionCommands.addSubMenuForGroup(gID, airtank.menuName, mainMenu) 
+	if airtank.verbose and airtank.mainMenu then 
+		trigger.action.outText("+++airT: attaching airtank menu of group <" .. gName .. "> to existing root", 30)
+	end 
 	airtank.roots[gName] = pRoot -- save for later 
 	local args = {gName, uName, gID, uType, pName}
 	-- menus: 
@@ -535,7 +554,10 @@ function airtank.readConfigZone()
 		if radioMenu then -- requires optional radio menu to have loaded 
 			local mainMenu = radioMenu.mainMenus[attachTo]
 			if mainMenu then 
-				airtank.mainMenu = mainMenu 
+				airtank.mainMenu = mainMenu -- the zone. 
+				if airtank.verbose or theZone.verbose then 
+					trigger.action.outText("+++airT: attached to menu from zone <" .. theZone.name .. ">", 30)
+				end 
 			else 
 				trigger.action.outText("+++airtank: cannot find super menu <" .. attachTo .. ">", 30)
 			end

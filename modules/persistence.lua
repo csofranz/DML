@@ -175,7 +175,7 @@ function persistence.saveTable(theTable, fileName, shared, append)
 	if not shared then shared = false end 
 
 	net.log("persistence: before json conversion")
-	local theString = net.lua2json(theTable)
+	local theString = net.lua2json(theTable) -- WARNING! does not handle arrays with [0]! 
 	net.log("persistence: json conversion complete")
 
 	if not theString then theString = "" end 

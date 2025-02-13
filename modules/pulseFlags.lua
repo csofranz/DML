@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "2.0.2"
+pulseFlags.version = "2.0.3"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,6 +15,7 @@ pulseFlags.requiredLibs = {
 	        using method on all outputs
 	- 2.0.1 activateZoneFlag now works correctly
 	- 2.0.2 fixed scheduledTime bug while persisting 
+	- 2.0.3 now setting -1 (infinite) as pulses works correctly 
 --]]--
 
 pulseFlags.pulses = {}
@@ -56,14 +57,20 @@ function pulseFlags.createPulseWithZone(theZone)
 	
 	theZone.pulses = -1 -- set to infinite 
 	if theZone:hasProperty("pulses") then 
-		local minP, maxP = theZone:getPositiveRangeFromZoneProperty("pulses", 1)
-		if minP == maxP then theZone.pulses = minP 
+		local tt = theZone:getStringFromZoneProperty("pulses", -1)
+		tn = tonumber(tt) -- returns nil for a range 
+		if tn then 
+			if tn < 1 then theZone.pulses = -1 else theZone.pulses = tn end
 		else 
-			theZone.pulses = cfxZones.randomInRange(minP, maxP)
+			local minP, maxP = theZone:getPositiveRangeFromZoneProperty("pulses", 1)
+			if minP == maxP then theZone.pulses = minP 
+			else 
+				theZone.pulses = cfxZones.randomInRange(minP, maxP)
+			end
 		end
 	end
-	if pulseFlags.verbose or theZone.verbose then 
-		trigger.action.outText("+++pulF: zone <" .. theZone.name .. "> set to <" .. theZone.pulses .. "> pulses", 30)
+	if theZone.verbose or pulseFlag.verbose then
+		trigger.action.outText("+++pulF: set pulses in <" .. theZone.name .. "> to <" .. theZone.pulses .. ">", 30)
 	end
 
 	theZone.pulsesLeft = 0 -- will start new cycle 

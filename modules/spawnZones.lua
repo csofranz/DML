@@ -232,7 +232,7 @@ function cfxSpawnZones.getRequestableSpawnersInRange(aPoint, aRange, aSide)
 			-- only return spawners with this side
 			-- note: this will NOT work with neutral players 
 			hasMatch = false 
-			reasons = reasons .. "[rawOwner] "
+			reasons = reasons .. "[rawOwner is <" .. aSpawner.rawOwner .. ">, need <" .. aSide .. ">] "
 		end
 		
 		if not aSpawner.requestable then 
@@ -258,21 +258,14 @@ end
 -- 
 function cfxSpawnZones.verifySpawnOwnership(spawner)
 	-- returns false ONLY if masterSpawn disagrees
+	-- i.e. when masterOwner is not the same as spawner.rawOwner 
 	if not spawner.masterZoneName then 
-		--trigger.action.outText("spawner " .. spawner.name .. " no master, go!", 30)
+		if spawner.zone.verbose then trigger.action.outText("spawner " .. spawner.name .. " no masterOwner, go!", 30) end
 		return true 
 	end -- no master owner, all ok
 	local myCoalition = spawner.rawOwner
---	local masterZone = cfxZones.getZoneByName(spawner.masterZoneName)
---	if not masterZone then 
---		trigger.action.outText("spawner " .. spawner.name .. " DID NOT FIND MASTER ZONE <" .. spawner.masterZoneName .. ">", 30)
---		return false 
---	end
 	local masterZone = spawner.masterZone 
---	if not masterZone.owner then 
-		--trigger.action.outText("spawner " .. spawner.name .. " - masterZone " .. masterZone.name .. " HAS NO OWNER????", 30)
---		return true 
---	end
+	if spawner.zone.verbose then trigger.action.outText("spawner " .. spawner.name .. " has masterOwner <" .. masterZone.name .. ">", 30) end
 	
 	if (myCoalition ~= masterZone:getCoalition()) then 
 		-- can't spawn, surrounding area owned by enemy

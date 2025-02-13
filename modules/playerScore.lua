@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.1.0"
+cfxPlayerScore.version = "5.2.1"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -15,7 +15,10 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - improved wildcard support
 		  - event 20 for CA also supported 
 		  - "threading the needle" -- support for hit event and unit traceback
-		  
+	5.2.0 - PlayerScoreTable supports wildcards, e.g. "Batumi*" 
+	5.2.1 - Event 20 (CA join) corrected typo 	  
+		  - wiping score on enter and birth 
+		  - more robust initscore 
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore
 	TODO: better wildcard support for kill events 
@@ -42,7 +45,8 @@ cfxPlayerScore.killZones = {} -- when set, kills only count here
 -- typeScore: dictionary sorted by typeString for score 
 -- extend to add more types. It is used by unitType2score to 
 -- determine the base unit score  
-cfxPlayerScore.typeScore = {} -- ALL UPPERCASE NOW!!!
+cfxPlayerScore.typeScore = {} -- ALL UPPERCASE
+cfxPlayerScore.wildTypes = {} -- ALL UPPERCASE
 cfxPlayerScore.lastPlayerLanding = {} -- timestamp, by player name  
 cfxPlayerScore.delayBetweenLandings = 30 -- seconds to count as separate landings, also set during take-off to prevent janky t/o to count. 
 cfxPlayerScore.aircraft = 50 
@@ -191,8 +195,18 @@ function cfxPlayerScore.cat2BaseScore(inCat)
 	trigger.action.outText("+++scr c2bs: unknown category for lookup: <" .. inCat .. ">, returning 1", 30)
 	return 1 
 end
+function cfxPlayerScore.wildMatch(inName)
+	-- if inName starts the same as any wildcard, return score  
+	for wName, wScore in pairs (cfxPlayerScore.wildTypes) do 
+		if dcsCommon.stringStartsWith(inName, wName, true) then 
+			if cfxPlayerScore.verbose then trigger.action.outText("+++PScr: wildmatch <" .. inName .. "> to <" .. wName .. ">, score <" .. wScore .. ">", 30) end 
+			return wScore 
+		end 
+	end
+	return nil
+end
 
-function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
+function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group, go by type 
 	if not inVictim then return 0 end
 	if not killSide then killSide = -1 end 
 	local inName 
@@ -224,6 +238,7 @@ function cfxPlayerScore.object2score(inVictim, killSide) -- does not have group
 		-- try the type desc 
 		local theType = inVictim:getTypeName()
 		if theType then objectScore = cfxPlayerScore.typeScore[theType:upper()] end 
+		if not objectScore then objectScore = cfxPlayerScore.wildMatch(theType) end 
 	end
 	if type(objectScore) == "string" then objectScore = tonumber(objectScore)end
 	if objectScore then return objectScore end
@@ -277,16 +292,25 @@ function cfxPlayerScore.unit2score(inUnit)
 	-- simply extend by adding items to the typescore table.concat
 	-- we first try by unit name. This allows individual
 	-- named hi-value targets to have individual scores 
-	local uScore 
-	if vicName then uScore = cfxPlayerScore.typeScore[vicName:upper()] end 
+	local uScore = nil 
+	if vicName then 
+		uScore = cfxPlayerScore.typeScore[vicName:upper()]
+		if not uScore then uScore = cfxPlayerScore.wildMatch(vicName) end 
+	end 
 	-- see if all members of group score 
 	if (not uScore) then -- and vicGroup then 
 		local grpName = cfxMX.spawnedUnitGroupNameByName[vicName]--vicGroup:getName()
-		if grpName then uScore = cfxPlayerScore.typeScore[grpName:upper()] 	 end 
+		if grpName then 
+			uScore = cfxPlayerScore.typeScore[grpName:upper()]
+			if not uScore then uScore = cfxPlayerScore.wildMatch(grpName) end
+		end 
 	end
 	if not uScore then 
 		-- WE NOW TRY TO ACCESS BY VICTIM'S TYPE STRING	
-		if vicType then uScore = cfxPlayerScore.typeScore[vicType:upper()] 	end 
+		if vicType then 
+			uScore = cfxPlayerScore.typeScore[vicType:upper()] 	
+			if not uScore then uScore = cfxPlayerScore.wildMatch(vicType) end
+		end 
 	end 
 	if type(uScore) == "string" then uScore = tonumber(uScore) end
 	if not uScore then uScore = 0 end 
@@ -299,7 +323,8 @@ end
 function cfxPlayerScore.getPlayerScore(playerName)
 	local thePlayerScore = cfxPlayerScore.playerScore[playerName]
 	if not thePlayerScore then 
-		thePlayerScore = {}
+		thePlayerScore = cfxPlayerScore.createNewPlayerScore(playerName)
+--[[--		thePlayerScore = {}
 		thePlayerScore.name = playerName
 		thePlayerScore.score = 0 -- score
 		thePlayerScore.scoreaccu = 0 -- for deferred 
@@ -308,9 +333,41 @@ function cfxPlayerScore.getPlayerScore(playerName)
 		thePlayerScore.totalKills = 0 -- number of kills total 
 		thePlayerScore.featTypes = {} -- dict <featname> <number> of other things player did 
 		thePlayerScore.featQueue = {} -- when using deferred 
-		thePlayerScore.totalFeats = 0		
+		thePlayerScore.totalFeats = 0	
+--]]--		
 	end
 	return thePlayerScore
+end
+
+function cfxPlayerScore.createNewPlayerScore(playerName)
+	local thePlayerScore = {}
+	thePlayerScore.name = playerName
+	thePlayerScore.score = 0 -- score
+	thePlayerScore.scoreaccu = 0 -- for deferred 
+	thePlayerScore.killTypes = {} -- the type strings killed, dict <typename> <numkilla>
+	thePlayerScore.killQueue = {} -- when using deferred
+	thePlayerScore.totalKills = 0 -- number of kills total 
+	thePlayerScore.featTypes = {} -- dict <featname> <number> of other things player did 
+	thePlayerScore.featQueue = {} -- when using deferred 
+	thePlayerScore.totalFeats = 0
+	return thePlayerScore
+end
+
+function cfxPlayerScore.wipeScore(playerName) 
+	if cfxPlayerScore.verbose then trigger.action.outText("+++pScr: enter wipe score for player <" .. playerName .. ">", 30) end 
+	if not cfxPlayerScore.playerScore[playerName] then return end 
+	thePlayerScore = cfxPlayerScore.getPlayerScore(playerName)
+	local loss = false 
+	if thePlayerScore.scoreaccu > 0 then loss = true end 
+	if dcsCommon.getSizeOfTable(thePlayerScore.featQueue) > 0 then loss = true end 
+	if dcsCommon.getSizeOfTable(thePlayerScore.killQueue) > 0 then loss = true end 
+	thePlayerScore.scoreaccu = 0
+	thePlayerScore.killQueue = {}
+	thePlayerScore.featQueue = {}
+	cfxPlayerScore.setPlayerScore(playerName, thePlayerScore) -- write back 
+	if loss then 
+		trigger.action.outText("Player " .. playerName .. " lost score.", 30) -- everyone sees this
+	end 
 end
 
 function cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
@@ -511,6 +568,7 @@ function cfxPlayerScore.isNamedUnit(theUnit)
 		if not theName then return false end 
 	end
 	if cfxPlayerScore.typeScore[theName:upper()] then return true end
+	if cfxPlayerScore.wildMatch(theName) then return true end 
 	return false 
 end
 
@@ -806,9 +864,7 @@ function cfxPlayerScore.scheduledAward(args)
 	local playerName = args[1]
 	local unitName = args[2]
 	local theUnit = Unit.getByName(unitName)
-	if not theUnit or 
-	   not Unit.isExist(theUnit) 
-	then 
+	if not theUnit or (not Unit.isExist(theUnit)) then 
 		-- unit is gone
 		trigger.action.outText("Player <" .. playerName .. "> lost score.", 30)
 		return 
@@ -890,6 +946,7 @@ function cfxPlayerScore.scheduledAward(args)
 	-- output score 
 	desc = desc .. "\n"
 	if hasAward then trigger.action.outTextForCoalition(coa, desc, 30) end 
+	-- do NOT kill the entire record, or accu kills and feats are gone too
 end
 
 function cfxPlayerScore.handlePlayerDeath(theEvent)
@@ -903,6 +960,9 @@ function cfxPlayerScore.handlePlayerDeath(theEvent)
 	local pName = cfxPlayerScore.unit2player[uName] 
 	if pName then 
 		-- this was a player name with link still live.
+		-- cancel all scores accumulated 
+		cfxPlayerScore.wipeScore(pName)
+		
 		if cfxPlayerScore.planeLoss ~= 0 then 
 			-- plane loss has IMMEDIATE consequences 
 			cfxPlayerScore.updateScoreForPlayerImmediate(pName, cfxPlayerScore.planeLoss)
@@ -943,10 +1003,10 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 			if who then 
 				name = "(inval initi)"
 				if who.getName then name = who:getName() end 
-				if not name then -- WTF??? could be a weapon 
-					name = "!nil getName!"
+				if not name or (#name < 1) then -- WTF??? could be a weapon 
+					name = "!no getName!"
 					if who.getTypeName then name = who:getTypeName() end 
-					if not name then name = "WTFer" end
+					if not name or (#name < 1) then name = "WTFer" end
 				end
 			end
 			
@@ -963,7 +1023,7 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 	-- a hit event will save the last player to hit 
 	-- so we can attribute with unit lost 
 	if theEvent.id == 2 then -- hit processing
-		if cfxPlayerScore.verbose then 	trigger.action.outText("enter hit pre-processing", 30) end
+--		if cfxPlayerScore.verbose then 	trigger.action.outText("enter hit pre-processing", 30) end
 		local who = theEvent.initiator
 		if not who.getPlayerName then return false end -- non-player originator
 		local pName = who:getPlayerName() 
@@ -981,7 +1041,10 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 	
 	-- check if this was FORMERLY a player plane 
 	local theUnit = theEvent.initiator 
-	if not theUnit.getName then return end -- fix for DCS update bug 
+	if not theUnit.getName then 
+--		trigger.action.outText("+++pScr: no unit name, DCS err - abort.", 30)
+		return false 
+	end -- fix for DCS update bug 
 	local uName = theUnit:getName()
 	if cfxPlayerScore.unit2player[uName] then 
 		-- this requires special IMMEDIATE handling when event is
@@ -1017,6 +1080,7 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 			-- credit unit and current person driving that unit
 			-- there is a small percentage that this is wrong 
 			-- player, but that's an edge case 
+			-- if no player inhabits killing unit any more, no score attributed 
 			cfxPlayerScore.processKill(theUnit, who)
 		end
 		return false 
@@ -1054,8 +1118,11 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 	
 	-- enter unit / birth event for players initializes score if 
 	-- not existed, and nils the queue. 20 creates compat with CA  
-	if theEvent == 20 or -- enter unit 
+	if theEvent.id == 20 or -- enter unit 
 		theEvent.id == 15 then -- player birth
+		-- since we get into a new plane, erase all pending score 
+		local pName = theUnit:getPlayerName()
+		cfxPlayerScore.wipeScore(pName)
 		-- link player with their unit
 		cfxPlayerScore.linkUnitWithPlayer(theUnit)
 		cfxPlayerScore.unitSpawnTime[uName] = timer.getTime() -- to detect 'early landing' 
@@ -1110,6 +1177,7 @@ end
 
 function cfxPlayerScore.handleScoreEvent(theEvent)
 	cfxPlayerScore.currentEventUnit = theEvent.initiator 
+	if cfxPlayerScore.verbose then trigger.action.outText("Set currentEventUnit to <" .. theEvent.initiator:getName() .. ">", 30) end 
 	if theEvent.id == 28 then 
 		-- kill from player detected.
 		cfxPlayerScore.killDetected(theEvent)	
@@ -1361,12 +1429,30 @@ function cfxPlayerScore.start()
 	if not dcsCommon.libCheck("cfx Player Score", cfxPlayerScore.requiredLibs) 
 	then return false end
 	
+	-- only read verbose flag 
+	-- now read my config zone 
+	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
+	if theZone then cfxPlayerScore.verbose = theZone.verbose end 
+	
 	-- read my score table 
 	-- identify and process a score table zones
 	local theZone = cfxZones.getZoneByName("playerScoreTable") 
 	if theZone then 
+		if cfxPlayerScore.verbose then trigger.action.outText("+++pScr: has playerSocreTable", 30) end 
 		-- read all into my types registry, replacing whatever is there
 		cfxPlayerScore.typeScore = theZone:getAllZoneProperties(true) -- true = get all properties in UPPER case 
+		-- CASE INSENSITIVE!!!!!
+		-- now process all wildcarded types and add them to my wildTypes
+		cfxPlayerScore.wildTypes = {}
+		for theType, theScore in pairs(cfxPlayerScore.typeScore) do 
+			if dcsCommon.stringEndsWith(theType, "*") then 
+				local wcType = dcsCommon.removeEnding(theType, "*")
+				cfxPlayerScore.wildTypes[wcType] = theScore
+				if cfxPlayerScore.verbose then 
+					trigger.action.outText("+++PScr: wildcard type/name <" .. wcType .. "> with score <" .. theScore .. "> registered", 30)
+				end
+			end
+		end 
 	end 
 	
 	-- read score tiggers and values
@@ -1398,10 +1484,11 @@ function cfxPlayerScore.start()
 			cfxPlayerScore.blueTriggerFlags[tName] = trigger.misc.getUserFlag(tName)
 		end
 	end 	
-	-- now read my config zone 
+	-- now read my config zone. reading late 
 	local theZone = cfxZones.getZoneByName("playerScoreConfig") 
 	if not theZone then theZone = cfxZones.createSimpleZone("playerScoreConfig") end 
 	cfxPlayerScore.readConfigZone(theZone)
+	
 	-- read all scoreSafe zones 
 	local safeZones = cfxZones.zonesWithProperty("scoreSafe")
 	for k, aZone in pairs(safeZones) do

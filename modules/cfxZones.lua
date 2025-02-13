@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.5.1" 
+cfxZones.version = "4.5.2" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -40,7 +40,8 @@ cfxZones.version = "4.5.1"
 		  - rnd in bool can have = xxx param for percentage
 		  - getSmokeColorNumberFromZoneProperty()
 -4.5.1    - moved processSimpleZoneDynamics to common 
-
+-4.5.2    - NEW getAllZoneProperties()
+		  - guard agains DCS radius stored as sting (WTF, ED?)
 --]]--
 
 --
@@ -170,13 +171,13 @@ function cfxZones.readFromDCS(clearfirst)
 			if zoneType == 0 then 
 				-- circular zone 
 				newZone.isCircle = true 
-				newZone.radius = dcsZone.radius
+				newZone.radius = tonumber(dcsZone.radius)
 				newZone.maxRadius = newZone.radius -- same for circular
 	
 			elseif zoneType == 2 then
 				-- polyZone
 				newZone.isPoly = true 
-				newZone.radius = dcsZone.radius -- radius is still written in DCS, may change later. The radius has no meaning and is the last radius written before zone changed to poly.
+				newZone.radius = tonumber(dcsZone.radius) -- radius is still written in DCS, may change later. The radius has no meaning and is the last radius written before zone changed to poly.
 				-- note that newZone.point is only inside the tone for 
 				-- convex polys, and DML only correctly works with convex polys
 				-- now transfer all point in the poly
@@ -460,24 +461,6 @@ function cfxZones.createRandomPointInPopulatedZone(theZone, radius, maxTries)
 	return p, dx, dz
 end
 
---[[--
-function dmlZone:createRandomPointInPopulatedZone(radius, maxTries)
-	if not maxTries then maxTries = 20 end 
-	local cnt = 0
-	local p, dx, dz
-	p, dx, dz = self:createRandomPointInZone() -- p is x, 0, z 
-	repeat
-		local hits = cfxZones.objectsInRange(p, radius) 
-		if hits < 1 then return p, dx, dz end 
-		-- move to the right by radius
-		p.z = p.z + radius
-		dz = dz + radius 
-		cnt = cnt + 1
-		trigger.action.outText("failed try " .. cnt, 30)
-	until cnt > maxTries
-	return p, dx, dz
-end
---]]--
 function cfxZones.objectHandler(theObject, theCollector) -- for world.search
 	table.insert(theCollector, theObject)
 	return true 
@@ -1635,7 +1618,6 @@ function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
 end
 
 function cfxZones.pollFlag(theFlag, method, theZone) 
-	--trigger.action.outText("enter pollflag for flag <" .. theFlag .. "> of zone <" .. theZone.name .. ">", 30)
 	local allFlags = {}
 	if dcsCommon.containsString(theFlag, ",") then 
 		if cfxZones.verbose then 
@@ -2157,6 +2139,7 @@ function cfxZones.getAllZoneProperties(theZone, caseInsensitive, numbersOnly) --
 		local theKey = "dummy"
 		if string.len(theProp.key) > 0 then theKey = theProp.key end 
 		if caseInsensitive then theKey = theKey:upper() end 
+		theKey = dcsCommon.trim(theKey)
 		local v = theProp.value 
 		if numbersOnly then 
 			v = tonumber(v)
@@ -2170,6 +2153,29 @@ end
 function dmlZone:getAllZoneProperties(caseInsensitive, numbersOnly)
 	return cfxZones.getAllZoneProperties(self, caseInsensitive, numbersOnly)
 end
+
+function cfxZones.getAllPropertyNames(theZone, caseInsensitive) -- return as array 
+	if not caseInsensitive then caseInsensitive = false end 
+	if not theZone then return {} end 
+	local dcsProps = theZone.properties -- zone properties in dcs format 
+	local props = {}
+	-- dcs has all properties as array with values .key and .value 
+	-- so convert them into a dictionary 
+	for i=1, #dcsProps do 
+		local theProp = dcsProps[i]
+		local theKey = "dummy"
+		if string.len(theProp.key) > 0 then theKey = tostring(theProp.key) end 
+		if caseInsensitive then theKey = theKey:upper() end 
+		theKey = dcsCommon.trim(theKey)
+		table.insert(props, theKey)
+	end
+	return props 
+end
+
+function dmlZone:getAllPropertyNames(caseInsensitive)
+	return cfxZones.getAllZoneProperties(self, caseInsensitive)
+end
+
 
 function cfxZones.extractPropertyFromDCS(theKey, theProperties)
 -- trim
@@ -2815,26 +2821,6 @@ end
 
 function dmlZone:getSmokeColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
 	return cfxZones.getSmokeColorStringFromZoneProperty(self, theProperty, default)
-	--[[
-	if not default then default = "red" end 
-	local s = self:getStringFromZoneProperty(theProperty, default)
-	s = s:lower()
-	s = dcsCommon.trim(s)
-	-- check numbers 
-	if (s == "0") then return "green" end
-	if (s == "1") then return "red" end
-	if (s == "2") then return "white" end
-	if (s == "3") then return "orange" end
-	if (s == "4") then return "blue" end
-	
-	if s == "green" or
-	   s == "red" or
-	   s == "white" or
-	   s == "orange" or
-	   s == "blue" then return s end
-
-	return default 
-	--]]
 end
 
 function cfxZones.getSmokeColorNumberFromZoneProperty(theZone, theProperty, default) -- smoke as 'red', 'green', or 1..5
@@ -2892,28 +2878,7 @@ end
 
 function dmlZone:getFlareColorStringFromZoneProperty(theProperty, default) -- smoke as 'red', 'green', or 1..5
 	return cfxZones.getFlareColorStringFromZoneProperty(self, theProperty, default)
-	--[[--
-	if not default then default = "red" end 
-	local s = self:getStringFromZoneProperty(theProperty, default)
-	s = s:lower()
-	s = dcsCommon.trim(s)
-	-- check numbers 
-	if (s == "rnd") then return "random" end 
-	if (s == "0") then return "green" end
-	if (s == "1") then return "red" end
-	if (s == "2") then return "white" end
-	if (s == "3") then return "yellow" end
-	if (s == "-1") then return "random" end  
-	
-	if s == "green" or
-	   s == "red" or
-	   s == "white" or
-	   s == "yellow" or 
-	   s == "random" then
-	return s end
 
-	return default 
-	--]]--
 end
 
 --
@@ -2937,36 +2902,7 @@ end
 function cfxZones.processSimpleZoneDynamics(inMsg, theZone, timeFormat, imperialUnits)
 	local p = theZone:getPoint()
 	return dcsCommon.processTimeLocWildCards(inMsg, p, timeFormat, imperialUnits)
-	--[[--
-	if not inMsg then return "<nil inMsg>" end
-	-- replace <t> with current mission time HMS
-	local absSecs = timer.getAbsTime()-- + env.mission.start_time
-	while absSecs > 86400 do 
-		absSecs = absSecs - 86400 -- subtract out all days 
-	end
-	if not timeFormat then timeFormat = "<:h>:<:m>:<:s>" end 
-	local timeString  = dcsCommon.processHMS(timeFormat, absSecs)
-	local outMsg = inMsg:gsub("<t>", timeString)
-	
-	-- replace <lat> with lat of zone point and <lon> with lon of zone point 
-	-- and <mgrs> with mgrs coords of zone point 
-	local currPoint = cfxZones.getPoint(theZone)
-	local lat, lon = coord.LOtoLL(currPoint)
-	lat, lon = dcsCommon.latLon2Text(lat, lon)
-	local alt = land.getHeight({x = currPoint.x, y = currPoint.z})
-	if imperialUnits then 
-		alt = math.floor(alt * 3.28084) -- feet 
-	else 
-		alt = math.floor(alt) -- meters 
-	end 
-	outMsg = outMsg:gsub("<lat>", lat)
-	outMsg = outMsg:gsub("<lon>", lon)
-	outMsg = outMsg:gsub("<ele>", alt)
-	local grid = coord.LLtoMGRS(coord.LOtoLL(currPoint))
-	local mgrs = grid.UTMZone .. ' ' .. grid.MGRSDigraph .. ' ' .. grid.Easting .. ' ' .. grid.Northing
-	outMsg = outMsg:gsub("<mgrs>", mgrs)
-	return outMsg
-	--]]--
+
 end 
 
 -- process <v: flag>, <rsp: flag> <rrnd>

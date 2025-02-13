@@ -1,5 +1,5 @@
 guardianAngel = {}
-guardianAngel.version = "4.0.0"
+guardianAngel.version = "4.0.1"
 guardianAngel.ups = 10 -- hard-coded!! missile track
 guardianAngel.name = "Guardian Angel" -- just in case someone accesses .name  
 guardianAngel.requiredLibs = {
@@ -23,6 +23,7 @@ guardianAngel.requiredLibs = {
 		   - once per second sanctuary calc 
 		   - expanded getWatchedUnitByName to include inSanctuary 
 		   - sanctuary zones use coalition 
+	 4.0.1 - code hardening (DCS)
 --]]--
 
 guardianAngel.active = true -- can be turned on / off 
@@ -347,6 +348,7 @@ function guardianAngel:onEvent(event)
 		-- get cat, this returns 1 for unit (as it should, so we can get 
 		-- group, or if it's really a unit, which returns 0 for aircraft 
 		if not theUnit.getCategory then return end 
+		if not theUnit.getGroup then return end -- ED silly stuff
 		local theGroup = theUnit:getGroup()
 		if not theGroup then return end 
 		local gCat = theGroup:getCategory()

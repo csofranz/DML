@@ -22,7 +22,7 @@ VERSION HISTORY
 --]]--
 --
 -- CURRENTLY REQUIRES SINGLE-UNIT PLAYER GROUPS
--- REQUIRES CLONEZONES MODULE TO BE RUNNING, BUT NOT TO BE LOADED ON START
+-- REQUIRES CLONEZONES MODULE 
 --
 camp.camps = {} -- all camps on the map 
 camp.roots = {} -- all player group comms roots 
@@ -35,9 +35,7 @@ function camp.getMyCurrentCamp(theUnit) -- returns first hit player is in
 	local coa = theUnit:getCoalition()
 	local p = theUnit:getPoint()
 	for idx, theCamp in pairs(camp.camps) do 
-		if theCamp.owner == coa and theCamp:pointInZone(p) then 
-			return theCamp
-		end 
+		if theCamp.owner == coa and theCamp:pointInZone(p) then return theCamp end 
 	end
 	return nil 
 end 
@@ -45,18 +43,14 @@ end
 function camp.getCampsForCoa(coa)
 	local myCamps = {}
 	for idx, theCamp in pairs(camp.camps) do 
-		if theCamp.owner == coa then 
-			table.insert(myCamps, theCamp)
-		end 
+		if theCamp.owner == coa then table.insert(myCamps, theCamp) end 
 	end
 	return myCamps 
 end
 
 function camp.createCampWithZone(theZone)
 	-- look for all cloners inside my zone 
-	if theZone.verbose or camp.verbose then 
-		trigger.action.outText("+++camp: processing <" .. theZone.name .. ">, owner is <" .. theZone.owner .. ">", 30)
-	end 
+	if theZone.verbose or camp.verbose then trigger.action.outText("+++camp: processing <" .. theZone.name .. ">, owner is <" .. theZone.owner .. ">", 30) end 
 	
 	local allZones = cfxZones.getAllZonesInsideZone(theZone)
 	local cloners = {}
@@ -65,19 +59,12 @@ function camp.createCampWithZone(theZone)
 	for idx, aZone in pairs(allZones) do 
 		if aZone:hasProperty("nocamp") then 
 			-- this zone cannot be part of a camp
-			
 		elseif aZone:hasProperty("cloner") then 
 			-- this is a clone zone and part of my camp
 			table.insert(cloners, aZone)
-			if not aZone:hasProperty("blueOnly") then 
-				table.insert(redCloners, aZone)
-			end 
-			if not aZone:hasProperty("redOnly") then 
-				table.insert(blueCloners, aZone)
-			end
-			if theZone.verbose or camp.verbose then 
-				trigger.action.outText("Cloner <" .. aZone.name .. "> is part of camp <" .. theZone.name .. ">", 30)
-			end 
+			if not aZone:hasProperty("blueOnly") then table.insert(redCloners, aZone) end 
+			if not aZone:hasProperty("redOnly") then table.insert(blueCloners, aZone) end
+			if theZone.verbose or camp.verbose then trigger.action.outText("Cloner <" .. aZone.name .. "> is part of camp <" .. theZone.name .. ">", 30) end 
 		end 
 	end 
 	if #cloners < 1 then 
@@ -96,9 +83,7 @@ function camp.createCampWithZone(theZone)
 	theZone.upgradeCost = theZone:getNumberFromZoneProperty("upgradeCost", 3 * theZone.repairCost)
 	if theZone:hasProperty("FARP") then 
 		theZone.isAlsoFARP = true 
-		if theZone.verbose or camp.verbose then 
-			trigger.action.outText("+++camp: <" .. theZone.name .. "> has FARP attached", 30)
-		end 
+		if theZone.verbose or camp.verbose then trigger.action.outText("+++camp: <" .. theZone.name .. "> has FARP attached", 30) end 
 	end 
 end
 
@@ -107,22 +92,18 @@ end
 --
 function camp.update()
 	-- call me in a second to poll triggers
-	timer.scheduleFunction(camp.update, {}, timer.getTime() + 1/camp.ups)
+--	timer.scheduleFunction(camp.update, {}, timer.getTime() + 1/camp.ups)
 end 
 
 function camp:onEvent(theEvent)
 	if not theEvent then return end 
 	if not theEvent.initiator then return end
 	local theUnit = theEvent.initiator
---	if not theUnit.getName then return end 
---	if not theUnit.getPlayerName then return end 
 	if not cfxMX.isDynamicPlayer(theUnit) then return end 
 	local id = theEvent.id
 	if id == 15 then -- birth 
 		camp.lateProcessPlayer(theUnit)
-		if camp.verbose then 
-			trigger.action.outText("camp: late player processing for <" .. theUnit:getName() .. ">", 30)
-		end 
+		if camp.verbose then trigger.action.outText("camp: late player processing for <" .. theUnit:getName() .. ">", 30) end 
 	end 
 end 
 
@@ -153,12 +134,6 @@ function camp.processPlayers()
 	for idx, gData in pairs(cfxMX.playerGroupByName) do 
 		gID = gData.groupId
 		gName = gData.name 
---[[--		local theRoot = missionCommands.addSubMenuForGroup(gID, "Funds / Repairs / Upgrades")
-		camp.roots[gName] = theRoot 
-		local c00 = missionCommands.addCommandForGroup(gID, "Theatre Overview", theRoot, camp.redirectTFunds, {gName, gID, "tfunds"})
-		local c0 = missionCommands.addCommandForGroup(gID, "Local Funds & Status Overview", theRoot, camp.redirectFunds, {gName, gID, "funds"})
-		local c1 = missionCommands.addCommandForGroup(gID, "REPAIRS: Purchase local repairs", theRoot, camp.redirectRepairs, {gName, gID, "repair"})
-		local c2 = missionCommands.addCommandForGroup(gID, "UPGRADE: Purchase local upgrades", theRoot, camp.redirectUpgrades, {gName, gID, "upgrade"}) --]]--
 		camp.installComsFor(gID, gName)
 	end
 end
@@ -199,40 +174,22 @@ function camp.doTFunds(args)
 			
 			if theZone.repairable and theZone.upgradable then 
 				msg = msg .. " (§" .. theZone.repairCost .. "/§" .. theZone.upgradeCost .. ")"
-				if camp.zoneNeedsRepairs(theZone, coa) then
-					msg = msg .. " requests repairs and"
-				else
-					msg = msg .. " is running and"
-				end 
+				if camp.zoneNeedsRepairs(theZone, coa) then msg = msg .. " requests repairs and" else msg = msg .. " is running and" end 
 				
-				if camp.zoneNeedsUpgrades(theZone, coa) then
-					msg = msg .. " can be upgraded"
-				else
-					msg = msg .. " is fully upgraded"
-				end
+				if camp.zoneNeedsUpgrades(theZone, coa) then msg = msg .. " can be upgraded" else msg = msg .. " is fully upgraded" 	end
 				
 			elseif theZone.repairable then 
-				if camp.zoneNeedsRepairs(theZone, coa) then
-					msg = msg .. " needs repairs (§" .. theZone.repairCost .. ")"
-				else 
-					msg = msg .. " is fully operational"
-				end
+				if camp.zoneNeedsRepairs(theZone, coa) then msg = msg .. " needs repairs (§" .. theZone.repairCost .. ")" else msg = msg .. " is fully operational" end
 				
 			elseif theZone.upgradable then 
-				if camp.zoneNeedsUpgrades(theZone, coa) then
-					msg = msg .. " can be upgraded (§" .. theZone.upgradeCost .. ")"
-				else 
-					msg = msg .. " is fully upgraded"
-				end			
+				if camp.zoneNeedsUpgrades(theZone, coa) then msg = msg .. " can be upgraded (§" .. theZone.upgradeCost .. ")" else msg = msg .. " is fully upgraded" end			
 			else 
 				-- can be neither repaired nor upgraded
 				msg = msg .. " is owned"
 			end
 		end
 	end
-	if income > 0 then 
-		msg = msg .. "\n\nTotal Income: §" .. income 
-	end
+	if income > 0 then msg = msg .. "\n\nTotal Income: §" .. income end
 	msg = msg .. "\n"
 	trigger.action.outTextForGroup(gID, msg, 30)
 	trigger.action.outSoundForGroup(gID, camp.actionSound)
@@ -262,13 +219,8 @@ function camp.doFunds(args)
 		return
 	end 
 	
-	if camp.zoneNeedsRepairs(theZone, coa) then 
-		msg = msg .. "\nZone <" .. theZone.name .. "> needs repairs (§" .. theZone.repairCost .. " per repair)\n"
-	elseif theZone.repairable then 
-		msg = msg .. "\nZone <" .. theZone.name .. "> has no outstanding repairs.\n"
-	else 
-		-- say nothing
-	end 
+	if camp.zoneNeedsRepairs(theZone, coa) then msg = msg .. "\nZone <" .. theZone.name .. "> needs repairs (§" .. theZone.repairCost .. " per repair)\n" 
+	elseif theZone.repairable then msg = msg .. "\nZone <" .. theZone.name .. "> has no outstanding repairs.\n" end 
 	if camp.zoneNeedsUpgrades(theZone, coa) then 
 		msg = msg .. "\nZone <" .. theZone.name .. "> can be upgraded (§" .. theZone.upgradeCost .. " per upgrade)\n"
 	elseif theZone.upgradable then 

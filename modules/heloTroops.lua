@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "4.2.1"
+cfxHeloTroops.version = "4.2.2"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -21,6 +21,7 @@ cfxHeloTroops.requestRange = 500 -- meters
        - support for drivable 
  4.2.1 - increased verbosity
 	   - also supports 'pickupRang" for reverse-compatibility with manual typo.
+ 4.2.2 - support for attachTo:
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -299,7 +300,11 @@ function cfxHeloTroops.setCommsMenu(theUnit)
 	conf.unit = theUnit -- link back
 	-- if we don't have an F-10 menu, create one 
 	if not (conf.myMainMenu) then 
-		conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'Airlift Troops') 
+		local mainMenu = nil 
+		if cfxHeloTroops.mainMenu then 
+			mainMenu = radioMenu.getMainMenuFor(cfxHeloTroops.mainMenu) 
+		end 
+		conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'Airlift Troops', mainMenu) 
 	end
 	-- clear out existing commands, add new
 	cfxHeloTroops.clearCommsSubmenus(conf)
@@ -1021,6 +1026,20 @@ function cfxHeloTroops.readConfigZone()
 		tc = dcsCommon.splitString(tc, ",")
 		cfxHeloTroops.troopCarriers = dcsCommon.trimArray(tc)
 	end
+	
+	if theZone:hasProperty("attachTo:") then 
+		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
+		if radioMenu then -- requires optional radio menu to have loaded 
+			local mainMenu = radioMenu.mainMenus[attachTo]
+			if mainMenu then 
+				cfxHeloTroops.mainMenu = mainMenu 
+			else 
+				trigger.action.outText("+++heloT: cannot find super menu <" .. attachTo .. ">", 30)
+			end
+		else 
+			trigger.action.outText("+++heloT: REQUIRES radioMenu to run before cfxHeloTroops. 'AttachTo:' ignored.", 30)
+		end 
+	end 
 end
 
 --
