@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.3.0"
+FARPZones.version = "2.4.0"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -28,6 +28,7 @@ FARPZones.verbose = false
   2.2.0 - changing a FARP's owner invokes SSBClient if it is loaded 
   2.3.0 - new attributes redCap!, blueCap! captured! and farpMethod
 		- send out signals 
+  2.4.0 - work-around for crashing DCS bug in trigger.action.removeMark
   
 --]]--
 
@@ -564,6 +565,7 @@ function FARPZones.loadMission()
 	
 	local farps = theData.farps 
 	if farps then 
+	local delay = timer.getTime() + 0.2
 		for fName, fData in pairs(farps) do 
 			local theFARP = FARPZones.getFARPZoneByName(fName)
 			if theFARP then 
@@ -574,8 +576,10 @@ function FARPZones.loadMission()
 				theFARP.defenderData = dcsCommon.clone(fData.defenderData)
 
 				FARPZones.produceVehicles(theFARP) -- do full defender and resource cycle 
-				FARPZones.drawFARPCircleInMap(theFARP) -- mark in map
-
+				-- stagger drawing the map in time to 
+				-- prevent removeMark crashing the thread 
+				timer.scheduleFunction(FARPZones.drawFARPCircleInMap, theFARP, delay) -- mark in map
+				delay = delay + 0.2
 			else 
 				trigger.action.outText("frpZ: persistence: FARP <" .. fName .. "> no longer exists in mission, skipping", 30)
 			end

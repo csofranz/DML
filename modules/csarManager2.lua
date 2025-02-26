@@ -1,56 +1,16 @@
 csarManager = {}
-csarManager.version = "4.2.1"
+csarManager.version = "4.3.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
-
- - 2.3.0 - dmlZones 
-		 - onRoad attribute for CSAR mission Zones
-		 - rndLoc support 
-		 - triggerMethod support 
- - 2.3.1 - addPrefix option 
-         - delay asynch OK (message only)
-		 - offset zone on randomized soldier 
-		 - smokeDist 
- - 2.3.2 - DCS 2.9 getCategory() fix 
- - 3.0.0 - moved mission creation out of update loop into own 
-		 - removed cfxPlayer dependency
-		 - new event manager 
-		 - no longer single-proccing pilots 
-		 - can also handle aircraft - isTroopCarrier 
-- 3.1.0  - integration with scribe 
-		 - expanded internal API: newMissionCB, invoked at addMission 
-		 - expanded internal API: removedMissionCB
-		 - added *rnd as option for csarName (requires "names")
-		 - missions are sorted by distance 
-		 - mission timeLimit range implemented 
-		 - update handles time limit (pickup only)
-		 - inflight status reflects time limit but will not time out 
-		 - pickupSound option 
-		 - lostSound option 
-- 3.1.1  - birth clears troopsOnBoard
-- 3.2.0  - inPopulated csar option 
-		 - clearance csar attribute 
-		 - maxTries csar attribute 
-- 3.2.1  - comsRange attribute when mission times out 
-         - rescueTypes option in config 
-  3.2.2  - reset helicopter weight on birth 
-         - cleanup 
-  3.2.3  - hardening against *accidental* multi-unit player groups. 
-  3.2.4  - pass theZone with missionCreateCB when created from zone 
-  3.2.5  - smoke callbacks 
-		 - useRanks option 
-  3.2.6  - inBuiltup analogon to cloner 
-  3.2.7  - createCSARForParachutist now supports optional coa (autoCSAR)
-  3.3.0  - persistence support 
-  3.4.0  - global timeLimit option in config zone 
-         - fixes expiration bug when persisting data 
   4.0.0  - support for mainMenu 
   4.0.1  - increased verbosity 
          - fix for Jul-11 2024 DCS bugs 
   4.1.0  - support for DCS 2.9.6 dynamic spawns  
   4.2.0  - automatically support twn if present 
   4.2.1  - added Chinook to csar default set (via common)
+  4.3.0  - pilot's smoke can now extinguish immediately 
+		 - keepSmoke option 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
@@ -548,6 +508,14 @@ function csarManager.heloLanded(theUnit)
 		myName .. " is extracting " .. theMission.name .. "!", 
 		30)
 		didPickup = true;
+		
+		-- handle smoke 
+		if csarManager.keepSmoke then
+--			trigger.action.outText("keeping smokeName <" .. theMission.smokeName .. "> running", 30)
+		else 
+			trigger.action.effectSmokeStop(theMission.smokeName)
+--			trigger.action.outText("smokeName <" .. theMission.smokeName .. "> removed", 30)
+		end 
 		
 		local args = {}
 		args.theName = theMission.name 
@@ -1186,18 +1154,19 @@ function csarManager.update() -- every second
 						table.insert(csarMission.messagedUnits, uName) -- remember that we messaged them so we don't do again
 					end
 					
-					-- also pop smoke if not popped already, or more than 5 minutes ago
-					if csarManager.useSmoke and  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
+					-- pop smoke if not popped already, or more than 5 minutes ago
+					if csarManager.useSmoke and 
+					  (timer.getTime() - csarMission.lastSmokeTime) >= 5 * 60 then 
 						if csarMission.lastSmokeTime < 0 then 
 							-- this is the first time that this mission pops smoke
---							trigger.action.outText("***will invoke smoke cb", 30)
 							csarManager.invokeSmokeCallbacks(csarMission, uName)
 						else 
 							--trigger.action.outText("nope smoke's a dope", 30)
 						end 
 						local smokePoint = dcsCommon.randomPointOnPerimeter(
 							csarManager.smokeDist, csarMission.zone.point.x, csarMission.zone.point.z) 
-						dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor)
+						csarMission.smokeName = dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor) -- returns unique smoke name 
+						trigger.action.outText("smokeName <" .. csarMission.smokeName .. "> started", 30)
 						csarMission.lastSmokeTime = timer.getTime()
 					end
 					
@@ -1236,6 +1205,13 @@ function csarManager.update() -- every second
 										table.insert(conf.troopsOnBoard, csarMission)
 										csarMission.group:destroy() -- will shut up radio as well
 										csarMission.group = nil -- no more evacuees 
+										-- turn off smoke? 
+										if csarManager.keepSmoke then
+--											trigger.action.outText("keeping smokeName <" .. csarMission.smokeName .. "> running", 30)
+										else 
+											trigger.action.effectSmokeStop(csarMission.smokeName)
+--											trigger.action.outText("smokeName <" .. csarMission.smokeName .. "> removed", 30)
+										end 
 										needsGC = true -- need filtering missions 
 										
 										-- now handle weight using cargoSuper 
@@ -1425,8 +1401,7 @@ function csarManager.readCSARZone(theZone)
 	theZone.numCrew = 1 
 	theZone.csarMapMarker = nil 
 	if theZone:hasProperty("timeLimit") then
-		local tmin, tmax = theZone:getPositiveRangeFromZoneProperty("timeLimit", 1)
-
+		local tmin, tmax = theZone:getPositiveRangeFromZoneProperty("timeLimit", 1) -- minutes 
 		theZone.timeLimit = {tmin, tmax}
 	else 
 		theZone.timeLimit = nil 
@@ -1572,6 +1547,7 @@ function csarManager.readConfigZone()
 	csarManager.ups = theZone:getNumberFromZoneProperty("ups", 1)
 	
 	csarManager.useSmoke = theZone:getBoolFromZoneProperty("useSmoke", true)
+	csarManager.keepSmoke = theZone:getBoolFromZoneProperty("keepSmoke", false)
 	csarManager.smokeColor = theZone:getSmokeColorStringFromZoneProperty("smokeColor", "blue")
 	csarManager.smokeDist = theZone:getNumberFromZoneProperty("smokeDist", 30)
 	csarManager.smokeColor = dcsCommon.smokeColor2Num(csarManager.smokeColor)
@@ -1807,4 +1783,5 @@ end
 	   player that they did not survive the transport 
 	   
 	- randomize smoke color if smoke color has more than one entries 
+	- ELT freq higher bands?
 --]]--

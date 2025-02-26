@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "3.0.2"
+persistence.version = "3.1.0"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -24,6 +24,8 @@ persistence.requiredLibs = {
 			code cleanup 
 	3.0.2 - more logging 
 	        vardump to log possible 
+	3.1.0 - validFor attribute -- timed gc 
+		  - persistence deallocs data after validFor seconds 
 			
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
@@ -74,12 +76,43 @@ end
 --
 -- registered modules call this to get their data 
 --
+function persistence.count(theTable)
+	if not theTable then return 0 end 
+	local c = 0
+	for idx, val in pairs(theTable) do 
+		c = c + 1
+	end
+	return c
+end 
+
+function persistence.filter(name) -- debugging 
+	--if true then return false end  
+	--if name == "WHpersistence" then return true end 
+	--if name == "unitPersistence" then return true end 
+	--if name == "cfxPlayerScore" then return true end 
+	--if name == "cfxSSBClient" then return true end 	
+	--if name == "cfxSpawnZones" then return true end
+	--if name == "cfxHeloTroops" then return true end
+	--if name == "rndFlags" then return true end
+	--if name == "cfxOwnedZones" then return true end
+	--if name == "cloneZones" then return true end --*
+	--if name == "cfxObjectDestructDetector" then return true end
+	return false 
+end 
+
 function persistence.getSavedDataForModule(name, sharedDataName)
+--	if persistence.verbose then 
+--		trigger.action.outText("+++persistence: enter load for <" .. name .. ">", 30)
+--	end 
 	if not persistence.active then return nil end 
 	if not persistence.hasData then return nil end 
-	if not persistence.missionData then return end 
+	if not persistence.missionData then return nil end 
 	if not sharedDataName then sharedDataName = nil end 
 	
+	if persistence.filter(name) then 
+		trigger.action.outText("FILTERED persistence for <" .. name .. ">", 30)
+		return nil 
+	end 
 	if sharedDataName then 
 		-- we read from shared data and only revert to 
 		-- common if we find nothing
@@ -90,6 +123,7 @@ function persistence.getSavedDataForModule(name, sharedDataName)
 		local theData = persistence.loadTable(shFile, true)
 		if theData then 
 			if theData[name] then 
+				trigger.action.outText("+++persistence: returning SHARED for <" .. name .. ">", 30)
 				return theData[name]
 			end 
 			if persistence.verbose then 
@@ -101,6 +135,9 @@ function persistence.getSavedDataForModule(name, sharedDataName)
 				.. "> does not yet exist, reverting to main", 30)
 			end 
 		end
+	end
+	if persistence.verbose then 
+		trigger.action.outText("+++persistence: returning data (" .. persistence.count(persistence.missionData[name]) .. " records) for <" .. name .. ">", 30)
 	end
 	return persistence.missionData[name] -- simply get the modules data block
 end
@@ -580,11 +617,24 @@ function persistence.readConfigZone()
 	
 	persistence.saveNotification = theZone:getBoolFromZoneProperty("saveNotification", true)
 	
+	persistence.validFor = theZone:getNumberFromZoneProperty("validFor", 5) -- GC after ... seconds 
+	
 	if persistence.verbose then 
 		trigger.action.outText("+++persistence: read config", 30)
 	end 
 	
 end
+
+function persistence.GC()
+	-- destroy loaded mission data
+	if persistence.missionData then 
+		persistence.missionData = nil 
+		if persistence.verbose then 
+			trigger.action.outText("+++persistence: relinquished loaded data.", 30)
+		end 
+	end
+	persistence.hasData = false 
+end 
 
 function persistence.start()
 	-- lib check 
@@ -720,7 +770,7 @@ function persistence.start()
 	
 	-- we now see if we can and need load data 
 	persistence.missionStartDataLoad()
-	
+	timer.scheduleFunction(persistence.GC, nil, timer.getTime() + persistence.validFor) -- destroy loaded data after this interval 
 	-- and start updating 
 	persistence.update()
 	

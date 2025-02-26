@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.2.0"
+dcsCommon.version = "3.2.1"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -39,6 +39,7 @@ dcsCommon.version = "3.2.0"
 	   - cfxZones links to processTimeLocWildCards 
 	   - new processAtoBWildCards()
 	   - tons of new wildcards like <eleft> 
+3.2.1  - markPointWithSmoke supports names and returns names 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -2650,14 +2651,16 @@ end
 	end
 
 	
-	function dcsCommon.markPointWithSmoke(p, smokeColor)
+	function dcsCommon.markPointWithSmoke(p, smokeColor, name)
 		if not smokeColor then smokeColor = 0 end 
+		if not name then name = dcsCommon.uuid("dcsCsmoke") end 
 		local x = p.x 
 		local z = p.z -- do NOT change the point directly
 		-- height-correct
 		local y = land.getHeight({x = x, y = z})
 		local newPoint= {x = x, y = y + 2, z = z}
-		trigger.action.smoke(newPoint, smokeColor)
+		trigger.action.smoke(newPoint, smokeColor, name)
+		return name 
 	end
 
 -- based on buzzer1977's idea, channel is number, eg in 74X, channel is 74, mode is "X"

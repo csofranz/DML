@@ -1,5 +1,5 @@
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.4.1"
+cfxOwnedZones.version = "2.5.0"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -45,6 +45,8 @@ cfxOwnedZones.name = "cfxOwnedZones"
 2.3.1 - restored getNearestOwnedZoneToPoint 
 2.4.0 - dmlZones masterOwner update 
 2.4.1 - conquered flag now correctly guarded in loadData() 
+2.5.0 - staggering zone drawing in time during loadData to avoid show-stopping DCS bug in trigger.action.removeMark() 
+
 
 --]]--
 cfxOwnedZones.requiredLibs = {
@@ -125,11 +127,11 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 	end
 	
 	if aZone.title then 
-		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
+		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0}, nil)
 	end 
 	
 	if aZone.hidden then return end 	
-	aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
+	aZone.markID = aZone:drawZone(lineColor, fillColor, nil) -- markID 
 end
 
 function cfxOwnedZones.getOwnedZoneByName(zName)
@@ -748,7 +750,7 @@ function cfxOwnedZones.loadData()
 	local theData = persistence.getSavedDataForModule("cfxOwnedZones")
 	if not theData then 
 		if cfxOwnedZones.verbose then 
-			trigger.action.outText("owdZ: no save date received, skipping.", 30)
+			trigger.action.outText("owdZ: no save data received, skipping.", 30)
 		end
 		return
 	end
@@ -757,6 +759,9 @@ function cfxOwnedZones.loadData()
 	--   flagInfo: module-global flags 
 	--   attackers: all spawned attackers that we feed to groundTroops
 	local allZoneData = theData.zoneData 
+	local now = timer.getTime()
+	local delay = now + 0.5
+
 	for zName, zData in pairs(allZoneData) do 
 		-- access zone 
 		local theZone = cfxOwnedZones.getOwnedZoneByName(zName)
@@ -766,7 +771,10 @@ function cfxOwnedZones.loadData()
 				theZone:setFlagValue(theZone.conqueredFlag, zData.conquered)
 			end
 			-- update mark in map 
-			cfxOwnedZones.drawZoneInMap(theZone)
+			-- does this impact performance?
+			timer.scheduleFunction(cfxOwnedZones.drawZoneInMap, theZone, delay)
+			delay = delay + 0.5
+--			cfxOwnedZones.drawZoneInMap(theZone)
 		else 
 			trigger.action.outText("owdZ: load - data mismatch: cannot find zone <" .. zName .. ">, skipping zone.", 30)
 		end

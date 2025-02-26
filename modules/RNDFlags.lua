@@ -9,7 +9,7 @@ rndFlags.requiredLibs = {
 	Random Flags: DML module to select flags at random
 	and then change them
 	
-	Copyright 2022 by Christian Franz and cf/x 
+	Copyright 2022-2025 by Christian Franz and cf/x 
 	
 	Version History
 

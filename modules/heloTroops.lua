@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "4.2.2"
+cfxHeloTroops.version = "4.2.3"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -22,6 +22,8 @@ cfxHeloTroops.requestRange = 500 -- meters
  4.2.1 - increased verbosity
 	   - also supports 'pickupRang" for reverse-compatibility with manual typo.
  4.2.2 - support for attachTo:
+ 4.2.3 - dropZone supports 'keepWait' attribute 
+       - dropZone supports 'setWait' attribute 
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -48,6 +50,8 @@ function cfxHeloTroops.processDropZone(theZone)
 	theZone.dropMethod = theZone:getStringFromZoneProperty("dropMethod", "inc")
 	theZone.dropCoa = theZone:getCoalitionFromZoneProperty("coalition", 0)
 	theZone.autoDespawn = theZone:getNumberFromZoneProperty("autoDespawn", -1)
+	theZone.keepWait = theZone:getBoolFromZoneProperty("keepWait", false)
+	theZone.setWait = theZone:getBoolFromZoneProperty("setWait", false)
 end
 
 --
@@ -704,20 +708,47 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 	local moveFormation = conf.troopsOnBoard.moveFormation 
 	local code = conf.troopsOnBoard.code 
 	local canDrive = conf.troopsOnBoard.canDrive 
+	local theCoalition = theUnit:getGroup():getCoalition() -- my coa
 	
 	if not orders then orders = "guard" end
 	orders = string.lower(orders) 
 	
-	-- order processing: if the orders were pre-pended with "wait-"
-	-- we now remove that, so after dropping they do what their 
-	-- orders where AFTER being picked up
+	-- order "wait" processing if not in special drop zone: 
+	-- if the orders were pre-pended with "wait-"
+	-- remove that, so after dropping they do what their 
+	-- orders where AFTER removing "wait"
+	-- or if setWait is true, add it
+	local closestDropZone =  cfxZones.getClosestZone(p, cfxHeloTroops.dropzones)
 	if dcsCommon.stringStartsWith(orders, "wait-") then 
-		orders = dcsCommon.removePrefix(orders, "wait-")
-		trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> revoke 'wait' orders, proceed with <".. orders .. ">", 30)
+		local dropWait = false 
+		if closestDropZone and closestDropZone:pointInZone(p) then 
+			if closestDropZone.dropCoa == 0 or closestDropZone.dropCoa == theCoalition then  
+				if not closestDropZone.keepWait then dropWait = true end
+			end
+		end
+		-- see if we are in a drop zone 
+		if dropWait then 
+			orders = dcsCommon.removePrefix(orders, "wait-")
+			trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> revoke 'wait' orders, proceed with <".. orders .. ">", 30)
+		else trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> keeping 'wait' orders (".. orders .. ")", 30) end
+	end
+	
+	if not dcsCommon.stringStartsWith(orders, "wait-") then 
+		local setWait = false 
+		if closestDropZone and closestDropZone:pointInZone(p) then 
+			if closestDropZone.dropCoa == 0 or closestDropZone.dropCoa == theCoalition then  
+				if not closestDropZone.setWait then setWait = true end
+			end
+		end
+		-- see if we are in a drop zone 
+		if setWait then 
+			orders = "wait-" .. orders
+			trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> added 'wait' orders: <".. orders .. ">", 30)
+		else trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> keeping orders (".. orders .. ")", 30) end
 	end
 	
 	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m radius around choppa
-	local theCoalition = theUnit:getGroup():getCoalition() -- make it chopper's COALITION
+	
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 											
 				theName, -- group name, may be tracked 
@@ -1174,3 +1205,4 @@ end
 
 
 -- TODO: weight when loading troops 
+-- TODO: keepWait for dropzones: troops keep their "wait" orders when dropzone has that tag

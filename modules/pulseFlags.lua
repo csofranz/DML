@@ -1,5 +1,5 @@
 pulseFlags = {}
-pulseFlags.version = "2.0.3"
+pulseFlags.version = "2.0.4"
 pulseFlags.verbose = false 
 pulseFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -8,7 +8,7 @@ pulseFlags.requiredLibs = {
 --[[--
 	Pulse Flags: DML module to regularly change a flag 
 	
-	Copyright 2022 by Christian Franz and cf/x 
+	Copyright 2022-2025 by Christian Franz and cf/x 
 	
 	Version History
 	- 2.0.0 dmlZones / OOP
@@ -16,6 +16,7 @@ pulseFlags.requiredLibs = {
 	- 2.0.1 activateZoneFlag now works correctly
 	- 2.0.2 fixed scheduledTime bug while persisting 
 	- 2.0.3 now setting -1 (infinite) as pulses works correctly 
+	- 2.0.4 corrected typo when checking verbosity 
 --]]--
 
 pulseFlags.pulses = {}
@@ -69,7 +70,7 @@ function pulseFlags.createPulseWithZone(theZone)
 			end
 		end
 	end
-	if theZone.verbose or pulseFlag.verbose then
+	if theZone.verbose or pulseFlags.verbose then
 		trigger.action.outText("+++pulF: set pulses in <" .. theZone.name .. "> to <" .. theZone.pulses .. ">", 30)
 	end
 

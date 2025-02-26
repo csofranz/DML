@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.5.2"
+cloneZones.version = "2.6.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -61,6 +61,8 @@ cloneZones.respawnOnGroupID = true
 	        empty! detection through saves (missed hasClones)
 	2.5.1 - f? and in? put on notice for depreciation
 	2.5.2 - removed bug when checking damaged! and no units cloned 
+	2.6.0 - maxCycles attribute 
+		  - increased vorbosity during persistance:loadData 
 --]]--
 
 --
@@ -332,6 +334,14 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if theZone:hasProperty("health#") then 
 		theZone.health = theZone:getStringFromZoneProperty("health#")
 	end 
+	
+	-- maxCycles 
+	if theZone:hasProperty("maxCycles") then 
+		theZone.maxCycles = theZone:getNumberFromZoneProperty("maxCycles", 99999)
+	end
+	if theZone:hasProperty("maxCycle") then 
+		theZone.maxCycles = theZone:getNumberFromZoneProperty("maxCycle", 99999)
+	end	
 	-- we end with clear plate 
 	theZone.lastSize = 0 -- no units here 
 end
@@ -1506,6 +1516,18 @@ function cloneZones.spawnWithCloner(theZone)
 		end 
 	end 
 	
+	-- see if we have spawned enough 
+	if theZone.maxCycles then 
+		if theZone.maxCycles > 0 then -- update and spawn 
+			theZone.maxCycles = theZone.maxCycles - 1 
+		else -- no spawn 
+			if theZone.verbose then 
+				trigger.action.outText("+++clnZ: cloner <" .. theZone.name .. "> out of cycles. No clone cycle", 30)
+			end
+			return -- no spawning, out of cycles 
+		end
+	end 
+	
 	-- force spawn with this spawner 
 	local templateZone = theZone
 	if theZone.source then 
@@ -1903,6 +1925,9 @@ function cloneZones.saveData()
 		local cData = {}
 		local cName = theCloner.name 
 		cData.myUniqueCounter = theCloner.myUniqueCounter
+		if theCloner.maxCycles then 
+			cData.maxCycles = theCloner.maxCycles
+		end 
 		cData.oSize = theCloner.oSize 
 		cData.lastSize = theCloner.lastSize 
 		-- mySpawns: all groups I'm curently observing for empty!
@@ -1946,7 +1971,8 @@ function cloneZones.loadData()
 		end
 		return
 	end
-	
+	local gSpawn = 0 
+	local uSpawn = 0
 	-- spawn all units 
 	local allClones = theData.clones
 	for gName, gData in pairs (allClones) do 
@@ -1958,12 +1984,15 @@ function cloneZones.loadData()
 		local gdClone = dcsCommon.clone(gData)
 		cloneZones.allClones[gName] = gdClone 
 		local theGroup = coalition.addGroup(cty, cat, gData)
+		uSpawn = uSpawn + #theGroup:getUnits()
+		gSpawn = gSpawn + 1
 		-- turn off AI if disabled 
 		if not gData.useAI then 
 			cloneZones.turnOffAI({theGroup})
 		end 
 	end
 	
+	if cloneZones.verbose then trigger.action.outText("load: loaded <" .. gSpawn .. "> groups, <" .. uSpawn .. "> units total.", 30) end 
 	-- spawn all static objects 
 	local allObjects = theData.objects 
 	for oName, oData in pairs(allObjects) do 
@@ -2001,6 +2030,7 @@ function cloneZones.loadData()
 			end
 			if cData.oSize then theCloner.oSize = cData.oSize end 
 			if cData.lastSize then theCloner.lastSize = cData.lastSize end 
+			if cData.maxCycles then theCloner.maxCycles = cData.maxCycles end 
 			
 			local mySpawns = {}
 			for idx, aName in pairs(cData.mySpawns) do 

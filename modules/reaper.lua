@@ -1,5 +1,5 @@
 reaper = {}
-reaper.version = "1.2.0"
+reaper.version = "1.3.0"
 reaper.requiredLibs = {
 	"dcsCommon",
 	"cfxZones",  
@@ -21,8 +21,9 @@ VERSION HISTORY
 	   - completely rewrote scanning method (performance)  
 	   - added FAC task 
 	   - split task generation from wp generation 
-	   - updated reaper naming, uniqueNames attribute (undocumented)
+	   - updated reaper naming, uniqueN	ames attribute (undocumented)
  1.2.0 - support twn when present 
+ 1.3.0 - new invisible option for drone zone 
 	   
 --]]--
 
@@ -78,6 +79,7 @@ function reaper.readReaperZone(theZone)
 		theZone.cycle = theZone:getStringFromZoneProperty("cycle?", "<none>")
 		theZone.cycleVal = theZone:getFlagValue(theZone.cycle)
 	end 
+	theZone.invisible = theZone:getBoolFromZoneProperty("invisible", false)
 	
 	theZone.hasSpawned = false 
 	
@@ -149,7 +151,7 @@ function reaper.spawnForZone(theZone, ack)
 
 	-- now create and add waypoints to route 
 	gdata.route.points = {}
-	local wp1 = reaper.createInitialWP(left, unit.alt, unit.speed)
+	local wp1 = reaper.createInitialWP(left, unit.alt, unit.speed, theZone.invisible)
 	gdata.route.points[1] = wp1 
 	local wp2 = dcsCommon.createSimpleRoutePointData(right, unit.alt, unit.speed)
 	gdata.route.points[2] = wp2 
@@ -195,75 +197,89 @@ function reaper.cleanUp(theZone)
 	theZone.theSpot = nil 
 end
 
-function reaper.createReaperTask(alt, speed, target, theZone)
-local task = {
+function reaper.createReaperTask(alt, speed, target, theZone, invisible)
+	if not invisible then invisible = false end 
+	local task = {
 		["id"] = "ComboTask",
 		["params"] = {
 			["tasks"] = {
 				[1] = {
-					["enabled"] = true,
-					["auto"] = true,
-					["id"] = "FAC",
 					["number"] = 1,
-					["params"] = 
-					{}, -- end of ["params"]
+					["auto"] = false,
+					["id"] = "WrappedAction",
+					["name"] = "INV",
+					["enabled"] = true,
+					["params"] = {
+						["action"] = {
+							["id"] = "SetInvisible",
+							["params"] = {
+								["value"] = invisible,
+							}, -- end of ["params"]
+						}, -- end of ["action"]
+					}, -- end of ["params"]
 				}, -- end of [1]
 
 				[2] = {
 					["enabled"] = true,
 					["auto"] = true,
-					["id"] = "WrappedAction",
+					["id"] = "FAC",
 					["number"] = 2,
+					["params"] = 
+					{}, -- end of ["params"]
+				}, -- end of [2]
+				[3] = {
+					["enabled"] = true,
+					["auto"] = true,
+					["id"] = "WrappedAction",
+					["number"] = 3,
 					["params"] = {
 						["action"] = {
 							["id"] = "EPLRS",
 							["params"] = {
 								["value"] = true,
-								["groupId"] = 1,
+								["groupId"] = 1, -- <- looks bad
 							}, -- end of ["params"]
 						}, -- end of ["action"]
 					}, -- end of ["params"]
-				}, -- end of [2]
-				[3] = {
+				}, -- end of [3]
+				[4] = {
 					["enabled"] = true,
 					["auto"] = false,
 					["id"] = "Orbit",
-					["number"] = 3,
+					["number"] = 4,
 					["params"] = {
 						["altitude"] = alt,
 						["pattern"] = "Race-Track",
 						["speed"] = speed,
 					}, -- end of ["params"]
-				}, -- end of [3]
+				}, -- end of [4]
 			}, -- end of ["tasks"]
 		}, -- end of ["params"]
 	} -- end of ["task"]
 	if theTarget and theZone then 
---		local gID = theTarget:getGroup():getID() 
 		local gID = theTarget:getID() -- NOTE: theTarget is a GROUP!!!!
-		local task4 = {
+		local task4 = { -- now task5 after we added invisibility
 			["enabled"] = true,
 			["auto"] = false,
 			["id"] = "FAC_AttackGroup",
-			["number"] = 4,
+			["number"] = 5,
 			["params"] = 
 			{
-				["number"] = 1,
+				["number"] = 5,
 				["designation"] = "No",
 				["modulation"] = 0,
 				["groupId"] = gID,
---				["callname"] = 1,
---				["datalink"] = true,
 				["weaponType"] = 0, -- 9663676414,
 				["frequency"] = theZone.freq, -- 133000000,
 			}, -- end of ["params"]
-		} -- end of [4]
-		task.params.tasks[4] = task4 
+		} -- end of [5]
+		task.params.tasks[5] = task4 
 	end 
 	return task 
 end
 
-function reaper.createInitialWP(p, alt, speed) -- warning: target must be a GROUP 
+function reaper.createInitialWP(p, alt, speed, invisible) -- warning: target must be a GROUP 
+	if not invisible then invisible = false end 
 	local wp = {
 		["alt"] = alt,
 		["action"] = "Turning Point",
@@ -282,7 +298,7 @@ function reaper.createInitialWP(p, alt, speed) -- warning: target must be a GROU
 		["formation_template"] = "",
 	} -- end of wp
 
-	wp.task = reaper.createReaperTask(alt, speed) -- no zone, no target 
+	wp.task = reaper.createReaperTask(alt, speed, nil, nil, invisible) -- no zone, no target 
 	return wp 
 end
 
@@ -319,7 +335,7 @@ function reaper.setTarget(theZone, theTarget, cycled)
 	
 	-- now make tracking the group the drone's task 
 	local theGroup = theTarget:getGroup()
-	local theTask = reaper.createReaperTask(theZone.alt, theZone.speed, theGroup, theZone) -- create full FAC task with orbit and group engage
+	local theTask = reaper.createReaperTask(theZone.alt, theZone.speed, theGroup, theZone, theZone.invisible) -- create full FAC task with orbit and group engage
 	local theController = theZone.theUav:getController()
 	if not theController then 
 		trigger.action.outText("+++Rpr: UAV has no controller, getting group")
@@ -927,4 +943,5 @@ end
 --[[--
 	Idea: mobile launch vehicle, zone follows apc around. Can even be hauled along with hook
 	
+	todo: make reaper invisible by attribute 
 --]]--
