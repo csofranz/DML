@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.3.0"
+csarManager.version = "4.4.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -11,10 +11,14 @@ csarManager.ups = 1
   4.2.1  - added Chinook to csar default set (via common)
   4.3.0  - pilot's smoke can now extinguish immediately 
 		 - keepSmoke option 
+  4.4.0  - csarMissions created by autoCSAR can now trigger
+           CSAR zones, which can in turn integrate with csarFX 
+		   for enemies etc. 
 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
 	INTEGRATES AUTOMATICALLY WITH SCRIBE 
+	INTEGRATES AUTOMATICALL WITH CSARFX  
 	SUPPORTS PERSISTENCE 
 		 
 --]]--
@@ -511,10 +515,9 @@ function csarManager.heloLanded(theUnit)
 		
 		-- handle smoke 
 		if csarManager.keepSmoke then
---			trigger.action.outText("keeping smokeName <" .. theMission.smokeName .. "> running", 30)
+
 		else 
 			trigger.action.effectSmokeStop(theMission.smokeName)
---			trigger.action.outText("smokeName <" .. theMission.smokeName .. "> removed", 30)
 		end 
 		
 		local args = {}
@@ -566,8 +569,7 @@ function csarManager.heloDeparted(theUnit)
 	if not dcsCommon.isTroopCarrier(theUnit, csarManager.troopCarriers) then return end
 	-- if we have timed extractions (i.e. not instantaneous),
 	-- then we need to check if we take off after the timer runs out 
-	
-	
+
 	-- when we take off, all that needs to be done is to change the state 
 	-- to airborne, and then set the status flag 
 	local conf = csarManager.getUnitConfig(theUnit)
@@ -607,7 +609,6 @@ function csarManager.airframeCrashed(theUnit)
 	local theGroup = theUnit:getGroup()
 	conf.id = theGroup:getID()
 	-- may want to do something, for now just nothing
-	
 end
 
 function csarManager.airframeDitched(theUnit)
@@ -622,7 +623,6 @@ function csarManager.airframeDitched(theUnit)
 	if #conf.troopsOnBoard > 0 then 
 		-- this is where we can create a new CSAR mission
 		trigger.action.outTextForCoalition(theSide, theUnit:getName() .. " abandoned while evacuating " .. #conf.troopsOnBoard .. " pilots. There many be survivors.", 30)
---		trigger.action.outSoundForCoalition(conf.id, "Quest Snare 3.wav")
 		for i=1, #conf.troopsOnBoard do 
 			local msn = conf.troopsOnBoard[i] -- picked up unit(s)
 			local theRescuedPilot = msn.name 
@@ -636,7 +636,6 @@ function csarManager.airframeDitched(theUnit)
 	local myName = conf.name
 	cargoSuper.removeAllMassForCargo(myName, "Evacuees") -- will allocate new empty table 
 end
-
 --
 --
 -- M E N U   H A N D L I N G   &   R E S P O N S E 
@@ -653,7 +652,6 @@ end
 
 function csarManager.removeCommsFromConfig(conf)
 	csarManager.clearCommsSubmenus(conf)
-	
 	if conf.myMainMenu then 
 		missionCommands.removeItemForGroup(conf.id, conf.myMainMenu) 
 		conf.myMainMenu = nil
@@ -663,13 +661,11 @@ end
 function csarManager.removeComms(theUnit)
 	if not theUnit then return end
 	if not theUnit:isExist() then return end 
-	
 	local group = theUnit:getGroup() 
 	local id = group:getID()
 	local conf = csarManager.getUnitConfig(theUnit)
 	conf.id = id
 	conf.unit = theUnit 
-	
 	csarManager.removeCommsFromConfig(conf)
 end
 
@@ -821,7 +817,6 @@ function csarManager.doListCSARRequests(args)
 		report = report .. "\n\nWARNING: NO CSAR BASES TO DELIVER EVACUEES TO"
 	end
 	report = report .. "\n"
-	
 	trigger.action.outTextForGroup(conf.id, report, 30)
 	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)
 end
@@ -863,10 +858,7 @@ function csarManager.doStatusCarrying(args)
 		
 		report = report .. "\n\nTotal added weigth: " .. 10 + #conf.troopsOnBoard * csarManager.pilotWeight .. "kg" 
 	end
-	
-	
 	report = report .. "\n"
-	
 	trigger.action.outTextForGroup(conf.id, report, 30)
 	trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)
 end
@@ -881,23 +873,19 @@ function csarManager.unloadOne(args)
 	local theUnit = conf.unit 
 	if not theUnit then return end -- ??
 	if not Unit.isExist(theUnit) then return end 
-	
 	local myName = theUnit:getName() 
-	
 	local report = "NYI: unload one"
-	
 	if theUnit:inAir() then 
 		report = "STRONGLY recommend we land first, sir!"
 		trigger.action.outTextForGroup(conf.id, report, 30)
-		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) -- "Quest Snare 3.wav")
+		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)
 		return 
 	end
 	
 	if #conf.troopsOnBoard < 1 then
 		report = "No evacuees on board."
 		trigger.action.outTextForGroup(conf.id, report, 30)
-		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound) -- "Quest Snare 3.wav")
-		
+		trigger.action.outSoundForGroup(conf.id, csarManager.actionSound)
 	else 
 		-- simulate a crash but for one unit 
 		local theSide = theUnit:getCoalition()
@@ -911,12 +899,11 @@ function csarManager.unloadOne(args)
 		--TODO: remove weight for this pilot!
 		
 		trigger.action.outTextForCoalition(theSide, myName .. " has aborted evacuating " .. msn.name .. ". New CSAR available.", 30)
-		trigger.action.outSoundForCoalition(theSide, csarManager.actionSound) -- "Quest Snare 3.wav")
+		trigger.action.outSoundForCoalition(theSide, csarManager.actionSound)
 		
 		-- recalc weight
 		local totalMass = 10 + #conf.troopsOnBoard * csarManager.pilotWeight
 		trigger.action.setUnitInternalCargo(myName, totalMass) -- 10 kg as empty + per-unit time people 
-		--trigger.action.outText("unit <" .. myName .. ">, internal cargo now <" .. totalMass .. ">kg", 30)
 	end
 	
 end
@@ -1207,10 +1194,8 @@ function csarManager.update() -- every second
 										csarMission.group = nil -- no more evacuees 
 										-- turn off smoke? 
 										if csarManager.keepSmoke then
---											trigger.action.outText("keeping smokeName <" .. csarMission.smokeName .. "> running", 30)
 										else 
 											trigger.action.effectSmokeStop(csarMission.smokeName)
---											trigger.action.outText("smokeName <" .. csarMission.smokeName .. "> removed", 30)
 										end 
 										needsGC = true -- need filtering missions 
 										
@@ -1232,11 +1217,7 @@ function csarManager.update() -- every second
 										end
 										
 										trigger.action.outSoundForGroup(uID, csarManager.pickupSound) 
-
-										--return -- we only ever rescue one 
-									end -- hovered long enough 
-									
-									-- return -- only ever one winch op
+									end -- hovered long enough
 								else -- too high for hover 
 									hoverMsg = "Evacuee " .. d * 1 .. "m on your " .. oclock .. " o'clock; land or descend to between 10 and 90 AGL for winching"
 									csarMission.hoveringUnits[uName] = nil -- reset timer 
@@ -1246,7 +1227,6 @@ function csarManager.update() -- every second
 								csarMission.hoveringUnits[uName] = nil 
 							end 
 							trigger.action.outTextForGroup(uID, hoverMsg, 30, true)
-							--return -- only ever one winch op
 						else 
 							-- remove the hover indicator for this unit
 							csarMission.hoveringUnits[uName] = nil
@@ -1275,8 +1255,6 @@ function csarManager.update() -- every second
 		-- check if their flag value has changed
 		if theZone.startCSAR then 
 			-- this should always be true, but you never know
---			local currVal = theZone:getFlagValue(theZone.startCSAR)
---			if currVal ~= theZone.lastCSARVal then 
 			if theZone:testZoneFlag(theZone.startCSAR, theZone.triggerMethod, "lastCSARVal") then 
 				local theMission = csarManager.createCSARMissionFromZone(theZone)
 				csarManager.addMission(theMission, theZone)
@@ -1289,21 +1267,25 @@ function csarManager.update() -- every second
 	end
 end
 
-function csarManager.createCSARMissionFromZone(theZone)
+-- orides pos, name from parachuted msn
+function csarManager.createCSARMissionFromZone(theZone, pos, name)
 	-- set up random point in zone 
 	local mPoint = theZone:getPoint()
 	if theZone.rndLoc then mPoint = theZone:createRandomPointInZone() end 
+	if pos then mPoint = pos end -- WILL respect onRoad and inPopulated 
+
 	if theZone.onRoad then 
 		mPoint.x, mPoint.z =  land.getClosestPointOnRoads('roads',mPoint.x, mPoint.z)
 	elseif theZone.inPopulated then 
 			local aPoint = theZone:createRandomPointInPopulatedZone(theZone.clearance) -- no more maxTries: theZone.maxTries)
 			mPoint = aPoint -- safety in case we need to mod aPoint 
 	end 
+	if not name then name = theZone.csarName end -- respect oride 
 	local theMission = csarManager.createCSARMissionData(
 			mPoint, 
 			theZone.csarSide, -- theSide
 			theZone.csarFreq, -- freq
-			theZone.csarName, -- name 
+			name, -- theZone.csarName, -- name 
 			theZone.numCrew, -- numCrew
 			theZone.timeLimit, -- timeLimit
 			theZone.csarMapMarker, -- mapMarker
@@ -1312,7 +1294,6 @@ function csarManager.createCSARMissionFromZone(theZone)
 	theMission.inPopulated = theZone.inPopulated -- transfer for csarFX
 	return theMission
 end
-
 --
 -- create a CSAR Mission for a unit 
 -- 
@@ -1320,12 +1301,9 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score
 	if not silent then silent = false end 
 	if not radius then radius = 1000 end 
 	if not pilotName then pilotName = "Eddie" end 
-	
 	local point = theUnit:getPoint()
 	local coal = theUnit:getCoalition() 
-	
 	local csarPoint = dcsCommon.randomPointInCircle(radius, radius/2, point.x, point.z) 
-		
 	csarPoint.y = csarPoint.z 
 	local surf = land.getSurfaceType(csarPoint)	
 	csarPoint.y = land.getHeight(csarPoint)
@@ -1343,15 +1321,54 @@ function csarManager.createCSARforUnit(theUnit, pilotName, radius, silent, score
 	csarManager.addMission(theMission)
 	if not silent then 
 		trigger.action.outTextForCoalition(coal, "MAYDAY MAYDAY MAYDAY! ".. pilotName .. " in " .. theUnit:getTypeName() .. " ejected, report good chute. Prepare CSAR!", 30)
-		trigger.action.outSoundForGroup(coal, csarManager.actionSound) -- "Quest Snare 3.wav")
+		trigger.action.outSoundForGroup(coal, csarManager.actionSound)
 	end 
 end
 
-function csarManager.createCSARForParachutist(theUnit, name, coa) -- invoked with parachute guy on ground as theUnit
+function csarManager.getClosestInZoneForCoa(point, theZones, coa)
+	if not theZones then return nil end 
+	local lPoint = {x=point.x, y=0, z=point.z}
+	local currDelta = math.huge 
+	local closestZone = nil
+	for zName, zData in pairs(theZones) do 
+		if zData.csarSide == coa and zData.autoTrigger and zData:pointInZone(lPoint) then
+			local zPoint = cfxZones.getPoint(zData)
+			local delta = dcsCommon.dist(lPoint, zPoint) 
+			trigger.action.outText("delta is <" .. delta .. ">", 30)
+			if (delta < currDelta) then 
+				currDelta = delta
+				closestZone = zData
+			end
+		end
+	end
+	return closestZone 
+end
+
+function csarManager.createCSARForParachutist(theUnit, name, coa) -- invoked with parachute guy on ground as theUnit, usually from autoCSAR
+	trigger.action.outText("Enter createCSARForParachutist", 30)
 	if not coa then coa = theUnit:getCoalition() end 
 	local pos = theUnit:getPoint()
 	-- unit DOES NOT HAVE GROUP!!! (unless water splashdown)
 	-- create a CSAR mission now
+	-- see if pilot is down in CSAR zone 
+	local theCsarZone = csarManager.getClosestInZoneForCoa(pos, csarManager.csarZones, coa)
+
+	if theCsarZone then  
+		-- we use this CSAR zone to generate a CSR at spot pos for coa 
+		if csarManager.verbose or theCsarZone.verbose then 
+			trigger.action.outText("+++CSAR: generating CSAR mission via para drop in zone <" .. theCsarZone.name .. ">", 30)
+		end 
+		
+		local theMission = csarManager.createCSARMissionFromZone(theCsarZone, pos, name)
+		csarManager.addMission(theMission, theCsarZone)
+		--theZone.lastCSARVal = currVal
+		if csarManager.verbose or theCsarZone.verbose then 
+			trigger.action.outText("+++csar: started parachuted CSAR mission for <" .. theCsarZone.csarName .. ">", 30)
+		end
+		trigger.action.outTextForCoalition(coa, "MAYDAY MAYDAY MAYDAY! ".. name ..  " requesting extraction from hostile territory!", 30)
+		trigger.action.outSoundForGroup(coa, csarManager.actionSound)
+		return 
+	end 
 	local theMission = csarManager.createCSARMissionData(pos, coa, nil, name, nil, nil, nil, 0.1, nil)
 	csarManager.addMission(theMission)
 	trigger.action.outTextForCoalition(coa, "MAYDAY MAYDAY MAYDAY! ".. name ..  " requesting extraction after eject!", 30)
@@ -1373,13 +1390,15 @@ end
 
 function csarManager.addCSARZone(theZone)
 	table.insert(csarManager.csarZones, theZone)
+	if csarManager.verbose or theZone.verbose then 
+		trigger.action.outText("+++csar: added csar zone <" .. theZone.name .. ">", 30)
+	end 
 end
 
 function csarManager.readCSARZone(theZone)
 	-- zones have attribute "CSAR" 
 	-- gather data, and then create a mission from this
 	local mName = theZone:getStringFromZoneProperty("CSAR", theZone.name)
---	if mName == "" then mName = theZone.name end 
 	local theSide = theZone:getCoalitionFromZoneProperty("coalition", 0)
 	theZone.csarSide = theSide 
 	theZone.csarName = mName -- now deprecating name attributes
@@ -1443,17 +1462,17 @@ function csarManager.readCSARZone(theZone)
 			theZone.clearance = theZone:getNumberFromZoneProperty("inBuiltup", 10)
 		end 
 	end 
-	-- maxTries is decommed
---	theZone.maxTries = theZone:getNumberFromZoneProperty("maxTries", 20)
 	
 	if theZone.onRoad and theZone.inPopulated then 
 		trigger.action.outText("warning: competing 'onRoad' and 'inPopulated' attributes in zone <" .. theZone.name .. ">. Using 'onRoad'.", 30)
 		theZone.inPopulated = false 
 	end 
-
+	theZone.autoTrigger = theZone:getBoolFromZoneProperty("autoTrigger", true) -- autoCSAR coop 
+	local isAutoCSAR = theZone.autoTrigger 
+	if deferred and not theZone.startCSAR then isAutoCSAR = true end  
 	-- add to list of startable csar
-	if theZone.startCSAR then 
-		if persistence and persistence.hasDate then 
+	if theZone.startCSAR or isAutoCSAR then 
+		if persistence and persistence.hasData then 
 			-- we load data instead of spawning on start 
 		else 
 			csarManager.addCSARZone(theZone)
@@ -1465,10 +1484,13 @@ function csarManager.readCSARZone(theZone)
 		csarManager.addMission(theMission, theZone)
 	end
 
-	
-	if deferred and not theZone.startCSAR then 
-		trigger.action.outText("+++csar: warning - CSAR Mission in Zone <" .. theZone.name .. "> can't be started", 30)
+	if isAutoCSAR then 
+		trigger.action.outText("+++csar: warning - CSAR Mission in Zone <" .. theZone.name .. "> can only be started by autoCSAR", 30)
 	end
+	
+	if csarManager.verbose or theZone.verbose then 
+		trigger.action.outText("+++csar: processed CSAR zone <" .. theZone.name .. ">", 30)
+	end 
 end
 
 function csarManager.processCSARZones()

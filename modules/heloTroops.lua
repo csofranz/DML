@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "4.2.3"
+cfxHeloTroops.version = "5.0.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -24,6 +24,13 @@ cfxHeloTroops.requestRange = 500 -- meters
  4.2.2 - support for attachTo:
  4.2.3 - dropZone supports 'keepWait' attribute 
        - dropZone supports 'setWait' attribute 
+ 4.2.4 - dropWait is always active outside of drop zones
+ 5.0.0 - drop options and formation menus. Supported formations 
+			circle_out
+			chevron
+			line left 
+			line right 
+			scattered behind
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -42,6 +49,27 @@ cfxHeloTroops.dropZones = {} -- dict
 -- persistence support 
 cfxHeloTroops.deployedTroops = {}
 
+--
+-- drop formation helpers
+--
+function cfxHeloTroops.formation2text(inFormation)
+	if inFormation == "circle_out" then return "Circle Around" end 
+	if inFormation == "chevron" then return "Chevron in Front" end 
+	if inFormation == "lineLeft" then return "Line to Port" end
+	if inFormation == "lineRight" then return "Line to Starboard" end 
+	if inFormation == "gaggle" then return "Gaggle Behind" end 
+	return "ErrFormation"
+end
+
+function cfxHeloTroops.formation2dml(inFormation) -- returns formation, delta, phi
+	if inFormation == "circle_out" then return "circle_out", 0, 0 end 
+	if inFormation == "chevron" then return "chevron", 0, 0 end 
+	if inFormation == "lineLeft" then return "line_v", 12, 4.71239 end -- 4.71239 is 270 degrees 
+	if inFormation == "lineRight" then return "line_v", 12, 1.57079633 end -- 1.57079633 is 90 degrees
+	if inFormation == "gaggle" then return "scattered", 24, 3.14159265 end -- 3.14159265 is pi is 180 degrees 
+	trigger.action.outText("+++heloT: unknown drop formation <>, using circle_out, 0 ,0", 30)
+	return "circle_out", 0, 0
+end
 --
 -- drop zones 
 --
@@ -68,7 +96,7 @@ function cfxHeloTroops.resetConfig(conf)
 	-- the other fields info for troops picked up 
 	conf.troopsOnBoard = {} -- table with the following
 	conf.troopsOnBoard.name = "***reset***"
-	conf.dropFormation = "circle_out" -- may be chosen later?
+	conf.dropFormation = "circle_out" -- used to derive formation, delta, phi in formation2dml, use formation2text for text representation
 	conf.timeStamp = timer.getTime() -- to avoid double-dipping 
 end
 
@@ -76,7 +104,7 @@ function cfxHeloTroops.createDefaultConfig(theUnit)
 	local conf = {}
 	cfxHeloTroops.resetConfig(conf)
 	conf.myMainMenu = nil -- this is where the main menu for group will be stored
-	conf.myCommands = nil -- this is where we put all teh commands in 
+	conf.myCommands = nil -- this is where we put all commands in. Why? 
 	return conf 
 end
 
@@ -256,13 +284,19 @@ function cfxHeloTroops.removeComms(theUnit)
 end
 
 function cfxHeloTroops.addConfigMenu(conf)
-	-- we add a menu showing current configs 
+	-- we add a menu for auto-drop-off and drop formation 
+--	trigger.action.outText("enter addConfigMenu for <" .. conf.unit:getName() .. ">", 30)
+	if conf.myDeployMenu then 
+		missionCommands.removeItemForGroup(conf.id, conf.myDeployMenu)
+	end 
+	conf.myDeployMenu = missionCommands.addSubMenuForGroup(conf.id, 'Deployment Options', conf.myMainMenu)
+	
 	local onOff = "OFF"
 	if conf.autoDrop then onOff = "ON" end 
 	local theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
 				'Auto-Drop: ' .. onOff .. ' - Select to change',
-				conf.myMainMenu,
+				conf.myDeployMenu,
 				cfxHeloTroops.redirectToggleConfig, 
 				{conf, "drop"}
 				)
@@ -272,11 +306,53 @@ function cfxHeloTroops.addConfigMenu(conf)
 	theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
 				'Auto-Pickup: ' .. onOff .. ' - Select to change',
-				conf.myMainMenu,
+				conf.myDeployMenu,
 				cfxHeloTroops.redirectToggleConfig, 
 				{conf, "pickup"}
 				)
 	table.insert(conf.myCommands, theCommand)
+	
+	if conf.myFormationMenu then 
+		missionCommands.removeItemForGroup(conf.id, conf.myFormationMenu)
+	end 
+	conf.myFormationMenu = missionCommands.addSubMenuForGroup(conf.id, "Set Formation (" .. cfxHeloTroops.formation2text(conf.dropFormation) .. ")", conf.myDeployMenu)
+	
+	theCommand = missionCommands.addCommandForGroup(
+				conf.id, 
+				'Circle Around',
+				conf.myFormationMenu,
+				cfxHeloTroops.redirectDropFormation, 
+				{conf, "circle_out"}
+				)
+	theCommand = missionCommands.addCommandForGroup(
+				conf.id, 
+				'Chevron in Front',
+				conf.myFormationMenu,
+				cfxHeloTroops.redirectDropFormation, 
+				{conf, "chevron"}
+				)
+	theCommand = missionCommands.addCommandForGroup(
+				conf.id, 
+				'Line to Port',
+				conf.myFormationMenu,
+				cfxHeloTroops.redirectDropFormation, 
+				{conf, "lineLeft"}
+				)
+	theCommand = missionCommands.addCommandForGroup(
+				conf.id, 
+				'Line to Starboard',
+				conf.myFormationMenu,
+				cfxHeloTroops.redirectDropFormation, 
+				{conf, "lineRight"}
+				)
+	theCommand = missionCommands.addCommandForGroup(
+				conf.id, 
+				'Gaggle Behind',
+				conf.myFormationMenu,
+				cfxHeloTroops.redirectDropFormation, 
+				{conf, "gaggle"}
+				)
+
 end
 
 function cfxHeloTroops.setCommsMenu(theUnit)
@@ -619,6 +695,23 @@ function cfxHeloTroops.doToggleConfig(args)
 end
 
 --
+-- set formation 
+--
+function cfxHeloTroops.redirectDropFormation(args)
+	timer.scheduleFunction(cfxHeloTroops.doDropFormation, args, timer.getTime() + 0.1)
+end
+ 
+function cfxHeloTroops.doDropFormation(args)
+	local conf = args[1]
+	local newFormation = args[2]
+	conf.dropFormation = newFormation 
+	if cfxHeloTroops.verbose then 
+		trigger.action.outText("Switching <" .. conf.unit:getName() .. ">'s troop deploy formation to <" .. newFormation .. ">", 40)
+	end 	
+	cfxHeloTroops.setCommsMenu(conf.unit)
+end
+
+--
 -- Deploying Troops
 --
 function cfxHeloTroops.redirectDeployTroops(args)
@@ -725,6 +818,8 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 			if closestDropZone.dropCoa == 0 or closestDropZone.dropCoa == theCoalition then  
 				if not closestDropZone.keepWait then dropWait = true end
 			end
+		else 
+			dropWait = true -- outside of any drop zones  
 		end
 		-- see if we are in a drop zone 
 		if dropWait then 
@@ -746,7 +841,16 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 			trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> added 'wait' orders: <".. orders .. ">", 30)
 		else trigger.action.outTextForGroup(conf.id, "+++ <" .. conf.troopsOnBoard.name .. "> keeping orders (".. orders .. ")", 30) end
 	end
-	
+	-- calculate drop point using delta, phi and unit heading 
+	local f = "circle_out"
+	local delta = 0 
+	local phi = 0 
+	f, delta, phi = cfxHeloTroops.formation2dml(conf.dropFormation)
+	if cfxHeloTroops.verbose then 
+		trigger.action.outText("formation: <" .. f .. ">, delta <" .. delta .. ">, phi <" .. phi .. ">", 30)
+	end 
+	local uh = dcsCommon.getUnitHeading(theUnit)
+	p = dcsCommon.pointInDirectionOfPointXYY(uh + phi, delta, p)
 	local chopperZone = cfxZones.createSimpleZone("choppa", p, 12) -- 12 m radius around choppa
 	
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
@@ -754,8 +858,8 @@ function cfxHeloTroops.deployTroopsFromHelicopter(conf)
 				theName, -- group name, may be tracked 
 				chopperZone, 											
 				unitTypes, 												
-				conf.dropFormation,
-				90,
+				f, --conf.dropFormation,
+				uh * 57.2958, -- heading in degrees, may need a formation offset like 90
 				nil, -- liveries not yet supported 
 				canDrive)
 	-- persistence management 

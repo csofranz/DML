@@ -1,5 +1,5 @@
 airtank = {}
-airtank.version = "1.0.1"
+airtank.version = "1.0.2"
 -- Module to extinguish fires controlled by the 'inferno' module.
 -- For 'airtank' fire extinguisher aircraft modules. 
 airtank.requiredLibs = {
@@ -11,7 +11,7 @@ airtank.requiredLibs = {
 	Version History
 	1.0.0 - Initial release 
 	1.0.1 - removed attachTo: bug 
-	
+	1.0.2 - integration with fireCtrl.enabled 
 --]]--
 
 airtank.tanks = {} -- player data by GROUP name, will break with multi-unit groups 
@@ -154,13 +154,16 @@ function airtank:onEvent(theEvent)
 			if data.lastDeparture then -- and data.lastDeparture + 60 < now then 
 				return 
 			end 
-			data.lastDeparture = now 
-			if data.carrying < data.capacity * 0.5 then 
-				trigger.action.outTextForGroup(data.gID, "Good luck, " .. pName .. ", remember to top off your tanks before going in.", 30)
-			else
-				trigger.action.outTextForGroup(data.gID, "Good luck and godspeed, " .. pName .. "!", 30)
-			end
-			trigger.action.outSoundForGroup(data.gID, airtank.actionSound)
+			data.lastDeparture = now 			
+			if (not fireCtrl) or 
+			   (fireCtrl and fireCtrl.enabled) then 
+				local msg = "Good luck, " .. pName .. ", remember to top off your tanks before going in."
+				if data.carrying > data.capacity * 0.5 then 
+					msg = "Good luck and godspeed, " .. pName .. "!"
+				end
+				trigger.action.outTextForGroup(data.gID, msg, 30)
+				trigger.action.outSoundForGroup(data.gID, airtank.actionSound)
+			end 
 		end
 		return
 	end

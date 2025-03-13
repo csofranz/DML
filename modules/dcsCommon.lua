@@ -1630,7 +1630,7 @@ end
 		-- formations:
 		--    (default) "line" (left to right along x) -- that is Y direction
 		--    "line_v" a line top to bottom -- that is X direction
-		--    "chevron" - left to right middle too top
+		--    "chevron" - left to right middle to top
 		--    "scattered", "random" -- random, innerRadius used to clear area in center
 		-- 	  "circle", "circle_forward" -- circle, forward facing
 		--    "circle_in" -- circle, inwarf facing

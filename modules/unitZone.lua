@@ -1,5 +1,5 @@
 unitZone={}
-unitZone.version = "2.0.1"
+unitZone.version = "2.0.2"
 unitZone.verbose = false 
 unitZone.ups = 1 
 unitZone.requiredLibs = {
@@ -18,6 +18,7 @@ unitZone.requiredLibs = {
 		  - filter synonym 
 		  - direct#, directInv# synonyms 
 	2.0.1 - code hardening 
+	2.0.2 - removed backward compat code for deprecated coalition, uzcoalition attributes
 --]]--
 
 unitZone.unitZones = {}
@@ -81,13 +82,14 @@ function unitZone.createUnitZone(theZone)
 
 	-- coalition 
 	theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("unitZone", 0) -- now with main attribute
-	-- DEPRECATED 2023 SEPT: provided for legacy compatibility
+	--[[-- DEPRECATED 2023 SEPT: provided for legacy compatibility
 	if theZone:hasProperty("coalition") then 
 		theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("coalition", 0) -- 0 = all
 	elseif theZone:hasProperty("uzCoalition") then 
 		theZone.uzCoalition = theZone:getCoalitionFromZoneProperty("uzCoalition", 0)
 	end
-	
+	REMOVED 20250308
+	--]]--
 	-- DML Method 
 	theZone.uzMethod = theZone:getStringFromZoneProperty("method", "inc")
 	if theZone:hasProperty("uzMethod") then 

@@ -1,14 +1,15 @@
 cfxSmokeZone = {}
-cfxSmokeZone.version = "3.0.0" 
+cfxSmokeZone.version = "3.0.1" 
 cfxSmokeZone.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
 }
---[[--
+--[[-- Copyright (c) 2021-2025 by Christian Franz 
  Version History
  3.0.0 - now supports immediate smoke stop 
 	   - supports persistence 
 	   - code cleanup 
+ 3.0.1 - fixed data load error 
 --]]--
 cfxSmokeZone.smokeZones = {}
 cfxSmokeZone.updateDelay = 5 * 60 -- every 5 minutes 
@@ -143,7 +144,7 @@ function cfxSmokeZone.start()
 		callbacks.persistData = cfxSmokeZone.saveData
 		persistence.registerModule("smokeZones", callbacks)
 		-- now load my data 
-		persistence.loadData() -- will start with update 
+		cfxSmokeZone.loadData() -- will start with update 
 	end
 	-- start update and checkflag loops 
 	cfxSmokeZone.update() -- also starts all unpaused 

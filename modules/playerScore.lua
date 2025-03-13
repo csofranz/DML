@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.2.1"
+cfxPlayerScore.version = "5.2.2"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -19,6 +19,8 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	5.2.1 - Event 20 (CA join) corrected typo 	  
 		  - wiping score on enter and birth 
 		  - more robust initscore 
+	5.2.2 - fixed typo in feat zone 
+	
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore
 	TODO: better wildcard support for kill events 
@@ -81,7 +83,7 @@ function cfxPlayerScore.addFeatZone(theZone)
 		theZone.featType = "KILL"
 	end	
 	theZone.featDesc = theZone:getStringFromZoneProperty("description", "(some feat)")
-	theZone.featNum = ctheZone:getNumberFromZoneProperty("awardLimit", -1) -- how many times this can be awarded, -1 is infinite 
+	theZone.featNum = theZone:getNumberFromZoneProperty("awardLimit", -1) -- how many times this can be awarded, -1 is infinite 
 	theZone.ppOnce = theZone:getBoolFromZoneProperty("awardOnce", false)
 	theZone.awardedTo = {} -- by player name: true/false 
 	table.insert(cfxPlayerScore.featZones, theZone)

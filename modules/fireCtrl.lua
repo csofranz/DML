@@ -1,5 +1,5 @@
 fireCtrl = {}
-fireCtrl.version = "1.1.0"
+fireCtrl.version = "1.2.0"
 fireCtrl.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -24,6 +24,9 @@ fireCtrl.roots = {}
 		  - notifications attribute 
 		  - cleanup 
 		  - UI attribute 
+	1.2.0 - onStart attribute 
+			ctrOn? attribute 
+			ctrOff? attribute
 --]]--
 
 function fireCtrl.checkinPlayer(pName, gName, uName, uType)
@@ -124,7 +127,6 @@ function fireCtrl.redirectAction (args)
 end
 
 function fireCtrl.doStatus(args)
---	trigger.action.outText("status call", 30)
 	local gName = args[1]
 	local uName = args[2]
 	local gID = args[3]
@@ -236,6 +238,25 @@ end
 
 function fireCtrl.update()
 	timer.scheduleFunction(fireCtrl.update, {}, timer.getTime() + 1/fireCtrl.ups)
+	
+	-- see if on/off 
+	if fireCtrl.ctrOn and cfxZones.testZoneFlag(fireCtrl, fireCtrl.ctrOn, fireCtrl.method, "lastCtrOn") then 
+		fireCtrl.enabled = true 
+		if fireCtrl.verbose then 
+			trigger.action.outText("+++fCtrl: turning fire control on.", 30)
+		end 
+	end 
+	
+	if fireCtrl.ctrOff and cfxZones.testZoneFlag(fireCtrl, fireCtrl.ctrOff, fireCtrl.method, "lastCtrOff") then 
+		fireCtrl.enabled = false 
+		if fireCtrl.verbose then 
+			trigger.action.outText("+++fCtrl: turning fire control OFF.", 30)
+		end 
+	end 
+	
+	-- are we on?
+	if not fireCtrl.enabled then return end 
+	
 	-- check the numbers of fires burning 
 	local f = 0 
 	local cells = 0 
@@ -302,6 +323,8 @@ function fireCtrl.saveData()
 	-- save current heroes. simple clone 
 	local theHeroes = dcsCommon.clone(fireCtrl.heroes)
 	theData.theHeroes = theHeroes
+	theData.hasEnabled = true 
+	theData.enabled = fireCtrl.enabled
 	return theData, fireCtrl.sharedData -- second val only if shared 
 end
 
@@ -316,6 +339,9 @@ function fireCtrl.loadData()
 	end
 	local theHeroes = theData.theHeroes
 	fireCtrl.heroes = theHeroes 
+	if theData.hasEnabled then 
+		fireCtrl.enabled = theData.enabled
+	end 
 end
 
 --
@@ -339,6 +365,21 @@ function fireCtrl.readConfigZone()
 	fireCtrl.sparks = theZone:getNumberFromZoneProperty("sparks", 3)
 	fireCtrl.notifications = theZone:getBoolFromZoneProperty("notifications", true)
 	fireCtrl.UI = theZone:getBoolFromZoneProperty("UI", true)
+	
+	fireCtrl.enabled = theZone:getBoolFromZoneProperty("onStart", true)
+	if theZone:hasProperty("ctrOn?") then 
+		fireCtrl.ctrOn = theZone:getStringFromZoneProperty("ctrOn?", "<none>")
+		fireCtrl.lastCtrOn = trigger.misc.getUserFlag(fireCtrl.ctrOn)
+	end 
+	if not fireCtrl.enabled and not fireCtrl.ctrOn then 
+		trigger.action.outText("***WARNING: fireCtrl cannot be turned on!", 30)
+	end 
+	
+	if theZone:hasProperty("ctrOff?") then 
+		fireCtrl.ctrOff = theZone:getStringFromZoneProperty("ctrOff?", "<none>")
+		fireCtrl.lastCtrOff = trigger.misc.getUserFlag(fireCtrl.ctrOff)
+	end
+	fireCtrl.method = theZone:getStringFromZoneProperty("method", "change")
 	
 	if theZone:hasProperty("attachTo:") then 
 		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")

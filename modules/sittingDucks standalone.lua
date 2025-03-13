@@ -1,8 +1,16 @@
 sittingDucks = {}
 sittingDucks.verbose = false 
-sittingDucks.version = "1.0.0"
+sittingDucks.version = "1.0.1"
 sittingDucks.ssbDisabled = 100 -- must match the setting of SSB, usually 100
 sittingDucks.resupplyTime = -1 -- seconds until "reinforcements" reopen the slot, set to -1 to turn off, 3600 is one hour
+
+--[[
+Version History 
+
+1.0.0 Initial Version 
+1.0.1 DCS releases 2024-jul-11 and 2024-jul-22 bugs hardening 
+
+--]]--
 
 --
 -- Destroying a client stand-in on an airfield will block that 
@@ -22,6 +30,7 @@ function sittingDucks:onEvent(event)
 	-- home in on the kill event 
 	if event.id == 8 then -- dead event 
 		local theUnit = event.initiator
+		if not theUnit.getName then return end -- dcs jul-11 and jul-22 bugs
 		local deadName = theUnit:getName()
 		if not deadName then return end 
 		-- look at stopGap's collection of stand-ins
