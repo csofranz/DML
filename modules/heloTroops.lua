@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "5.0.0"
+cfxHeloTroops.version = "5.1.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -8,29 +8,17 @@ cfxHeloTroops.requestRange = 500 -- meters
 --
 --[[--
  VERSION HISTORY
- 4.0.0 - added dropZones
-	   - enforceDropZones
-	   - coalition for drop zones 
- 4.1.0 - troops dropped in dropZones with active autodespawn are 
-         filtered from load menu 
-	   - updated eventhandler to new events and unitLost 
-	   - timeStamp to avoid double-dipping 
-	   - auto-pickup restricted as well 
-	   - code cleanup
- 4.2.0 - support for individual lase codes 
-       - support for drivable 
- 4.2.1 - increased verbosity
-	   - also supports 'pickupRang" for reverse-compatibility with manual typo.
- 4.2.2 - support for attachTo:
- 4.2.3 - dropZone supports 'keepWait' attribute 
-       - dropZone supports 'setWait' attribute 
- 4.2.4 - dropWait is always active outside of drop zones
  5.0.0 - drop options and formation menus. Supported formations 
 			circle_out
 			chevron
 			line left 
 			line right 
 			scattered behind
+ 5.0.1 - mande UI menu name a config option menuName
+ 5.1.0 - new airdrop ability (prep)
+	   - fastRope attribute
+	   - ropeAGL attribute (30m)
+	   - ropeVel attribute (1.1m/s = 4.00 km/h)
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -285,7 +273,6 @@ end
 
 function cfxHeloTroops.addConfigMenu(conf)
 	-- we add a menu for auto-drop-off and drop formation 
---	trigger.action.outText("enter addConfigMenu for <" .. conf.unit:getName() .. ">", 30)
 	if conf.myDeployMenu then 
 		missionCommands.removeItemForGroup(conf.id, conf.myDeployMenu)
 	end 
@@ -352,7 +339,6 @@ function cfxHeloTroops.addConfigMenu(conf)
 				cfxHeloTroops.redirectDropFormation, 
 				{conf, "gaggle"}
 				)
-
 end
 
 function cfxHeloTroops.setCommsMenu(theUnit)
@@ -384,7 +370,7 @@ function cfxHeloTroops.setCommsMenu(theUnit)
 		if cfxHeloTroops.mainMenu then 
 			mainMenu = radioMenu.getMainMenuFor(cfxHeloTroops.mainMenu) 
 		end 
-		conf.myMainMenu = missionCommands.addSubMenuForGroup(id, 'Airlift Troops', mainMenu) 
+		conf.myMainMenu = missionCommands.addSubMenuForGroup(id, cfxHeloTroops.menuName, mainMenu) -- 'Airlift Troops' 
 	end
 	-- clear out existing commands, add new
 	cfxHeloTroops.clearCommsSubmenus(conf)
@@ -409,7 +395,17 @@ function cfxHeloTroops.addAirborneMenu(conf)
 	-- while airborne, add a status menu
 	local commandTxt = "(To load troops, land in proximity to them)"
 	if conf.troopsOnBoardNum > 0 then 
-		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Infantry. Land to deploy them)"
+		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Infantry; "
+		if cfxHeloTroops.airDrop or cfxHeloTroops.fastRope then 
+			if cfxHeloTroops.airDrop then 
+				commandTxt = commandTxt .. "airdrop or "
+			end
+			if cfxHeloTroops.fastRope then 
+				commandTxt = commandTxt .. "fast-rope or "
+			end
+		else 	
+			commandTxt = commandTxt .. "land to deploy)"
+		end 
 	end
 	local theCommand =  missionCommands.addCommandForGroup(
 				conf.id, 
@@ -419,6 +415,65 @@ function cfxHeloTroops.addAirborneMenu(conf)
 				{conf, "none"}
 				)
 	table.insert(conf.myCommands, theCommand)
+				
+	if conf.troopsOnBoardNum > 0 
+	and (cfxHeloTroops.airDrop or cfxHeloTroops.fastRope) then 
+		if cfxHeloTroops.airDrop then 
+			local theCommand =  missionCommands.addCommandForGroup(
+				conf.id, 
+				"Air-Drop",
+				conf.myMainMenu,
+				cfxHeloTroops.redirectAirAction, 
+				{conf, "drop"}
+				)
+			table.insert(conf.myCommands, theCommand)
+		end 
+		if cfxHeloTroops.fastRope then 
+			local theCommand =  missionCommands.addCommandForGroup(
+				conf.id, 
+				"Fast-Rope",
+				conf.myMainMenu,
+				cfxHeloTroops.redirectAirAction, 
+				{conf, "rope"}
+				)
+			table.insert(conf.myCommands, theCommand)
+		end 
+	end 
+end
+
+function cfxHeloTroops.redirectAirAction(args)
+	timer.scheduleFunction(cfxHeloTroops.doAirAction, args, timer.getTime() + 0.1)
+end
+
+function cfxHeloTroops.doAirAction(args)
+	local conf = args[1]
+	local what = args[2]
+	if not what then what = "NIL" end 
+	if what == "drop" then 
+		trigger.action.outText("+++heloT: NYI air action 'drop'.", 30)
+
+	elseif what == "rope" then 
+		local theUnit = conf.unit
+		local theGroup = theUnit:getGroup()
+		local gid = theGroup:getID()
+		-- velocity and alt check 
+		local vel = dcsCommon.getUnitSpeed(theUnit) -- in m/s 
+		local alt = dcsCommon.getUnitAGL(theUnit) -- in m 
+		if alt > cfxHeloTroops.ropeAGL then 
+			trigger.action.outTextForGroup(gid, "Get below " .. cfxHeloTroops.ropeAGL .. "m AGL to fast-rope your troops.", 30)
+			return 
+		end
+		if vel > cfxHeloTroops.ropeVel then 
+			kmh = 3.6 * cfxHeloTroops.ropeVel
+			mph = math.floor(10 * kmh / 1.852) / 10 
+			trigger.action.outTextForGroup(gid, "Slow down to " .. kmh .. "m (= ".. mph .. "kts) to fast-rope your troops.", 30)
+			return
+		end 
+		-- use doDeployTroops for the rest 
+		cfxHeloTroops.doDeployTroops(args)
+	else 
+		trigger.action.outText("+++heloT: unknown air action <" .. what .. ">.", 30)
+	end
 end
 
 function cfxHeloTroops.redirectNoAction(args)
@@ -1155,13 +1210,18 @@ function cfxHeloTroops.readConfigZone()
 	
 	cfxHeloTroops.requestRange = theZone:getNumberFromZoneProperty("requestRange", 500)
 	cfxHeloTroops.enforceDropZones = theZone:getBoolFromZoneProperty("enforceDropZones", false)
+	cfxHeloTroops.airdrop = theZone:getBoolFromZoneProperty("airDrop", false) 
+	cfxHeloTroops.fastRope = theZone:getBoolFromZoneProperty("fastRope", false)
+	cfxHeloTroops.ropeAGL = theZone:getNumberFromZoneProperty("ropeAGL", 30) -- meters 
+	cfxHeloTroops.ropeVel = theZone:getNumberFromZoneProperty("ropeVel", 1.1)
+	
 	-- add own troop carriers 
 	if theZone:hasProperty("troopCarriers") then 
 		local tc = theZone:getStringFromZoneProperty("troopCarriers", "UH-1D")
 		tc = dcsCommon.splitString(tc, ",")
 		cfxHeloTroops.troopCarriers = dcsCommon.trimArray(tc)
 	end
-	
+	cfxHeloTroops.menuName = theZone:getStringFromZoneProperty("menuName", "Airlift Troops") 
 	if theZone:hasProperty("attachTo:") then 
 		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")
 		if radioMenu then -- requires optional radio menu to have loaded 

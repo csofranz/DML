@@ -27,7 +27,7 @@ cfxMX.verbose = false
 --]]--
 
 cfxMX.spawnedUnitCoaByName = {} -- reverse lookup for coas to reconstruct after kill
-cfxMX.spawnedUnitCatByName = {} -- reverse lookup fir cat to recon after kill 
+cfxMX.spawnedUnitCatByName = {} -- reverse lookup for cat to recon after kill 
 cfxMX.spawnedUnitGroupNameByName = {}
 
 cfxMX.groupNamesByID = {}

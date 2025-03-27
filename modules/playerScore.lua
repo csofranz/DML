@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.2.2"
+cfxPlayerScore.version = "5.2.3"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -20,6 +20,7 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - wiping score on enter and birth 
 		  - more robust initscore 
 	5.2.2 - fixed typo in feat zone 
+	5.2.3 - resolved nil vicCat 
 	
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore
@@ -189,6 +190,10 @@ function cfxPlayerScore.evalFeatDescription(name, theZone, playerUnit, victim)
 end
 
 function cfxPlayerScore.cat2BaseScore(inCat)
+	if not inCat then 
+		trigger.action.outText("+++scr cat2BaseScore: nil inCat, returning 1", 30)
+		return 1
+	end
 	if inCat == 0 then return cfxPlayerScore.aircraft end -- airplane
 	if inCat == 1 then return cfxPlayerScore.helo end -- helo 
 	if inCat == 2 then return cfxPlayerScore.ground end -- ground 

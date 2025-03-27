@@ -1,5 +1,5 @@
 autoCSAR = {}
-autoCSAR.version = "2.2.1" 
+autoCSAR.version = "2.2.2" 
 autoCSAR.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -21,6 +21,8 @@ autoCSAR.trackedEjects = {} -- we start tracking on eject
 		  - no csar mission if pilot lands too close to airbase or farp 
 		    and noExploit is on
 	2.2.1 - DCS hardening for isExist
+	2.2.2 - more DCS bug hardening: getCoalition, getName, getID 
+	
 --]]--
 autoCSAR.forbidden = {} -- indexed by name, contains point 
 autoCSAR.killDist = 2100 -- meters from center of forbidden 
@@ -140,6 +142,12 @@ end
 autoCSAR.pilotInfo = {}
 function autoCSAR:onEvent(event)
 	if not event.initiator then return end 
+	-- more DCS bug stopping 
+	local theUnit = event.initiator
+	if not theUnit.getName then return end 
+	if not theUnit.getCoalition then return end 
+	if not theUnit.getID then return end 
+	
 	local initiator = event.initiator 
 	if event.id == 31 then -- landing_after_eject, does not happen at sea
 		-- to prevent double invocations for same process
