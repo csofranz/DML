@@ -1,5 +1,5 @@
 unGrief = {}
-unGrief.version = "2.0.0"
+unGrief.version = "2.0.1"
 unGrief.verbose = false 
 unGrief.ups = 1
 unGrief.requiredLibs = {
@@ -25,6 +25,7 @@ unGrief.disabledFlagValue = unGrief.enabledFlagValue + 100 -- DO NOT CHANGE
 		  - also trigger on birth event, more wrathful 
 		  - auto-turn on ssb when retaliation is SSB 
 		  - re-open slot after kick in 15 seconds 
+	2.0.1 - DCS bug hardening
 		  
 
 --]]--
@@ -129,7 +130,7 @@ function unGrief:onEvent(theEvent)
 	if not theEvent.initiator then return end -- no initiator, no interest 
 	if not theEvent.target then return end -- wtf happened here? begone!
 	local killer = theEvent.initiator 
-	if not killer:isExist() then return end -- may have exited already 
+	if not killer or (not Unit.isExist(killer)) then return end -- may have exited already 
 	local stiff = theEvent.target 
 	if not killer.getPlayerName then return end -- wierd stuff happening here 
 	local playerName = killer:getPlayerName()

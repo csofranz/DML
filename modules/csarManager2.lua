@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.4.0"
+csarManager.version = "4.5.0"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -14,7 +14,11 @@ csarManager.ups = 1
   4.4.0  - csarMissions created by autoCSAR can now trigger
            CSAR zones, which can in turn integrate with csarFX 
 		   for enemies etc. 
-
+  4.4.1  - autoCSAR warnng a bit less aggressive 
+  4.5.0  - playerScore integration via successMission() passes "EVAC"
+		 - code hardening 
+		 - (re-)connected mission score to zone 
+		 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
 	INTEGRATES AUTOMATICALLY WITH SCRIBE 
@@ -357,10 +361,10 @@ function csarManager.successMission(who, where, theMission)
 		if not theScore then theScore = csarManager.rescueScore end
 		
 		local theUnit = Unit.getByName(who)
-		if theUnit and theUnit.getPlayerName then 
+		if theUnit and Unit.isExist(theUnit) and theUnit.getPlayerName then 
 			local pName = theUnit:getPlayerName()
 			if pName then 
-				cfxPlayerScore.updateScoreForPlayer(pName, theScore)
+				cfxPlayerScore.updateScoreForPlayer(pName, theScore, "EVAC")
 				cfxPlayerScore.logFeatForPlayer(pName, "Evacuated " .. theMission.name)
 			end
 		end
@@ -1292,6 +1296,9 @@ function csarManager.createCSARMissionFromZone(theZone, pos, name)
 			0.1, --theZone.radius) -- radius
 			nil) -- parashoo unit 
 	theMission.inPopulated = theZone.inPopulated -- transfer for csarFX
+	if theZone.score then 
+		theMission.score = theZone.score
+	end
 	return theMission
 end
 --
@@ -1484,7 +1491,7 @@ function csarManager.readCSARZone(theZone)
 		csarManager.addMission(theMission, theZone)
 	end
 
-	if isAutoCSAR then 
+	if isAutoCSAR and (theZone.deferred) and (not theZone.startCSAR) then 
 		trigger.action.outText("+++csar: warning - CSAR Mission in Zone <" .. theZone.name .. "> can only be started by autoCSAR", 30)
 	end
 	

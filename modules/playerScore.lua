@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.2.3"
+cfxPlayerScore.version = "5.3.0"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -21,7 +21,10 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 		  - more robust initscore 
 	5.2.2 - fixed typo in feat zone 
 	5.2.3 - resolved nil vicCat 
-	
+	5.3.0 - callbacks 
+		  - updateScoreForPlayer() supports reason and data 
+		  - invokeCB when scoring 
+		  
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore
 	TODO: better wildcard support for kill events 
@@ -34,6 +37,7 @@ cfxPlayerScore.requiredLibs = {
 }
 
 cfxPlayerScore.damaged = {} -- used for hit event to collect contributing players. Only last hit will score.
+cfxPlayerScore.callbacks = {}
 
 cfxPlayerScore.playerScore = {} -- indexed by unit name - threading needle
 cfxPlayerScore.coalitionScore = {} -- score per coalition
@@ -61,6 +65,31 @@ cfxPlayerScore.landing = 0 -- if > 0 it scores as feat
 
 cfxPlayerScore.unit2player = {} -- lookup and reverse look-up 
 cfxPlayerScore.unitSpawnTime = {} -- lookup by unit name to prevent early landing 
+
+-- signature: theCB(name, score, reason) with 
+--    name: (string) name of player 
+--   score: a number, can be negative. effective score awarded
+-- reason : string, describes why score is changed, can be nil
+--        : "EVAC"   - CSAR successful
+--        : "CRASH"  - player plane lost 
+--        : "FRAT"   - Fratricide - killed a friendly 
+--        : "NONE"   - No reason given (default)
+--        : "KILL"   - an AI unit was killed
+--		  : "PVP"    - an enemy player-controlled unit was killed 
+--        : "LAND"   - player landed aircraft inside landing feat zone 
+--        : "INSERT" - player inserted troops into combat zone feat 
+--        : may have other reasons defined later 
+function cfxPlayerScore.registerScoreCallBack(theCB)
+	table.insert(cfxPlayerScore.callbacks, theCB)
+end
+
+function cfxPlayerScore.invokeCB(playerName, score, reason)
+	-- invoke all callbacks 
+	for idx, cb in pairs(cfxPlayerScore.callbacks) do 
+		cb(playerName, score, reason)
+	end 
+end
+
 function cfxPlayerScore.addSafeZone(theZone)
 	theZone.scoreSafe = theZone:getCoalitionFromZoneProperty("scoreSafe", 0)
 	table.insert(cfxPlayerScore.safeZones, theZone)
@@ -382,7 +411,9 @@ function cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
 end
 
 -- will never defer 
-function cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
+function cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score, reason, data)
+	if not reason then reason = "NONE" end 
+	cfxPlayerScore.invokeCB(playerName, score, reason)
 	local thePlayerScore = cfxPlayerScore.getPlayerScore(playerName)
 	thePlayerScore.score = thePlayerScore.score + score
 	cfxPlayerScore.setPlayerScore(playerName, thePlayerScore)
@@ -405,7 +436,7 @@ function cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
 	return thePlayerScore.score 
 end
 
-function cfxPlayerScore.updateScoreForPlayer(playerName, score)
+function cfxPlayerScore.updateScoreForPlayer(playerName, score, reason, data)
 	-- main update score 
 	if cfxPlayerScore.isDeferred(playerName) then -- just queue it
 		local thePlayerScore = cfxPlayerScore.getPlayerScore(playerName) 
@@ -414,7 +445,7 @@ function cfxPlayerScore.updateScoreForPlayer(playerName, score)
 		return thePlayerScore.score -- this is the old score!!! 
 	end
 	-- when we get here write immediately 
-	return cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score)
+	return cfxPlayerScore.updateScoreForPlayerImmediate(playerName, score, reason, data)
 end
 
 function cfxPlayerScore.doLogTypeKill(playerName, thePlayerScore, theType)
@@ -579,10 +610,15 @@ function cfxPlayerScore.isNamedUnit(theUnit)
 	return false 
 end
 
-function cfxPlayerScore.awardScoreTo(killSide, theScore, killerName)
+function cfxPlayerScore.awardScoreTo(killSide, theScore, killerName, pk)
 	local playerScore 
-	if theScore < 0 then playerScore = cfxPlayerScore.updateScoreForPlayerImmediate(killerName, theScore)
-	else playerScore = cfxPlayerScore.updateScoreForPlayer(killerName, theScore)
+	if theScore < 0 then playerScore = cfxPlayerScore.updateScoreForPlayerImmediate(killerName, theScore, "FRAT", nil) -- fratricide 
+	else 
+		if pk then
+			playerScore = cfxPlayerScore.updateScoreForPlayer(killerName, theScore, "PVP", nil)
+		else 
+			playerScore = cfxPlayerScore.updateScoreForPlayer(killerName, theScore, "KILL", nil)
+		end 
 	end
 	if not cfxPlayerScore.reportScore then return end 
 	if cfxPlayerScore.announcer then
@@ -683,7 +719,7 @@ function cfxPlayerScore.processKill(killer, victim)
 		local staticScore = cfxPlayerScore.object2score(victim, killSide)
 		if staticScore > 0 then 
 			trigger.action.outSoundForCoalition(killSide, cfxPlayerScore.scoreSound)
-			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
+			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName, nil)
 			cfxPlayerScore.checkKillFeat(killerName, killer, victim, false)
 		end
 		if victim.getName and victim:getName() then cfxPlayerScore.damaged[victim:getName()] = nil end
@@ -726,7 +762,7 @@ function cfxPlayerScore.processKill(killer, victim)
 			end
 			staticScore = scoreMod * staticScore
 			cfxPlayerScore.logKillForPlayer(killerName, victim)
-			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName)
+			cfxPlayerScore.awardScoreTo(killSide, staticScore, killerName, nil)
 		else 
 			-- no score, no mentions
 		end
@@ -790,7 +826,7 @@ function cfxPlayerScore.processKill(killer, victim)
 	local totalScore = unitScore * scoreMod
 	-- if the score is negative, awardScoreTo will automatically
 	-- make it immediate, else depending on deferred 
-	cfxPlayerScore.awardScoreTo(killSide, totalScore, killerName)
+	cfxPlayerScore.awardScoreTo(killSide, totalScore, killerName, pk)
 	if not fraternicide or neutralKill then 
 		-- only award kill feats for kills of the enemy
 		cfxPlayerScore.checkKillFeat(killerName, killer, victim, false)
@@ -823,7 +859,7 @@ function cfxPlayerScore.handlePlayerLanding(theEvent)
 			else desc = desc .. " aircraft"
 			end
 		end 
-		cfxPlayerScore.updateScoreForPlayer(playerName, cfxPlayerScore.landing)
+		cfxPlayerScore.updateScoreForPlayer(playerName, cfxPlayerScore.landing, "LAND", nil)
 		cfxPlayerScore.logFeatForPlayer(playerName, desc, playerSide)
 		theScore = cfxPlayerScore.getPlayerScore(playerName) -- re-read after write
 		if cfxPlayerScore.verbose then trigger.action.outText("Landing feat awarded/queued for <" .. playerName .. ">", 30) end
@@ -972,7 +1008,7 @@ function cfxPlayerScore.handlePlayerDeath(theEvent)
 		
 		if cfxPlayerScore.planeLoss ~= 0 then 
 			-- plane loss has IMMEDIATE consequences 
-			cfxPlayerScore.updateScoreForPlayerImmediate(pName, cfxPlayerScore.planeLoss)
+			cfxPlayerScore.updateScoreForPlayerImmediate(pName, cfxPlayerScore.planeLoss, "CRASH", nil)
 			if cfxPlayerScore.announcer then 
 				local uid = theUnit:getID()
 				local thePlayerRecord = cfxPlayerScore.getPlayerScore(pName)

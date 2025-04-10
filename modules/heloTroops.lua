@@ -1,5 +1,5 @@
 cfxHeloTroops = {}
-cfxHeloTroops.version = "5.1.0"
+cfxHeloTroops.version = "5.2.0"
 cfxHeloTroops.verbose = false 
 cfxHeloTroops.autoDrop = true 
 cfxHeloTroops.autoPickup = false 
@@ -18,7 +18,9 @@ cfxHeloTroops.requestRange = 500 -- meters
  5.1.0 - new airdrop ability (prep)
 	   - fastRope attribute
 	   - ropeAGL attribute (30m)
-	   - ropeVel attribute (1.1m/s = 4.00 km/h)
+	   - ropeVel attribute (1.1m/s = 4km/h = 2.2kts)
+ 5.2.0 - interface for playerScore: reasion "INSERT"
+	   - inflight deploy troop menu shortened 
 	   
 --]]--
 cfxHeloTroops.minTime = 3 -- seconds beween tandings
@@ -395,7 +397,8 @@ function cfxHeloTroops.addAirborneMenu(conf)
 	-- while airborne, add a status menu
 	local commandTxt = "(To load troops, land in proximity to them)"
 	if conf.troopsOnBoardNum > 0 then 
-		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Infantry; "
+--		commandTxt = "(You are carrying " .. conf.troopsOnBoardNum .. " Infantry; "
+		commandTxt = "("
 		if cfxHeloTroops.airDrop or cfxHeloTroops.fastRope then 
 			if cfxHeloTroops.airDrop then 
 				commandTxt = commandTxt .. "airdrop or "
@@ -404,7 +407,7 @@ function cfxHeloTroops.addAirborneMenu(conf)
 				commandTxt = commandTxt .. "fast-rope or "
 			end
 		else 	
-			commandTxt = commandTxt .. "land to deploy)"
+			commandTxt = commandTxt .. "land to deploy troops)"
 		end 
 	end
 	local theCommand =  missionCommands.addCommandForGroup(
@@ -788,7 +791,7 @@ function cfxHeloTroops.scoreWhenCapturing(theUnit)
 				local theScore = cfxHeloTroops.combatDropScore
 				local pName = theUnit:getPlayerName()
 				if pName then 
-					cfxPlayerScore.updateScoreForPlayer(pName, theScore)
+					cfxPlayerScore.updateScoreForPlayer(pName, theScore, "INSERT")
 					cfxPlayerScore.logFeatForPlayer(pName, "Combat Troop Insertion at " .. nearestZone.name, coa)
 				end
 			end
