@@ -1,5 +1,5 @@
 LZ = {}
-LZ.version = "1.2.1"
+LZ.version = "1.2.2"
 LZ.verbose = false 
 LZ.ups = 1 
 LZ.requiredLibs = {
@@ -17,6 +17,9 @@ LZ.LZs = {}
 	1.1.0 - persistence 
 	1.2.0 - dcs 2024-07-11 and dcs 2024-07-22 updates (new events)
 	1.2.1 - theZone --> aZone typo at input management 
+	1.2.2 - reduced verbosity 
+		  - clean up 
+		  - re-enabled event proccing con'td
 --]]--
 
 function LZ.addLZ(theZone)
@@ -82,7 +85,6 @@ function LZ.createLZWithZone(theZone)
 		theZone.lzTriggerMethod = cfxZones.getStringFromZoneProperty(theZone, "triggerMethod", "change")
 	end 
 	
-	
 	-- pause / unpause 
 	theZone.lzIsPaused = cfxZones.getBoolFromZoneProperty(theZone, "isPaused", false)
 	
@@ -100,7 +102,6 @@ function LZ.createLZWithZone(theZone)
 		trigger.action.outText("+++LZ: new LZ <".. theZone.name ..">", 30)
 	end
 
-	trigger.action.outText("zone <" .. theZone.name .. "> type of radius is <" .. type(theZone.radius) .. ">, val = " .. tonumber(theZone.radius), 30)
 end
 
 function LZ.nameMatchForArray(theName, theArray, wildcard)
@@ -109,24 +110,20 @@ function LZ.nameMatchForArray(theName, theArray, wildcard)
 	if not theArray then return false end
 	theName = string.upper(theName) -- case insensitive 
 	
-	-- trigger.action.outText("enter name match with <" .. theName .. "> look for match in <" .. dcsCommon.array2string(theArray) .. "> and wc <" .. wildcard .. ">", 30)
 	for idx, entry in pairs(theArray) do
 		
 		if wildcard and dcsCommon.stringEndsWith(entry, wildcard) then 
 			entry = dcsCommon.removeEnding(entry, wildcard)
-			-- trigger.action.outText("trying to WC-match <" .. theName .. "> with <" .. entry .. ">", 30)
 			if dcsCommon.stringStartsWith(theName, entry) then 
 				-- theName "hi there" matches wildcarded entry "hi*"
 				return true 
 			end
 		else 
-			-- trigger.action.outText("trying to simple-match <" .. theName .. "> with <" .. entry .. ">", 30)
 			if theName == entry then 
 				return true 
 			end
 		end
 	end
---	trigger.action.outText ("no match for <" .. theName .. ">", 30)
 	return false 
 end
 
@@ -134,7 +131,6 @@ end
 -- Misc Processing
 --
 function LZ.unitIsInterestingForZone(theUnit, theZone)
-	
 	-- see if zone is interested in this unit.
 	if theZone.isPaused then 
 		return false 
@@ -147,7 +143,6 @@ function LZ.unitIsInterestingForZone(theUnit, theZone)
 			end
 			return false 
 		else 
-			-- trigger.action.outText("player match!", 30)
 		end
 	end
 	
@@ -200,10 +195,8 @@ function LZ.unitIsInterestingForZone(theUnit, theZone)
 	else 
 		-- we can return true since player and coa mismatch 
 		-- have already been filtered 
-
 		return true -- theZone.coalition == coa end
 	end
-	
 	trigger.action.outText("+++LZ: unknown attribute check for <" .. theZone.name .. ">", 30)
 	return false
 end
@@ -216,7 +209,7 @@ function LZ:onEvent(event)
 	-- make sure we have an initiator 
 	if not event.initiator then return end 
 	
-    -- only interested in S_EVENT_TAKEOFF and  events
+    -- only interested in S_EVENT_TAKEOFF and similar events
     if event.id ~= world.event.S_EVENT_TAKEOFF and 
 	   event.id ~= world.event.S_EVENT_LAND and 
 	   event.id ~= world.event.S_EVENT_RUNWAY_TAKEOFF and 
@@ -233,7 +226,6 @@ function LZ:onEvent(event)
 		if LZ.verbose then 
 			trigger.action.outText("+++LZ: zone <" .. aZone.name .. "> for unit <" .. theUnit:getName() .. "> proccing", 30)
 		end 
-		if true then return end 
 		local inZone, percent, dist = cfxZones.pointInZone(p, aZone)
 		if inZone then 
 			-- see if this unit interests us at all 
@@ -260,14 +252,9 @@ function LZ:onEvent(event)
 				end
 			end -- if interesting
 		else 
-			if LZ.verbose or aZone.verbose then 
-				--trigger.action.outText("+++LZ: unit <" .. theUnit:getName() .. "> not in zone <" .. aZone.name .. ">", 30)
-			end
-		
 		end -- if in zone 
     end -- end for 
 end
-
 --
 -- Update 
 --
@@ -283,7 +270,6 @@ function LZ.update()
 			end
 			aZone.isPaused = true 
 		end 
-		
 		if cfxZones.testZoneFlag(aZone, aZone.lzContinue, aZone.LZTriggerMethod, "lzLastContinue") then 
 			if LZ.verbose or aZone.verbose then 
 				trigger.action.outText("+++LZ: triggered continue? for <".. aZone.name ..">", 30)
@@ -293,7 +279,6 @@ function LZ.update()
 	end
 	
 end
-
 --
 -- LOAD / SAVE 
 -- 
@@ -346,14 +331,9 @@ function LZ.readConfigZone()
 	local theZone = cfxZones.getZoneByName("LZConfig") 
 	if not theZone then 
 		theZone = cfxZones.createSimpleZone("LZConfig")
-		if LZ.verbose then 
-			trigger.action.outText("+++LZ: NO config zone!", 30)
-		end 
 	end 
-	
 	LZ.lzCooldown = cfxZones.getNumberFromZoneProperty(theZone, "cooldown", 20)
-	LZ.verbose = cfxZones.getBoolFromZoneProperty(theZone, "verbose", false)
-	
+	LZ.verbose = theZone.verbose
 	if LZ.verbose then 
 		trigger.action.outText("+++LZ: read config", 30)
 	end 
@@ -368,10 +348,8 @@ function LZ.start()
 	if not dcsCommon.libCheck("cfx LZ", LZ.requiredLibs) then
 		return false 
 	end
-	
 	-- read config 
 	LZ.readConfigZone()
-	
 	-- process LZ Zones 
 	-- old style
 	local attrZones = cfxZones.getZonesWithAttributeNamed("lz")
@@ -379,10 +357,8 @@ function LZ.start()
 		LZ.createLZWithZone(aZone) -- process attributes
 		LZ.addLZ(aZone) -- add to list
 	end
-	
 	-- connect event handler 
 	world.addEventHandler(LZ)
-	
 	-- load any saved data 
 	if persistence then 
 		-- sign up for persistence 
@@ -392,10 +368,8 @@ function LZ.start()
 		-- now load my data 
 		LZ.loadData()
 	end
-	
 	-- start update 
 	LZ.update()
-	
 	trigger.action.outText("cfx LZ v" .. LZ.version .. " started.", 30)
 	return true 
 end

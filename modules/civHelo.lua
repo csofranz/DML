@@ -1,5 +1,5 @@
 civHelo = {}
-civHelo.version = "1.0.1"
+civHelo.version = "1.0.2"
 civHelo.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", 
@@ -7,7 +7,9 @@ civHelo.requiredLibs = {
 --[[--
 Version History
 	1.0.0 - Initial version 
-	1.0.1 - livery hardening 
+	1.0.1 - livery hardening
+	1.0.2 - improved verbosity 
+		  - clean up
 --]]--
 
 civHelo.flights = {} -- currently active flights 
@@ -58,9 +60,7 @@ function civHelo.getPortNamed(name)
 	for idx, theZone in pairs(civHelo.ports) do 
 		if theZone.name == name then return theZone end 
 	end
-	if civHelo.verbose then 
-		trigger.action.outText("+++civH: cannot find port <" .. name .. ">", 30)
-	end 
+	if civHelo.verbose then trigger.action.outText("+++civH: cannot find port <" .. name .. ">", 30) end 
 	return nil 
 end 
 
@@ -79,8 +79,6 @@ function civHelo.getFreePort(source, dest, anchor)
 					local d = dcsCommon.dist(a, p)
 					if d > civHelo.minDist and d < civHelo.maxDist then 
 						table.insert(collector, theZone)
-					else 
---						trigger.action.outText("+++civH: disregarded dest zone <" .. theZone.name .. ">: dist <" .. math.floor(d) / 1000 .. " km> out of bounds", 30)
 					end
 				else 
 					table.insert(collector, theZone)
@@ -95,14 +93,19 @@ end
 
 function civHelo.getSourceAndDest()
 	local source = civHelo.getFreePort(true, false)
-	if not source then return nil, nil end 
+	if not source then 
+		if civHelo.verbose then trigger.action.outText("+++civH: cannot find free source port.", 30) end 
+		return nil, nil 
+	end 
 	source.inUse = true 
 	local dest = civHelo.getFreePort(false, true, source)
 	if not dest then 
 		source.inUse = nil 
+		if civHelo.verbose then trigger.action.outText("+++civH: cannot find free dest port for source <".. source.name .. ">.", 30) end 
 		return nil, nil
 	end 
 	dest.inUse = true 
+	if civHelo.verbose then trigger.action.outText("+++civH: new flight source <".. source.name .. "> to dest <" .. dest.name .. ">.", 30) end 
 	return source, dest 
 end
 
@@ -162,7 +165,6 @@ function civHelo.createFlight(name, theType, fromZone, toZone) --, inAir)
 		
 	end 
 	-- add livery capability for this aircraft 
-	--civHelo.processLiveriesFor(theHUnit, theType)
 	civHelo.getLiveryForType(theType, theHUnit)
 	
 	-- enforce civ attribute 
@@ -174,7 +176,7 @@ function civHelo.createFlight(name, theType, fromZone, toZone) --, inAir)
 	local A = fromZone:getPoint()
 	local B = toZone:getPoint()
 	
-	-- unit is done, let's do the route
+	-- create route
 	-- WP 1: take off 
 	local fromWP, omwWP 
 	fromWP = dcsCommon.createTakeOffFromGroundRoutePointData(fromZone:getPoint(true), fromZone.hotStart) -- last true = hot  
@@ -214,9 +216,7 @@ function civHelo.createFlight(name, theType, fromZone, toZone) --, inAir)
 	toWP.task = task 	
 	
 	-- move group to WP1 and add WP1 and WP2 to route 
-	dcsCommon.moveGroupDataTo(theGroup, 
-							  fromWP.x, 
-							  fromWP.y)
+	dcsCommon.moveGroupDataTo(theGroup, fromWP.x, fromWP.y)
 	dcsCommon.addRoutePointForGroupData(theGroup, fromWP)
 	if not inAir then 
 		dcsCommon.addRoutePointForGroupData(theGroup, omwWP)
@@ -226,7 +226,6 @@ function civHelo.createFlight(name, theType, fromZone, toZone) --, inAir)
 	-- spawn 
 	local groupCat = Group.Category.HELICOPTER
 	local theSpawnedGroup = coalition.addGroup(civHelo.owner, groupCat, theGroup)
-	
 	return theSpawnedGroup	
 end 
 
@@ -242,9 +241,7 @@ function civHelo.openPortUsedBy(name)
 	for idx, theZone in pairs(civHelo.ports) do 
 		if theZone.inUse == name then 
 			theZone.inUse = nil 
-			if civHelo.verbose then 
-				trigger.action.outText("+++civH: clearing port <" .. theZone.name .. "> from flight <" .. name .. ">", 30)
-			end 
+			if civHelo.verbose then trigger.action.outText("+++civH: clearing port <" .. theZone.name .. "> from flight <" .. name .. ">", 30) end 
 		end 
 	end
 end
@@ -282,24 +279,10 @@ function civHelo.getType(theZone)
 end
 
 function civHelo.getLiveryForType(theType, theData)
---	trigger.action.outText("picking liviery for helo type <" .. theType .. ">", 30)
 	if civHelo.liveries[theType] then 
 		local available = civHelo.liveries[theType]
-		if available then 
---			trigger.action.outText("We have a livery selection available for helo", 30)
-		else 
---			trigger.action.outText("No liveries for type.", 30)
-		end
 		local chosen = dcsCommon.pickRandom(available)	
-		if chosen then 	
---			trigger.action.outText("a fine livery choice: <" .. chosen .. "> for type <" .. theType .. ">", 30)
-		else 
---			trigger.action.outText("No choice, no livery.", 30)
-		end 
-		
 		theData.livery_id = chosen
-	else
---		trigger.action.outText("No livery for type <" .. theType .. ">", 30)
 	end
 end
 
@@ -319,22 +302,19 @@ function civHelo.newFlight()
 				trigger.action.outText("+++civH: created new flight <" .. name .. ">", 30)
 			end
 		else 
-			trigger.action.outText("+++civH: cant create flight <" .. name .. ">", 30)
+			trigger.action.outText("+++civH: can't create flight <" .. name .. ">", 30)
 			source.inUse = nil 
 			dest.inUse = nil 
 		end
 	else 
-		if civHelo.verbose then 
-			trigger.action.outText("+++civH: no ports available, can't create new flight. Numflights = <" .. dcsCommon.getSizeOfTable(civHelo.flights) .. ">", 30)
-		end 
+		if civHelo.verbose then trigger.action.outText("+++civH: no ports available, can't create new flight. Numflights = <" .. dcsCommon.getSizeOfTable(civHelo.flights) .. ">", 30) end 
 	end 
 end
 
 --
 -- event handler 
 --
-function civHelo:onEvent(theEvent) 
---	trigger.action.outText("event", 30)
+function civHelo:onEvent(theEvent) --	trigger.action.outText("event", 30)
 	if not theEvent.initiator then return end 
 	local theUnit = theEvent.initiator 
 	if not theUnit.getGroup then return end 
@@ -347,18 +327,14 @@ function civHelo:onEvent(theEvent)
 	for name, aGroup in pairs(civHelo.flights) do 
 		if name == gName then mine = true end
 	end
-	if not mine then 
-		return 
-	end 
+	if not mine then return end 
 	
 	local id = theEvent.id 
 	if id == 9 or -- pilot dead 
 	   id == 30 or -- unit lost 
 	   id == 5 -- crash 
 	then  
-		if civHelo.verbose then 
-			trigger.action.outText("+++civH: cancelling flight <" .. gName .. ">: mishap", 30)
-		end 
+		if civHelo.verbose then trigger.action.outText("+++civH: cancelling flight <" .. gName .. ">: mishap", 30) end 
 		civHelo.openPortUsedBy(gName)
 		civHelo.flights[gName] = nil 
 	end 
@@ -370,7 +346,6 @@ end
 function civHelo.update()
 	-- schedule again 
 	timer.scheduleFunction(civHelo.update, {}, timer.getTime() + 1/civHelo.ups )
-	
 	-- see how many flights are live 
 	if dcsCommon.getSizeOfTable(civHelo.flights) < civHelo.maxFlights then
 		civHelo.newFlight()
@@ -425,7 +400,6 @@ function civHelo.readConfigZone()
 		if civHelo.verbose then 
 			trigger.action.outText("civH: found and processing 'helo_liveries' zone data.", 30)
 		end 
-		
 		-- read all into my types registry, replacing whatever is there
 		local rawLiver = cfxZones.getAllZoneProperties(livZone)
 		local newTypes, newLiveries = civAir.addTypesAndLiveries(rawLiver)
@@ -444,6 +418,7 @@ function civHelo.readConfigZone()
 			end
 		end 
 	end  	
+	if civHelo.verbose then trigger.action.outText("::: civHelo master set to verbose.", 30) end
 end
 
 --
@@ -458,24 +433,18 @@ function civHelo.start()
 	if not dcsCommon.libCheck("cfx civ helo", civHelo.requiredLibs) then
 		return false 
 	end
-	
 	-- read config 
 	civHelo.readConfigZone()
-	
 	-- process civHelo Zones 
-	-- old style
 	local attrZones = cfxZones.getZonesWithAttributeNamed("civHelo")
 	for k, aZone in pairs(attrZones) do 
 		civHelo.readCivHeloZone(aZone) -- process attributes
 		civHelo.addCivHeloZone(aZone) -- add to list
 	end
-	
 	-- start update in 5 seconds
 	timer.scheduleFunction(civHelo.update, {}, timer.getTime() + 5)
-	
 	-- install event handler 
 	world.addEventHandler(civHelo)
-	
 	-- say hi 
 	trigger.action.outText("civHelo v" .. civHelo.version .. " started.", 30)
 	return true 

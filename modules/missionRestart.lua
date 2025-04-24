@@ -1,5 +1,5 @@
 missionRestart = {}
-missionRestart.version = "1.0.0" 
+missionRestart.version = "1.0.1" 
 missionRestart.restarting = false 
 -- 
 -- Restart this mission, irrespective of its name
@@ -17,7 +17,7 @@ end
 
 function missionRestart.update()
 	-- call me in a second to poll triggers
-	timer.scheduleFunction(missionRestart.update, {}, timer.getTime() + 1)
+	timer.scheduleFunction(missionRestart.update, {}, timer.getTime() + 30)
 	
 	if trigger.misc.getUserFlag("simpleMissionRestart") > 0 then 
 		missionRestart.restart()

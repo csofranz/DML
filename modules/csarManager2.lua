@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.5.0"
+csarManager.version = "4.5.1"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -18,6 +18,7 @@ csarManager.ups = 1
   4.5.0  - playerScore integration via successMission() passes "EVAC"
 		 - code hardening 
 		 - (re-)connected mission score to zone 
+  4.5.1  - reduced verbosity when smoking 
 		 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
@@ -1157,7 +1158,7 @@ function csarManager.update() -- every second
 						local smokePoint = dcsCommon.randomPointOnPerimeter(
 							csarManager.smokeDist, csarMission.zone.point.x, csarMission.zone.point.z) 
 						csarMission.smokeName = dcsCommon.markPointWithSmoke(smokePoint, csarManager.smokeColor) -- returns unique smoke name 
-						trigger.action.outText("smokeName <" .. csarMission.smokeName .. "> started", 30)
+--						trigger.action.outText("smokeName <" .. csarMission.smokeName .. "> started", 30)
 						csarMission.lastSmokeTime = timer.getTime()
 					end
 					

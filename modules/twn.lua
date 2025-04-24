@@ -1,5 +1,5 @@
 twn = {}
-twn.version = "1.0.1"
+twn.version = "1.0.2"
 twn.verbose = false 
 
 --[[--
@@ -9,7 +9,7 @@ twn.verbose = false
 VERSION HISTORY
 1.0.0 - Initial version 
 1.0.1 - Sinai // SinaiMap switcharoo 
-
+1.0.2 - Germany Cold War name switcharoo 
 --]]--
 
 function twn.closestTownTo(p) -- returns name, data, distance
@@ -40,6 +40,7 @@ function twn.start()
 	local theater = env.mission.theatre 
 	-- map naming oddities 
 	if theater == "SinaiMap" then theater = "Sinai" end 
+	if theater == "GermanyCW" then theater = "GermanyColdWar" end 
 	if twn.verbose then 
 		trigger.action.outText("theater is <" .. theater .. ">", 30)
 	end 
@@ -54,6 +55,9 @@ function twn.start()
 	if json then 
 		towns = {}
 		traw = net.json2lua(json)
+--		trigger.action.outText(json, 30)
+--		if true then return false end -- remove me 
+		
 		local count = 0 
 		for name, entry in pairs (traw) do 
 			local p = coord.LLtoLO(entry.latitude, entry.longitude,0)
