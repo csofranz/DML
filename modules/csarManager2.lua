@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.5.1"
+csarManager.version = "4.5.2"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -19,6 +19,7 @@ csarManager.ups = 1
 		 - code hardening 
 		 - (re-)connected mission score to zone 
   4.5.1  - reduced verbosity when smoking 
+  4.5.2  - smoke off when mission times out 
 		 
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
@@ -1043,6 +1044,8 @@ function csarManager.updateCSARMissions()
 			p.y = 0 
 			local thePlayers = coalition.getPlayers(aMission.side)
 			local msg = aMission.name .. " is no longer responding. Abort rescue."
+			-- kill smoke 
+			trigger.action.effectSmokeStop(aMission.smokeName)
 			for idx, theUnit in pairs (thePlayers) do 
 				local up = theUnit:getPoint()
 				up.y = 0 

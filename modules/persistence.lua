@@ -649,7 +649,7 @@ function persistence.start()
 	-- read config 
 	persistence.saveFileName = dcsCommon.getMissionName() .. " Data.txt"
 	persistence.readConfigZone()
-	
+		
 	-- let's see it lfs and io are online 
 	persistence.active = false 
 	if (not _G["lfs"]) or (not lfs) then 

@@ -1,5 +1,5 @@
 cfxSSBClient = {}
-cfxSSBClient.version = "5.0.0"
+cfxSSBClient.version = "5.0.1"
 cfxSSBClient.verbose = false 
 cfxSSBClient.singleUse = false -- set to true to block crashed planes
 -- NOTE: singleUse (true) requires SSB to disable immediate respawn after kick
@@ -23,7 +23,7 @@ Version History
 		- SINGLE-USE and dynamic spawns are mutually exclusive
 		  as single-use cannot cover dynamic slots, so authors must 
 		  disable or limit the amount of planes manually 
-  
+  5.0.1 - reduced verbosity for dynamic players   
 --]]--
 
 cfxSSBClient.enabledFlagValue = 0 -- DO NOT CHANGE, MUST MATCH SSB 
@@ -355,7 +355,7 @@ function cfxSSBClient:onEvent(event)
 		-- find out if this is a dynamic spawn 
 		local isDynamic = cfxMX.isDynamicPlayer(theUnit)
 		if isDynamic then 
-			trigger.action.outText("+++SSBC: detected dynamic player spawn for unit <" .. uName .. ">, id <" .. theUnit:getID() .. ">, group <" .. theUnit:getGroup():getName() .. ">, player <" .. playerName .. ">", 30)
+			if cfxSSBClient.verbose then trigger.action.outText("+++SSBC: detected dynamic player spawn for unit <" .. uName .. ">, id <" .. theUnit:getID() .. ">, group <" .. theUnit:getGroup():getName() .. ">, player <" .. playerName .. ">", 30) end 
 			cfxSSBClient.amendPlayerData(theUnit) -- get airport and add to managed slots 
 		end 
 		cfxSSBClient.playerPlanes[uName] = playerName

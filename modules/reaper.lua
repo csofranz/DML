@@ -1,5 +1,5 @@
 reaper = {}
-reaper.version = "1.3.1"
+reaper.version = "1.3.2"
 reaper.requiredLibs = {
 	"dcsCommon",
 	"cfxZones",  
@@ -25,6 +25,8 @@ VERSION HISTORY
  1.2.0 - support twn when present 
  1.3.0 - new invisible option for drone zone 
  1.3.1 - slightly decreased verbosity 
+ 1.3.2 - corrected silly typo in code 
+ 
  
 --]]--
 
@@ -352,7 +354,7 @@ function reaper.selectFromDetectedTargets(visTargets, theZone)
 			local theTarget = tData.object 
 			local nn = theTarget:getName()
 			if not nn or nn == "" then
-				if reapoer.verbose then 
+				if reaper.verbose then 
 					trigger.action.outText("+++reaper: shortcut on startup", 30)
 				end 
 				return nil 

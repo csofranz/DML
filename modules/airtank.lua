@@ -1,5 +1,5 @@
 airtank = {}
-airtank.version = "1.0.2"
+airtank.version = "1.0.3"
 -- Module to extinguish fires controlled by the 'inferno' module.
 -- For 'airtank' fire extinguisher aircraft modules. 
 airtank.requiredLibs = {
@@ -12,6 +12,7 @@ airtank.requiredLibs = {
 	1.0.0 - Initial release 
 	1.0.1 - removed attachTo: bug 
 	1.0.2 - integration with fireCtrl.enabled 
+	1.0.3 - "chatty" attribute 
 --]]--
 
 airtank.tanks = {} -- player data by GROUP name, will break with multi-unit groups 
@@ -161,8 +162,10 @@ function airtank:onEvent(theEvent)
 				if data.carrying > data.capacity * 0.5 then 
 					msg = "Good luck and godspeed, " .. pName .. "!"
 				end
-				trigger.action.outTextForGroup(data.gID, msg, 30)
-				trigger.action.outSoundForGroup(data.gID, airtank.actionSound)
+				if airtank.chatty then 
+					trigger.action.outTextForGroup(data.gID, msg, 30)
+					trigger.action.outSoundForGroup(data.gID, airtank.actionSound)
+				end 
 			end 
 		end
 		return
@@ -551,6 +554,8 @@ function airtank.readConfigZone()
 	airtank.blipSound = theZone:getStringFromZoneProperty("blipSound", airtank.actionSound)
 	airtank.releaseSound = theZone:getStringFromZoneProperty("releaseSound", airtank.actionSound)
 	airtank.pumpSound = theZone:getStringFromZoneProperty("pumpSound", airtank.actionSound)
+	
+	airtank.chatty = theZone:getBoolFromZoneProperty("chatty", true)
 	
 	if theZone:hasProperty("attachTo:") then 
 		local attachTo = theZone:getStringFromZoneProperty("attachTo:", "<none>")

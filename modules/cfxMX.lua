@@ -23,6 +23,7 @@ cfxMX.verbose = false
          - pre-populate spawnedUnits coa, cat from MX 
 		 - spawnedUnitGroupNameByName
    3.0.1 - new getClosestUnitToPoint()
+   4.0.0 - support for DCS persistence API (start)
    
 --]]--
 
@@ -51,7 +52,7 @@ cfxMX.playerGroupByName = {} -- returns data only if a player is in group
 cfxMX.playerUnitByName = {} -- returns data only if this is a player unit 
 cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
-cfxMX.groups = {} -- all groups indexed b yname, cfxGroups folded into cfxMX 
+cfxMX.groups = {} -- all groups indexed by name, cfxGroups folded into cfxMX 
 
 --[[-- group objects are 
 {

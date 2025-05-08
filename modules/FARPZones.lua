@@ -1,5 +1,5 @@
 FARPZones = {}
-FARPZones.version = "2.4.0"
+FARPZones.version = "2.4.1"
 FARPZones.verbose = false 
 --[[--
   Version History
@@ -29,6 +29,8 @@ FARPZones.verbose = false
   2.3.0 - new attributes redCap!, blueCap! captured! and farpMethod
 		- send out signals 
   2.4.0 - work-around for crashing DCS bug in trigger.action.removeMark
+  2.4.1 - increased verbosity for refresh 
+		- redraw all FARPS after releasing them 
   
 --]]--
 
@@ -500,13 +502,19 @@ end
 -- Update / Refresh
 --
 
-function FARPZones.refreshMap()
-	timer.scheduleFunction(FARPZones.refreshMap, {}, timer.getTime() + FARPZones.refresh)
+function FARPZones.refreshMap(once)
+	if not once then 
+		timer.scheduleFunction(FARPZones.refreshMap, {}, timer.getTime() + FARPZones.refresh)
+	end 
+	
 	if FARPZones.verbose then 
 		trigger.action.outText("+++Farp map refresh started", 30)
 	end 
 	
 	for idx, theFARP in pairs(FARPZones.allFARPZones) do 
+	if FARPZones.verbose then 
+		trigger.action.outText("+++refreshing <" .. theFARP.zone.name .. ">", 30)
+	end 
 		FARPZones.drawFARPCircleInMap(theFARP)
 	end
 end
@@ -598,6 +606,8 @@ function FARPZones.releaseFARPS()
 	for idx, aFarp in pairs(FARPZones.lockup) do 
 		aFarp:autoCapture(true)
 	end 
+	
+	FARPZones.refreshMap(true)
 end
 
 function FARPZones.readConfig()
