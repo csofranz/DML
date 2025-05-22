@@ -769,11 +769,14 @@ function persistence.start()
 	end	
 	
 	-- we now see if we can and need load data 
+--	if persistence.verbose then trigger.action.outText("before data load: Persistence.hasData = " .. dcsCommon.bool2Text(persistence.hasData),30 ) end	
 	persistence.missionStartDataLoad()
+--	if persistence.verbose then trigger.action.outText("after data load: Persistence.hasData = " .. dcsCommon.bool2Text(persistence.hasData),30 ) end
 	timer.scheduleFunction(persistence.GC, nil, timer.getTime() + persistence.validFor) -- destroy loaded data after this interval 
 	-- and start updating 
+--	if persistence.verbose then trigger.action.outText("before first update: Persistence.hasData = " .. dcsCommon.bool2Text(persistence.hasData),30 ) end 
 	persistence.update()
-	
+--	if persistence.verbose then trigger.action.outText("after first update: Persistence.hasData = " .. dcsCommon.bool2Text(persistence.hasData),30 ) end
 	return persistence.active 
 end
 

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.2.1"
+dcsCommon.version = "3.3.0"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -40,6 +40,8 @@ dcsCommon.version = "3.2.1"
 	   - new processAtoBWildCards()
 	   - tons of new wildcards like <eleft> 
 3.2.1  - markPointWithSmoke supports names and returns names 
+3.3.0  - detects if the mission is started from a save
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -3754,6 +3756,20 @@ function dcsCommon.setUserFlag(flagName, theValue)
 	trigger.action.setUserFlag(flagName, theValue)
 end
 
+-- 
+-- DCS Persistence support 
+--
+function dcsCommon.hasSaveData()
+	return dcsCommon.saveDataAvailable and (dcsCommon.saveDataAvailable == true) 
+end
+
+-- save handler
+function dcsCommon.saveHandler()
+	trigger.action.outText("+++\n+++ W A R N I N G: TRYING TO SAVE A DML-ENHANCED MISSION\n+++\n\nThis is unwise.\n")
+	local msg = "This is not a good idea"
+	return msg -- return non-null data 
+end
+
 --
 --
 -- INIT
@@ -3765,9 +3781,18 @@ end
 		-- create ID tables
 		dcsCommon.collectMissionIDs()
 		
+		-- see if save data is available 
+		local sd = world.getPersistenceData("dcsCommon")
+		if sd then 
+			dcsCommon.saveDataAvailable = true 
+			trigger.action.outText("sd is <" .. sd .. ">", 30 )
+		else 
+			dcsCommon.saveDataAvailable = false 
+			trigger.action.outText("dcsCommon: clean start.", 30)
+		end 
 		--dcsCommon.uuIdent = 0
 		if (dcsCommon.verbose) or true then
-		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 10)
+		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 30)
 		end
 	end
 
@@ -3775,3 +3800,11 @@ end
 -- do init. 
 dcsCommon.init()
 
+-- detect if miz was previously saved 
+if dcsCommon.hasSaveData() then 
+	trigger.action.outText("+++\n+++ W A R N I N G: this mission starts from a saved state.\n+++\n\nThis is unwise.\n", 30)
+end
+
+-- hook into state saving to provide save data 
+world.setPersistenceHandler("dcsCommon", dcsCommon.saveHandler)
+trigger.action.outText("world.setPersistenceHandler set for dcsCommon", 30)
