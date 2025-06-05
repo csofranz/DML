@@ -1,5 +1,5 @@
 unGrief = {}
-unGrief.version = "2.0.1"
+unGrief.version = "2.0.2"
 unGrief.verbose = false 
 unGrief.ups = 1
 unGrief.requiredLibs = {
@@ -26,6 +26,7 @@ unGrief.disabledFlagValue = unGrief.enabledFlagValue + 100 -- DO NOT CHANGE
 		  - auto-turn on ssb when retaliation is SSB 
 		  - re-open slot after kick in 15 seconds 
 	2.0.1 - DCS bug hardening
+	2.0.2 - corrected typo in config 
 		  
 
 --]]--
@@ -268,7 +269,7 @@ function unGrief.readConfigZone()
 		if unGrief.verbose then 
 			trigger.action.outText("+++uGrf: NO config zone!", 30)
 		end 
-		theZone = cfxZone.createSimpleZone("unGriefConfig")
+		theZone = cfxZones.createSimpleZone("unGriefConfig")
 	end 
 	
 	unGrief.verbose = theZone.verbose 

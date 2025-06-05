@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.6.0"
+cloneZones.version = "2.7.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,6 +13,8 @@ cloneZones.maxIter = 100 -- maximum number of attempts to resolve
 -- groupTracker is OPTIONAL! and required only with trackWith attribute
 
 cloneZones.cloners = {}
+cloneZones.randomized = {}
+cloneZones.noSpawn = {} -- all no spawn zones collector, not used 
 cloneZones.callbacks = {}
 cloneZones.unitXlate = {}
 cloneZones.groupXlate = {} -- used to translate original groupID to cloned. only holds last spawned group id 
@@ -63,6 +65,8 @@ cloneZones.respawnOnGroupID = true
 	2.5.2 - removed bug when checking damaged! and no units cloned 
 	2.6.0 - maxCycles attribute 
 		  - increased vorbosity during persistance:loadData 
+	2.7.0 - noSpawn zones 
+	      - ... only for rndLoc
 --]]--
 
 --
@@ -293,6 +297,10 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	if theZone:hasProperty("rndLoc") then 
 		theZone.rndLoc = theZone:getBoolFromZoneProperty("rndLoc", false)
 	end 
+	if theZone.rndLoc then 
+		table.insert(cloneZones.randomized, theZone)
+--		trigger.action.outText("<" .. theZone.name .. "> is randomized", 30)
+	end 
 	theZone.centerOnly = theZone:getBoolFromZoneProperty("centerOnly", false)
 	if theZone:hasProperty("wholeGroups") then 
 		theZone.centerOnly = theZone:getBoolFromZoneProperty( "wholeGroups", false)
@@ -327,6 +335,9 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 		theZone.despawnInMin, theZone.despawnInMax = theZone:getPositiveRangeFromZoneProperty("despawnIn", 2,2)
 	end 
 	
+	-- provide masking 'noSpawn' info
+	theZone.noSpawn = {} -- empty set 
+	
 	-- damaged and health interface 
 	if theZone:hasProperty("damaged!") then 
 		theZone.damaged = theZone:getStringFromZoneProperty("damaged!")
@@ -344,6 +355,26 @@ function cloneZones.createClonerWithZone(theZone) -- has "Cloner"
 	end	
 	-- we end with clear plate 
 	theZone.lastSize = 0 -- no units here 
+end
+
+function cloneZones.createNoSpawnWithZone(theZone)
+	if not theZone then return end 
+	local loc = theZone:getPoint() 
+	-- find closest cloner 
+	local closestCloner = cfxZones.getClosestZone(loc, cloneZones.randomized)
+	if closestCloner then 
+		if closestCloner:pointInZone(loc) then 
+			closestCloner.noSpawn[theZone.name] = theZone
+			if cloneZones.verbose or theZone.verbose or closestCloner.verbose then 
+				trigger.action.outText("+++clnZ: noSpawn zone <" .. theZone.name .. "> attaches to cloner <" .. closestCloner.name .. ">.", 30)
+			end 
+		else
+			trigger.action.outText("+++clnZ: 'noSpawn' zone <" .. theZone.name .. "> not inside closest clone zone <" .. closestCloner.name .. ">, discarded.", 30)
+		end
+	else 
+		trigger.action.outText("+++clnZ: no cloners found for noSpawn <" .. theZone.name .. ">.", 30)
+	end
+	cloneZones.noSpawn[theZone.name] = theZone -- save it, just in case 
 end
 
 -- 
@@ -1006,6 +1037,39 @@ function cloneZones.forcedRespawn(args)
 	end
 end
 
+function cloneZones.rndLocForZone(spawnZone)
+	local count = 0
+	local ok = false 
+	local loc, dx, dy 
+	while not ok do
+		ok = true
+		count = count + 1
+		if spawnZone.onPerimeter then 
+			loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
+		elseif spawnZone.inBuiltup then 
+			loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
+		else 
+			loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
+		end
+		if count > cloneZones.maxTries then 
+			if cloneZones.verbose or spawnZone.verbose then 
+				trigger.action.outText("+++clnZ: rndLoc compliant placement failed for <" .. spawnZone.name .. ">, using random plancement.", 30)
+			end 
+			return loc, dx, dy
+		end -- use last loc, dx, dy
+		-- see if inside a noSpawn zone 
+		for idx, theNoSpawn in pairs(spawnZone.noSpawn) do 
+			if theNoSpawn:pointInZone(loc) then 
+				ok = false 
+				if theNoSpawn.verbose or cloneZones.verbose or spawnZone.verbose then 
+					trigger.action.outText("+++clnZ: rejected spawn location attempt <" .. count .. ">, is inside noSpawn <" .. theNoSpawn.name .. ">", 30)
+				end 
+			end 
+		end 
+	end 
+	return loc, dx, dy
+end
+
 function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 	if cloneZones.verbose or spawnZone.verbose then 
 		trigger.action.outText("+++clnZ: spawning with template <" .. theZone.name .. "> for spawner <" .. spawnZone.name .. ">", 30)
@@ -1066,25 +1130,26 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 			-- calculate the entire group's displacement
 			local units = rawData.units
 
-			local loc, dx, dy 
-			if spawnZone.onPerimeter then 
+			local loc, dx, dy  = cloneZones.rndLocForZone(spawnZone)
+--[[--			if spawnZone.onPerimeter then 
 				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 			elseif spawnZone.inBuiltup then 
 				loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 			else 
 				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
-			end 
+			end --]]--
 			
 			for idx, aUnit in pairs(units) do 
 				if not spawnZone.centerOnly then 
 					-- *every unit's displacement is randomized
-					if spawnZone.onPerimeter then 
+					loc, dx, dy  = cloneZones.rndLocForZone(spawnZone)
+--[[--					if spawnZone.onPerimeter then 
 						loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 					elseif spawnZone.inBuiltup then 
 						loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 					else	
 						loc, dx, dy = spawnZone:createRandomPointInZone()
-					end 
+					end --]]--
 					aUnit.x = loc.x 
 					aUnit.y = loc.z 
 				else 
@@ -1165,7 +1230,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 				end
 			end -- else centerOnly
 		end
-		
 		
 		-- apply turning 
 		dcsCommon.rotateGroupData(rawData, spawnZone.turn + 57.2958 *dHeading, newCenter.x, newCenter.z)
@@ -1294,7 +1358,6 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		else 
 			if cloneZones.verbose or spawnZone.verbose then 
 				trigger.action.outText("clnZ: Note: GROUP ID spawn changed for <" .. rawData.name .. ">: target ID " .. rawData.CZTargetID .. " (target) returns " .. newGroupID .. " (actual) in <" .. spawnZone.name .. ">", 30)
-				
 			end
 			
 			if cloneZones.respawnOnGroupID then 
@@ -1335,7 +1398,7 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		local rawData, cat, ctry, parent = cfxMX.getStaticFromDCSbyName(aStaticName) -- returns a UNIT data block
 		
 		if not rawData then
-			trigger.action.outText("Static Clone: no such group <"..aStaticName .. ">", 30)			
+			trigger.action.outText("Static Clone: no such group <"..aStaticName .. ">", 30)	
 		elseif rawData.name == aStaticName then 
 			-- all good
 		else 
@@ -1349,14 +1412,14 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		-- randomize if enabled
 		if spawnZone.rndLoc then 
 
-			local loc, dx, dy 
-			if spawnZone.onPerimeter then 
+			local loc, dx, dy = cloneZones.rndLocForZone(spawnZone)
+--[[--			if spawnZone.onPerimeter then 
 				loc, dx, dy = spawnZone:createRandomPointOnZoneBoundary()
 			elseif spawnZone.inBuiltup then 
 				loc, dx, dy = spawnZone:createRandomPointInPopulatedZone(spawnZone.inBuiltup)
 			else 
 				loc, dx, dy = spawnZone:createRandomPointInZone() -- also supports polygonal zones 
-			end
+			end --]]--
 			rawData.x = rawData.x + dx -- might want to use loc 
 			rawData.y = rawData.y + dy -- directly
 		end
@@ -2084,14 +2147,15 @@ function cloneZones.readConfigZone()
 		theZone = cfxZones.createSimpleZone("cloneZonesConfig") 
 	end 
 	if theZone:hasProperty("uniqueCount") then 
-		cloneZones.uniqueCounter = theZone:getNumberFromZoneProperty("uniqueCount", cloneZone.uniqueCounter)
+		cloneZones.uniqueCounter = theZone:getNumberFromZoneProperty("uniqueCount", cloneZones.uniqueCounter)
 	end
 	if theZone:hasProperty("localCount") then 
-		cloneZones.lclUniqueCounter = theZone:getNumberFromZoneProperty("localCount", cloneZone.lclUniqueCounter)
+		cloneZones.lclUniqueCounter = theZone:getNumberFromZoneProperty("localCount", cloneZones.lclUniqueCounter)
 	end
 	if theZone:hasProperty("globalCount") then 
-		cloneZones.globalCounter = theZone:getNumberFromZoneProperty("globalCount", cloneZone.globalCounter)
+		cloneZones.globalCounter = theZone:getNumberFromZoneProperty("globalCount", cloneZones.globalCounter)
 	end
+	cloneZones.maxTries = theZone:getNumberFromZoneProperty("maxTries", 100)
 	cloneZones.verbose = theZone.verbose
 end
 
@@ -2114,6 +2178,12 @@ function cloneZones.start()
 	for k, aZone in pairs(attrZones) do 
 		cloneZones.createClonerWithZone(aZone) -- process attribute and add to zone
 		cloneZones.addCloneZone(aZone) 
+	end
+
+	-- process nospawn zones 
+	local attrZones = cfxZones.getZonesWithAttributeNamed("nospawn")	
+	for k, aZone in pairs(attrZones) do 
+		cloneZones.createNoSpawnWithZone(aZone) -- process attributes and attach to cloner
 	end
 	
 	-- update all cloners and spawned clones from file 

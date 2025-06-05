@@ -1,10 +1,10 @@
 cfxMX = {}
-cfxMX.version = "3.0.1"
+cfxMX.version = "4.1.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
  
- Copyright (c) 2022, 2023 by Christian Franz and cf/x AG
+ Copyright (c) 2022 - 2025 by Christian Franz and cf/x AG
  
  Version History
    1.2.6 - cfxMX.allTrainsByName
@@ -24,9 +24,13 @@ cfxMX.verbose = false
 		 - spawnedUnitGroupNameByName
    3.0.1 - new getClosestUnitToPoint()
    4.0.0 - support for DCS persistence API (start)
+   4.1.0 - deeper support structs for DCS 'persistence' (save state)
+   
    
 --]]--
-
+cfxMX.envdata = {} -- replaces direct access to env.mission
+	-- has coalition 
+	
 cfxMX.spawnedUnitCoaByName = {} -- reverse lookup for coas to reconstruct after kill
 cfxMX.spawnedUnitCatByName = {} -- reverse lookup for cat to recon after kill 
 cfxMX.spawnedUnitGroupNameByName = {}
@@ -67,7 +71,8 @@ cfxMX.groups = {} -- all groups indexed by name, cfxGroups folded into cfxMX
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
 		
-	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+--	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+	for coa_name_miz, coa_data in pairs(cfxMX.envdata) do -- iterate all coalitions
 		local coa_name = coa_name_miz
 		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
 			coa_name = 'neutral'
@@ -127,7 +132,8 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 	-- unless fetchOriginal is true, creates a deep clone of 
 	-- static data structure 
 		
-	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+--	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+	for coa_name_miz, coa_data in pairs(cfxMX.envdata) do -- iterate all coalitions
 		local coa_name = coa_name_miz
 		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
 			coa_name = 'neutral'
@@ -190,7 +196,8 @@ function cfxMX.getStaticFromDCSbyName(aName, fetchOriginal)
 end
 
 function cfxMX.createCrossReferences()
-	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+--	for coa_name_miz, coa_data in pairs(env.mission.coalition) do -- iterate all coalitions
+	for coa_name_miz, coa_data in pairs(cfxMX.envdata) do -- iterate all coalitions
 		local coa_name = coa_name_miz
 		if string.lower(coa_name_miz) == 'neutrals' then -- remove 's' at neutralS
 			coa_name = 'neutral'
@@ -472,7 +479,35 @@ function cfxMX.isMEPlayerGroup(theUnit)
 	return false 
 end
 
+function cfxMX.setupData()
+	if dcsCommon.hasSaveData() then 
+		-- we retrieve original env.mission data from save 
+		trigger.action.outText("+++cfxMX: restoring saved MX", 30)
+		local mx = world.getPersistenceData("cfxMX")
+		if mx then 
+			cfxMX.envdata = mx
+			trigger.action.outText("+++cfxMX: restored original mx data", 30)
+		else
+			trigger.action.outText("+++cfxMX: failed to restore mx data", 30)
+			cfxMX.envdata = env.mission.coalition
+		end
+	else 
+		-- we use untampered miz data from original miz 
+		cfxMX.envdata = env.mission.coalition
+	end
+end
+
+function cfxMX.saveHandler()
+	trigger.action.outText("+++cfxMX - preserving original MX data slice", 30)
+	local retVal = cfxMX.envdata
+	return retVal -- return non-null data 
+end
+
 function cfxMX.start()
+	-- see if we need to restore data or can use env.miz directly 
+	cfxMX.setupData()
+	world.setPersistenceHandler("cfxMX", cfxMX.saveHandler)
+	
 	cfxMX.createCrossReferences()
 	if cfxMX.verbose then 
 		trigger.action.outText("cfxMX: "..#cfxMX.groupNamesByID .. " groups processed successfully", 30)

@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.3.0"
+dcsCommon.version = "3.3.1"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -41,7 +41,15 @@ dcsCommon.version = "3.3.0"
 	   - tons of new wildcards like <eleft> 
 3.2.1  - markPointWithSmoke supports names and returns names 
 3.3.0  - detects if the mission is started from a save
-
+3.3.1  - sanity checks added 
+	   - getACountryForCoalition works better, returns random country for that coa
+	   - getAirbasesInRangeOfAirbase supports minRange
+	   - getClosestAirbaseToAirbase
+	   - dumpVar2Str more explicit type info 
+	   - morse code (to conversion) support
+	   - midPoint()
+	   - isHelo()
+	   - getAirbaseCat(aBase) returns 1 (heloport) if less than 1 runways 
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -328,6 +336,14 @@ end
 		if not airDesc then return nil end 
 		
 		local airCat = airDesc.category
+		-- if it's a 0 cat, make sure it has at least 1 runway, else it is 
+		-- a 'undercover' helo base 
+		if airCat == 0 then 
+			local rwy = Airbase.getRunways(aBase)
+			if #rwy < 1 then 
+				airCat = 1 -- it's a helo port 
+			end
+		end 
 		return airCat 
 	end
 
@@ -369,7 +385,8 @@ end
 
 	-- getAirbasesInRangeOfAirbase returns all airbases that 
 	-- are in range of the given airbase 
-	function dcsCommon.getAirbasesInRangeOfAirbase(airbase, includeCenter, range, filterCat, filterCoalition)
+	function dcsCommon.getAirbasesInRangeOfAirbase(airbase, includeCenter, range, filterCat, filterCoalition, minRange)
+		if not minRange then minRange = 0 end 
 		if not airbase then return {} end
 		if not range then range = 150000 end 
 		local center = airbase:getPoint() 
@@ -381,7 +398,7 @@ end
 		for idx, aBase in pairs(allAB) do 
 			if aBase:getName() ~= centerName then 
 				local delta = dcsCommon.dist(center, aBase:getPoint())
-				if delta <= range then 
+				if delta <= range and delta >= minRange then 
 					table.insert(ABinRange, aBase)
 				end
 			end		
@@ -481,6 +498,27 @@ end
 		return closestBase, delta 
 	end
 
+	function dcsCommon.getClosestAirbaseToAirbase(theBase, filterCat, filterCoalition, allYourBase)
+		local delta = math.huge
+		local myName = theBase:getName() 
+		local thePoint = theBase:getPoint()
+		if not allYourBase then 
+			allYourBase = dcsCommon.getAirbasesWhoseNameContains("*", filterCat, filterCoalition) -- get em all and filter
+		end 
+		
+		local closestBase = nil 
+		for idx, aBase in pairs(allYourBase) do
+			-- iterate them all 
+			local abPoint = aBase:getPoint()
+			newDelta = dcsCommon.dist(thePoint, {x=abPoint.x, y = 0, z=abPoint.z})
+			if aBase:getName() ~= myName and newDelta < delta then 
+				delta = newDelta
+				closestBase = aBase
+			end
+		end
+		return closestBase, delta 
+	end
+	
 	function dcsCommon.getClosestFreeSlotForCatInAirbaseTo(cat, x, y, theAirbase, ignore)
 		if not theAirbase then return nil end 
 		if not ignore then ignore = {} end 
@@ -1092,6 +1130,15 @@ end
 	end
 
 	function dcsCommon.getACountryForCoalition(aCoalition)
+		--get a random contry that is affiliated with aCoalition, or nil 
+		local cty = {}
+		if aCoalition == 0 then cty = env.mission.coalitions["neutrals"] 
+		elseif aCoalition == 1 then cty = env.mission.coalitions["red"] 
+		else cty = env.mission.coalitions["blue"] end
+		if #cty < 1 then return nil end
+		return dcsCommon.pickRandom(cty)
+	
+--[[ old code 
 		-- scan the table of countries and get the first country that is part of aCoalition
 		-- this is useful if you want to create troops for a coalition but don't know the
 		-- coalition's countries 
@@ -1104,7 +1151,7 @@ end
 			i = i + 1
 		end
 		
-		return nil
+		return nil --]]--
 	end
 	
 	function dcsCommon.getCountriesForCoalition(aCoalition)
@@ -1934,6 +1981,10 @@ end
 		end
 	
 	end;
+
+function dcsCommon.midPoint(A,B)
+	return dcsCommon.vLerp(A, B, 0.5)
+end
 	
 	function dcsCommon.pointInDirectionOfPointXYY(dir, dist, p) -- dir in rad, p in XYZ returns XZZ 
 		local fx = math.cos(dir)
@@ -2550,7 +2601,7 @@ end
 			end
 		end
 		if type(value) == "table" then 
-			trigger.action.outText(prefix .. key .. ": [ ", 30)
+			trigger.action.outText(prefix .. key .. "(" .. type(key) .. "): [ ", 30)
 			-- iterate through all kvp
 			for k,v in pairs (value) do
 				dcsCommon.dumpVar2Str(k, v, prefix, true)
@@ -2563,7 +2614,7 @@ end
 			trigger.action.outText(prefix .. key .. ": " .. b, 30)
 			
 		else -- simple var, show contents, ends recursion
-			trigger.action.outText(prefix .. key .. ": " .. value, 30)
+			trigger.action.outText(prefix .. key .. " (" .. type(key) .. "): " .. value .. "(" .. type(value) .. ")", 30)
 		end
 		
 		if not inrecursion then 
@@ -2602,7 +2653,7 @@ end
 						"unit task timeout", "unit task stage", -- 50
 						"subtask score", "mission restart", "winner", -- 53
 						"runway takeoff", "runway touchdown", "LMS Restart", -- 56
-						"sim freeze", "sum unfreeze", "player start repair", "player end repair", --60
+						"sim freeze", "sim unfreeze", "player start repair", "player end repair", --60
 						"max",} -- 61
 		if id > #events then return "Unknown (ID=" .. id .. ")" end
 		return events[id]
@@ -2871,6 +2922,14 @@ function dcsCommon.isTroopCarrierType(theType, carriers)
 	end 
 	
 	return false
+end
+
+function dcsCommon.isHelo(theUnit)
+	if not theUnit then return false end 
+	if not Unit.isExist(theUnit) then return false end 
+	local grp = theUnit:getGroup()
+	local cat = grp:getCategory()
+	return cat == 1 -- we get cat from group to work around DCS bug 
 end
 
 function dcsCommon.unitIsOfLegalType(theUnit, types)
@@ -3599,6 +3658,79 @@ function dcsCommon.randomLetter(lowercase)
 	return theLetter
 end
 
+dcsCommon.morsealphabet = {
+    a = ".-",
+    b = "-...",
+    c = "-.-.",
+    d = "-..",
+    e = ".",
+    f = "..-.",
+    g = "--.",
+    h = "....",
+    i = "..",
+    j = ".---",
+    k = "-.-",
+    l = ".-..",
+    m = "--",
+    n = "-.",
+    o = "---",
+    p = ".--.",
+    q = "--.-",
+    r = ".-.",
+    s = "...",
+    t = "-",
+    u = "..-",
+    v = "...-",
+    w = ".--",
+    x = "-..-",
+    y = "-.--",
+    z = "--..",
+["0"] = "-----",
+["1"] = ".----",
+["2"] = "..---",
+["3"] = "...--",
+["4"] = "....-",
+["5"] = "....." ,
+["6"] = "-....",
+["7"] = "--...",
+["8"] = "---..",
+["9"] = "----.",
+[" "] = "  ",
+}
+function dcsCommon.morse(inChar)
+	local theChar = ""
+	if type(inChar == "string") then 
+		if #inChar < 1 then return "#ERROR0#" end
+		inChar = string.lower(inChar)
+		theChar = string.sub(inChar, 1, 1)
+	elseif type(inChar == "number") then 
+		if inChar > 255 then return "#ERROR>#" end 
+		if inChar < 0 then return "#ERROR<#" end 
+		theChar = char(inChar)
+	else 
+		return "#ERRORT#"
+	end
+	local a = dcsCommon.morsealphabet[theChar]
+	if a == nil then a = "#ERROR?#" end 
+	return a 
+end
+
+function dcsCommon.morseString(inString, delim)
+	if not delim then delim = "  " end 
+	local res = ""
+	local first = true 
+	for i = 1, #inString do
+		local c = inString:sub(i,i)
+		if first then 
+			res = dcsCommon.morse(c)
+			first = false 
+		else 
+			res = res .. delim .. dcsCommon.morse(c)
+		end
+	end
+	return res 
+end
+
 --
 -- RGBA from hex
 --
@@ -3765,11 +3897,41 @@ end
 
 -- save handler
 function dcsCommon.saveHandler()
-	trigger.action.outText("+++\n+++ W A R N I N G: TRYING TO SAVE A DML-ENHANCED MISSION\n+++\n\nThis is unwise.\n")
+	env.setErrorMessageBoxEnabled(true) -- turn ON message handler
+	trigger.action.outText("+++\n+++ W A R N I N G: TRYING TO SAVE A DML-ENHANCED MISSION\n+++\n\nThis is unwise.\n", 30)
 	local msg = "This is not a good idea"
 	return msg -- return non-null data 
 end
 
+--
+-- Sanity
+--
+function dcsCommon.sanity()
+	-- sanity checks will only check and comment, not act 
+	-- check mission name 
+	local msn = dcsCommon.getMissionName() -- DCS Bug from may 2025
+	if msn == "tempMission" then 
+		trigger.action.outText("+++(S)WARNING: DCS getMissionName() bug found to be active", 30)
+	end 
+	
+	-- make sure that there is at least one country per faction 
+	local solos = 0
+	if #env.mission.coalitions["neutrals"] < 1 then 
+		trigger.action.outText("+++(S)WARNING: no NEUTRAL countries in mission", 30)
+		solos = solos+1
+	end
+	if #env.mission.coalitions["red"] < 1 then 
+		trigger.action.outText("+++(S)WARNING: no RED countries in mission", 30)
+		solos = solos+1
+	end
+	if #env.mission.coalitions["blue"] < 1 then 
+		trigger.action.outText("+++(S)WARNING: no BLUE countries in mission", 30)
+		solos = solos+1
+	end
+	if solos > 1 then 
+		trigger.action.outText("+++(S)WARNING: too few countries in mission", 30)
+	end
+end
 --
 --
 -- INIT
@@ -3780,6 +3942,9 @@ end
 		cbID = 0
 		-- create ID tables
 		dcsCommon.collectMissionIDs()
+		
+		-- perform some sanity checks 
+		dcsCommon.sanity()
 		
 		-- see if save data is available 
 		local sd = world.getPersistenceData("dcsCommon")
