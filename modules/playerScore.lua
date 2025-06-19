@@ -1,5 +1,5 @@
 cfxPlayerScore = {}
-cfxPlayerScore.version = "5.3.0"
+cfxPlayerScore.version = "5.3.2"
 cfxPlayerScore.name = "cfxPlayerScore" -- compatibility with flag bangers
 cfxPlayerScore.firstSave = true -- to force overwrite 
 --[[-- VERSION HISTORY
@@ -24,7 +24,9 @@ cfxPlayerScore.firstSave = true -- to force overwrite
 	5.3.0 - callbacks 
 		  - updateScoreForPlayer() supports reason and data 
 		  - invokeCB when scoring 
-		  
+	5.3.1 - DCS bug hardening 
+	5.3.1 - more DCS bug hardening 
+	
 	TODO: Kill event no longer invoked for map objetcs, attribute 
 	      to faction now, reverse invocation direction with PlayerScore
 	TODO: better wildcard support for kill events 
@@ -1066,8 +1068,9 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 	-- a hit event will save the last player to hit 
 	-- so we can attribute with unit lost 
 	if theEvent.id == 2 then -- hit processing
---		if cfxPlayerScore.verbose then 	trigger.action.outText("enter hit pre-processing", 30) end
 		local who = theEvent.initiator
+		if not who then return false end -- more hardening 
+		if not Unit.isExist(who) then return end -- harder! harder!
 		if not who.getPlayerName then return false end -- non-player originator
 		local pName = who:getPlayerName() 
 		if not pName then return false end -- non-player origin
@@ -1130,8 +1133,9 @@ function cfxPlayerScore.isScoreEvent(theEvent)
 	end
 	
 	-- from here on, initiator must be player 
-	if not theUnit.getPlayerName or  
-	   not theUnit:getPlayerName() then 
+	if (not theUnit.getPlayerName) or  
+	   (not Unit.isExist(theUnit)) or 
+	   (not theUnit:getPlayerName()) then 
 	   return false 
 	end 
 	

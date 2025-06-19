@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.3.1"
+dcsCommon.version = "3.3.2"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -50,11 +50,12 @@ dcsCommon.version = "3.3.1"
 	   - midPoint()
 	   - isHelo()
 	   - getAirbaseCat(aBase) returns 1 (heloport) if less than 1 runways 
+3.3.2  - new getLongestRWY()
 --]]--
 
-	-- dcsCommon is a library of common lua functions 
-	-- for easy access and simple mission programming
-	-- (c) 2021 - 2025 by Christian Franz and cf/x AG
+-- dcsCommon is a library of common lua functions 
+-- for easy access and simple mission programming
+-- (c) 2021 - 2025 by Christian Franz and cf/x AG
 
 --
 -- DCS API PATCHES FOR DCS-INTERNAL BUGS
@@ -327,6 +328,21 @@ end
 -- 
 -- A I R F I E L D S  A N D  F A R P S  
 --
+	function dcsCommon.getLongestRWY(aBase)
+		local rwy = Airbase.getRunways(aBase)
+		if #rwy < 1 then 
+			return 0, "H" -- it's a helo port 
+		end
+		local longest = 0
+		local name = "" 
+		for idx, runway in pairs(rwy) do 
+			if runway.length > longest then 
+				longest = runway.length
+				name = runway.Name
+			end 
+		end
+		return longest, name 
+	end
 
 	-- airfield management 
 	function dcsCommon.getAirbaseCat(aBase)

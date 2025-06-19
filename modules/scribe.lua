@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "2.0.3"
+scribe.version = "2.1.0"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -19,7 +19,7 @@ VERSION HISTORY
 	2.0.3 switch to polled tickTime counting instead of 
 		  uDelta, limiting max error to tickTime seconds 
 		  code cleanup 
-		  
+	2.1.0 scribe now also keeps distances 
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
@@ -27,7 +27,7 @@ scribe.playerUnits = {} -- indexed by unit name. for crash detection
 scribe.dynamicPlayers = {}
 
 --[[--
-	unitEntry:
+	unitEntry: data for TYPE-related info, e.g. A-10A, or UH-1H
 		ttime -- total time in seconds 
 		airTime -- total air time 
 		landings -- number of landings 
@@ -35,9 +35,14 @@ scribe.dynamicPlayers = {}
 		departures -- toital take-offs 
 		crashes -- number of total crashes, deaths etc 
 		lastTime -- timestamp of last recording. NO LONGER USED 
-		
 --]]--
 
+--[[--
+	unit entry:
+		per-unit (type) details. note that multple players can fly the same plane or type 
+		so it is indivdually kept per player 
+		lastPos is used to determe distances (total dist) 
+--]]--
 function scribe.createUnitEntry()
 	local theEntry = {}
 	theEntry.ttime = 0
@@ -48,6 +53,8 @@ function scribe.createUnitEntry()
 	theEntry.crashes = 0
 	theEntry.startUps = 0 
 	theEntry.rescues = 0 
+	theEntry.dist = 0
+	theEntry.lastPos = nil 
 	return theEntry
 end
 
@@ -59,6 +66,7 @@ end
 					 -- used to determine if player is still in-game 
 		lastUnitType
 		isActive -- used to detect if player has left and close down record
+		         -- if true, player exists on server
 --]]--
 
 function scribe.createPlayerEntry(name)
@@ -70,7 +78,9 @@ function scribe.createPlayerEntry(name)
 	theEntry.units = {}
 	theEntry.lastUnitName = "cfxNone" -- don't ever use that name 
 	theEntry.lastUnitType = "none"
-	theEntry.isActive = false -- is player in game?
+	theEntry.isActive = false -- is player in game? <<- main gate for updating 
+	--theEntry.lastPos = theUnit:getPos()
+--	theEntry.totalDist = 0
 	return theEntry 
 end
 
@@ -91,11 +101,12 @@ function scribe.sumPlayerEntry(theEntry, theField)
 	return sum 
 end
 
-function scribe.tickEntry(theEntry)
+function scribe.tickEntry(theEntry, theUnit) -- entry is playerEntry with all units in theEntry.units 
 	if not theEntry then return 0 end 
 	local now = timer.getTime()
 	local uEntry = theEntry.units[theEntry.lastUnitType]
 	if not uEntry then return 0 end -- can happen on idling server that has reloaded. all last players have invalid last units 
+	-- if we get here, player is active, in game in unit 
 	local delta = now - uEntry.lastTime -- lastTime should be < now 
 	if delta < 0 then -- lastTime was later than now! reload?
 		delta = 0 
@@ -105,6 +116,23 @@ function scribe.tickEntry(theEntry)
 		end 
 		delta = scribe.tickTime   
 	end -- NEW: max tickTime to limit error  
+	-- update distance traveled with this unit 
+	if theUnit then 
+		local p = theUnit:getPoint()
+		--p.y = 0 -- ground track only 
+		if uEntry.lastPos then 
+			-- we add distance traveled from last pos 
+			uEntry.dist = uEntry.dist + dcsCommon.dist(uEntry.lastPos, p)
+		else 
+			if scribe.verbose then 
+				trigger.action.outText("+++scb: dist initiated for <" .. theUnit:getName() .. ">", 30)
+			end 
+		end 
+		uEntry.lastPos = p 
+		if scribe.verbose then 
+			trigger.action.outText("+++scb: dist update for <" .. theUnit:getName() .. ">: <" .. math.floor(uEntry.dist/100) / 10 .. "km>)", 30)
+		end 
+	end 
 	uEntry.lastTime = now 
 	uEntry.ttime = uEntry.ttime + delta 
 	return delta 
@@ -125,6 +153,7 @@ function scribe.finalizeEntry(theEntry)
 			trigger.action.outText("Player " .. theEntry.playerName .. " left " .. theEntry.lastUnitName .. " (a " .. theEntry.lastUnitType .. "), total time in aircraft " .. fullTime ..".", 30)
 		end 
 	end 
+	theEntry.lastUnitType = "xxx" -- no longer in a unit type we'll recognize 
 end 
 
 function scribe.entry2text(uEntry, totals)
@@ -136,6 +165,7 @@ function scribe.entry2text(uEntry, totals)
 	if not uEntry.crashes then uEntry.crashes = 0 end 
 	if not uEntry.startups then uEntry.startups = 0 end 
 	if not uEntry.rescues then uEntry.rescues = 0 end 
+	if not uEntry.dist then uEntry.dist = 0 end 
 	
 	local t = ""
 	if not totals.ttime then totals.ttime = 0 end 
@@ -165,6 +195,17 @@ function scribe.entry2text(uEntry, totals)
 		t = t .. ", " .. scribe.lRescue .. " " .. uEntry.rescues
 		if not totals.rescues then totals.rescues = 0 end 
 		totals.rescues = totals.rescues + uEntry.rescues 
+	end
+	if scribe.totalDist then 
+		if scribe.imperial then 
+			t = t .. ", " .. scribe.lTotalDist .. " " .. math.floor(uEntry.dist /1000*0.539957) .. "nm"
+			if not totals.dist then totals.dist = 0 end 
+			totals.dist = totals.dist + uEntry.dist
+		else
+			t = t .. ", " .. scribe.lTotalDist .. " " .. math.floor(uEntry.dist /1000) .. "km" 
+			if not totals.dist then totals.dist = 0 end 
+			totals.dist = totals.dist + uEntry.dist
+		end 
 	end
 	return t 
 end
@@ -216,7 +257,8 @@ function scribe.playerBirthedIn(playerName, theUnit)
 	end 
 	
 	myTypeEntry.lastTime = timer.getTime()
-	
+	myTypeEntry.lastPos = nil 
+
 	if scribe.verbose then 
 		trigger.action.outText("+++scb: player <" .. playerName .. "> entered aircraft <" .. uName .. "> (a " .. myType .. ")", 30)
 	end 
@@ -242,7 +284,11 @@ function scribe.playerCrashed(playerName)
 		return
 	end 
 	local uEntry = theEntry.units[theEntry.lastUnitType]
-	uEntry.crashes = uEntry.crashes + 1
+	if uEntry then 
+		uEntry.crashes = uEntry.crashes + 1
+		uEntry.lastTime = timer.getTime()
+		uEntry.lastPos = nil 
+	end
 	scribe.finalizeEntry(theEntry)
 end
 
@@ -482,7 +528,7 @@ function scribe.entry2data(thePlayerEntry)
 end
 
 --
--- GC -- detect player leaving 
+-- GC -- detect player leaving server / game 
 -- 
 function scribe.GC()
 	timer.scheduleFunction(scribe.GC, {}, timer.getTime() + scribe.tickTime)
@@ -494,7 +540,7 @@ function scribe.GC()
 			local theUnit = Unit.getByName(theEntry.lastUnitName)
 			if theUnit and Unit.isExist(theUnit) and theUnit:getLife() >= 1 then 
 				-- all is fine, add a tick 
-				scribe.tickEntry(theEntry)
+				scribe.tickEntry(theEntry, theUnit)
 			else 
 				-- this unit no longer exists and we finalize player 
 				if scribe.verbose then 
@@ -613,7 +659,9 @@ function scribe.readConfigZone()
 	scribe.lRescue = theZone:getStringFromZoneProperty("lRescues", "rescues:")
 	scribe.lTime = theZone:getStringFromZoneProperty("lTime", "time:")
 	scribe.landingCD = theZone:getNumberFromZoneProperty("landingCD", 60) -- seconds between stake-off, landings, or either
-	
+	scribe.lTotalDist = theZone:getStringFromZoneProperty("lTotalDist", "d:")
+	scribe.imperial = theZone:getBoolFromZoneProperty("imperial", false)
+	scribe.totalDist = theZone:getBoolFromZoneProperty("totalDist", true)
 	-- shared data persistence interface 
 	if theZone:hasProperty("sharedData") then 
 		scribe.sharedData = theZone:getStringFromZoneProperty("sharedData", "cfxNameMissing")
