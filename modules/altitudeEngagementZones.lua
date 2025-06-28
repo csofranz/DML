@@ -10,13 +10,42 @@ altitudeEngagementZones.requiredLibs = {
 
 --[[--
 	Version History 
-	1.0.0 - Initial version - controls red AAA/SAM engagement based on blue aircraft altitude
+	1.0.0 - Initial version - controls AAA/SAM engagement based on aircraft altitude
 	
-	This module controls red AAA/SAM units to only engage blue aircraft when they are 
+	This module controls AAA/SAM units to only engage aircraft when they are 
 	above a minimum altitude (default 100m AGL) and inside specific zones. AA groups 
 	are discovered by matching a pattern (default "AA_Group") and checking if they are 
 	physically located inside the engagement zones. When no valid targets are present, 
 	AA units are automatically set to weapons hold.
+	
+	The module supports both scenarios:
+	- Red AA engaging blue aircraft (targetCoalition = 2, default)
+	- Blue AA engaging red aircraft (targetCoalition = 1)
+	
+	Zone Properties:
+	- minAltitude: Minimum altitude for engagement (default 100m AGL)
+	- targetCoalition: Target coalition (1=red, 2=blue, default 2)
+	- aaGroupPattern: Pattern to match AA group names (default "AA_Group")
+	- missileWarning: Enable missile launch warnings (default false)
+	- active?: Zone active state (static boolean or flag name, default true)
+	
+	Zone State Properties (updated each cycle):
+	- validTargets: Array of valid targets above minimum altitude
+	- invalidTargets: Array of invalid targets below minimum altitude
+	- isActive: Current active state of the zone
+	
+	Helper Functions:
+	- hasValidTargets(zone): Check if zone has valid targets
+	- getValidTargetCount(zone): Get number of valid targets
+	- getInvalidTargetCount(zone): Get number of invalid targets
+	- getValidTargets(zone): Get array of valid targets
+	- getInvalidTargets(zone): Get array of invalid targets
+	- isEngaging(zone): Check if AA is currently engaging
+	
+	Target Object Structure:
+	- name: Unit name
+	- unit: Unit object reference
+	- agl: Altitude above ground level in meters
 --]]--
 
 altitudeEngagementZones.zones = {} -- all altitude engagement zones
@@ -26,8 +55,18 @@ function altitudeEngagementZones.addZone(theZone)
 	-- Minimum altitude for engagement (default 100m AGL)
 	theZone.minAltitude = theZone:getNumberFromZoneProperty("minAltitude", 100)
 	
-	-- Target coalition (default blue = 2)
+	-- Target coalition (default blue = 2, red = 1)
+	-- If targetCoalition is blue (2), red AA will engage blue aircraft
+	-- If targetCoalition is red (1), blue AA will engage red aircraft
 	theZone.targetCoalition = theZone:getNumberFromZoneProperty("targetCoalition", 2)
+	
+	-- Calculate AA coalition once at zone creation (static value)
+	-- AA coalition is always the opposite of target coalition
+	theZone.aaCoalition = (theZone.targetCoalition == 2) and 1 or 2
+	
+	-- Calculate coalition names once at zone creation (static values)
+	theZone.targetCoalitionName = (theZone.targetCoalition == 2) and "BLUE" or "RED"
+	theZone.aaCoalitionName = (theZone.aaCoalition == 1) and "RED" or "BLUE"
 	
 	-- AA Group pattern (default "AA_Group")
 	theZone.aaGroupPattern = theZone:getStringFromZoneProperty("aaGroupPattern", "AA_Group")
@@ -52,17 +91,17 @@ function altitudeEngagementZones.addZone(theZone)
 	
 	if altitudeEngagementZones.verbose or theZone.verbose then 
 		local activeInfo = theZone.activeFlag and theZone.activeFlag ~= "" and ("flag: " .. theZone.activeFlag) or ("static: " .. tostring(theZone.isActive))
-		trigger.action.outText("+++altitudeEngagementZones: new zone <".. theZone.name .."> - min alt: " .. theZone.minAltitude .. "m, target coalition: " .. theZone.targetCoalition .. ", AA pattern: " .. theZone.aaGroupPattern .. ", missile warning: " .. tostring(theZone.missileWarning) .. ", active: " .. activeInfo, 5)
+		trigger.action.outText("+++altitudeEngagementZones: new zone <".. theZone.name .."> - min alt: " .. theZone.minAltitude .. "m, target coalition: " .. theZone.targetCoalition .. " (" .. theZone.targetCoalitionName .. "), AA coalition: " .. theZone.aaCoalition .. " (" .. theZone.aaCoalitionName .. "), AA pattern: " .. theZone.aaGroupPattern .. ", missile warning: " .. tostring(theZone.missileWarning) .. ", active: " .. activeInfo, 5)
 	end
 	
 end
 
 function altitudeEngagementZones.getAAGroupsInZone(theZone)
-	-- Get all red coalition groups that match the AA pattern AND are inside the zone
+	-- Get AA groups from the opposite coalition of the target (using static value)
 	local aaGroups = {}
-	local redGroups = coalition.getGroups(1) -- red coalition
+	local coalitionGroups = coalition.getGroups(theZone.aaCoalition)
 	
-	for idx, theGroup in pairs(redGroups) do
+	for idx, theGroup in pairs(coalitionGroups) do
 		if Group.isExist(theGroup) then
 			local groupName = theGroup:getName()
 			
@@ -96,12 +135,12 @@ function altitudeEngagementZones.getAAGroupsInZone(theZone)
 	return aaGroups
 end
 
-function altitudeEngagementZones.getBlueAircraftInZone(theZone)
-	-- Get all blue aircraft in the target zone
-	local blueAircraft = {}
-	local blueGroups = coalition.getGroups(theZone.targetCoalition)
+function altitudeEngagementZones.getTargetAircraftInZone(theZone)
+	-- Get all aircraft from the target coalition in the target zone
+	local targetAircraft = {}
+	local targetGroups = coalition.getGroups(theZone.targetCoalition)
 	
-	for idx, theGroup in pairs(blueGroups) do
+	for idx, theGroup in pairs(targetGroups) do
 		if Group.isExist(theGroup) then
 			local cat = theGroup:getCategory()
 			-- Check if it's an aircraft (airplane = 0, helicopter = 1)
@@ -111,9 +150,9 @@ function altitudeEngagementZones.getBlueAircraftInZone(theZone)
 					if Unit.isExist(theUnit) and theUnit:inAir() then
 						local unitPos = theUnit:getPoint()
 						if theZone:pointInZone(unitPos) then
-							blueAircraft[theUnit:getName()] = theUnit
+							targetAircraft[theUnit:getName()] = theUnit
 							if altitudeEngagementZones.verbose or theZone.verbose then
-								trigger.action.outText("+++altitudeEngagementZones: Found blue aircraft '" .. theUnit:getName() .. "' in zone <" .. theZone.name .. ">", 2)
+								trigger.action.outText("+++altitudeEngagementZones: Found " .. theZone.targetCoalitionName .. " aircraft '" .. theUnit:getName() .. "' in zone <" .. theZone.name .. ">", 2)
 							end
 						end
 					end
@@ -122,7 +161,7 @@ function altitudeEngagementZones.getBlueAircraftInZone(theZone)
 		end
 	end
 	
-	return blueAircraft
+	return targetAircraft
 end
 
 function altitudeEngagementZones.checkEngagementConditions(theZone)
@@ -131,48 +170,74 @@ function altitudeEngagementZones.checkEngagementConditions(theZone)
 		-- Even when paused, ensure AA groups are set to weapons hold
 		local aaGroups = altitudeEngagementZones.getAAGroupsInZone(theZone)
 		altitudeEngagementZones.setAAEngagement(aaGroups, false)
+		-- Clear target lists when zone is inactive
+		theZone.validTargets = {}
+		theZone.invalidTargets = {}
 		return
 	end
 	
 	-- Get all AA groups using the zone's pattern
 	local aaGroups = altitudeEngagementZones.getAAGroupsInZone(theZone)
 	
-	-- Get all blue aircraft in the zone
-	local blueAircraft = altitudeEngagementZones.getBlueAircraftInZone(theZone)
+	-- Get all target aircraft in the zone
+	local targetAircraft = altitudeEngagementZones.getTargetAircraftInZone(theZone)
 
-	local foundValidTarget = false
-	-- Check each blue aircraft's altitude
-	for unitName, theUnit in pairs(blueAircraft) do
+	-- Initialize target lists as zone properties
+	theZone.validTargets = {}
+	theZone.invalidTargets = {}
+	
+	-- Check each target aircraft's altitude and categorize them
+	for unitName, theUnit in pairs(targetAircraft) do
 		if Unit.isExist(theUnit) then
 			local agl = dcsCommon.getUnitAGL(theUnit)
 			
 			if agl >= theZone.minAltitude then
-				-- Aircraft is above minimum altitude - allow engagement
-				altitudeEngagementZones.setAAEngagement(aaGroups, true, unitName, agl)
+				-- Aircraft is above minimum altitude - valid target
+				table.insert(theZone.validTargets, {name = unitName, unit = theUnit, agl = agl})
 				if altitudeEngagementZones.verbose or theZone.verbose then
-					trigger.action.outText("+++altitudeEngagementZones: AA engaging '" .. unitName .. "' at AGL " .. agl .. "m in zone <" .. theZone.name .. ">", 10)
+					trigger.action.outText("+++altitudeEngagementZones: Valid target '" .. unitName .. "' (" .. theZone.targetCoalitionName .. ") at AGL " .. agl .. "m in zone <" .. theZone.name .. ">", 2)
 				end
-				foundValidTarget = true
 			else
-				-- Aircraft is below minimum altitude - prevent engagement
-				altitudeEngagementZones.setAAEngagement(aaGroups, false, unitName, agl)
+				-- Aircraft is below minimum altitude - invalid target
+				table.insert(theZone.invalidTargets, {name = unitName, unit = theUnit, agl = agl})
 				if altitudeEngagementZones.verbose or theZone.verbose then
-					trigger.action.outText("+++altitudeEngagementZones: AA NOT engaging '" .. unitName .. "' at AGL " .. agl .. "m (below " .. theZone.minAltitude .. "m) in zone <" .. theZone.name .. ">", 10)
+					trigger.action.outText("+++altitudeEngagementZones: Invalid target '" .. unitName .. "' (" .. theZone.targetCoalitionName .. ") at AGL " .. agl .. "m (below " .. theZone.minAltitude .. "m) in zone <" .. theZone.name .. ">", 2)
 				end
 			end
 		end
 	end
 
-	-- ALWAYS ensure AA groups are set to weapons hold if no valid targets found
-	if not foundValidTarget then
+	-- Set AA engagement based on whether ANY valid targets exist
+	if #theZone.validTargets > 0 then
+		-- At least one valid target exists - allow engagement
+		altitudeEngagementZones.setAAEngagement(aaGroups, true)
+		if altitudeEngagementZones.verbose or theZone.verbose then
+			local targetList = ""
+			for i, target in ipairs(theZone.validTargets) do
+				if i > 1 then targetList = targetList .. ", " end
+				targetList = targetList .. target.name .. "(" .. target.agl .. "m)"
+			end
+			trigger.action.outText("+++altitudeEngagementZones: AA engaging " .. #theZone.validTargets .. " valid target(s) in zone <" .. theZone.name .. ">: " .. targetList, 2)
+		end
+	else
+		-- No valid targets - set to weapons hold
 		altitudeEngagementZones.setAAEngagement(aaGroups, false)
 		if altitudeEngagementZones.verbose or theZone.verbose then
-			trigger.action.outText("+++altitudeEngagementZones: No valid targets in zone <" .. theZone.name .. ">, AA set to weapons hold", 10)
+			if #theZone.invalidTargets > 0 then
+				local targetList = ""
+				for i, target in ipairs(theZone.invalidTargets) do
+					if i > 1 then targetList = targetList .. ", " end
+					targetList = targetList .. target.name .. "(" .. target.agl .. "m)"
+				end
+				trigger.action.outText("+++altitudeEngagementZones: AA NOT engaging " .. #theZone.invalidTargets .. " invalid target(s) in zone <" .. theZone.name .. ">: " .. targetList, 2)
+			else
+				trigger.action.outText("+++altitudeEngagementZones: No targets in zone <" .. theZone.name .. ">, AA set to weapons hold", 2)
+			end
 		end
 	end
 end
 
-function altitudeEngagementZones.setAAEngagement(aaGroups, allowEngagement, targetName, agl)
+function altitudeEngagementZones.setAAEngagement(aaGroups, allowEngagement)
 	-- Set engagement rules for all AA groups
 	for groupName, theGroup in pairs(aaGroups) do
 		if Group.isExist(theGroup) then
@@ -185,6 +250,37 @@ function altitudeEngagementZones.setAAEngagement(aaGroups, allowEngagement, targ
 			end
 		end
 	end
+end
+
+-- Helper functions to check engagement conditions
+function altitudeEngagementZones.hasValidTargets(theZone)
+	-- Check if the zone has any valid targets for engagement
+	return theZone.validTargets and #theZone.validTargets > 0
+end
+
+function altitudeEngagementZones.getValidTargetCount(theZone)
+	-- Get the number of valid targets in the zone
+	return theZone.validTargets and #theZone.validTargets or 0
+end
+
+function altitudeEngagementZones.getInvalidTargetCount(theZone)
+	-- Get the number of invalid targets in the zone
+	return theZone.invalidTargets and #theZone.invalidTargets or 0
+end
+
+function altitudeEngagementZones.getValidTargets(theZone)
+	-- Get the list of valid targets in the zone
+	return theZone.validTargets or {}
+end
+
+function altitudeEngagementZones.getInvalidTargets(theZone)
+	-- Get the list of invalid targets in the zone
+	return theZone.invalidTargets or {}
+end
+
+function altitudeEngagementZones.isEngaging(theZone)
+	-- Check if AA units in this zone are currently engaging targets
+	return altitudeEngagementZones.hasValidTargets(theZone) and theZone.isActive
 end
 
 -- Event handler for missile launches
