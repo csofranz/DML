@@ -1,5 +1,5 @@
 cfxArtilleryZones = {}
-cfxArtilleryZones.version = "3.0.0" 
+cfxArtilleryZones.version = "3.0.1" 
 cfxArtilleryZones.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -33,6 +33,8 @@ cfxArtilleryZones.verbose = false
  2.2.2 - new doParametricFireAt()
  3.0.0 - dmlZones, OOP 
        - cleanup
+ 3.0.1 - corrected typo in processArtilleryZone() for attribute "f?"
+ 
   
 	Artillery Target Zones *** EXTENDS ZONES ***
 	Target Zones for artillery. Can determine which zones are in range and visible and then handle artillery barrage to this zone 
@@ -119,11 +121,11 @@ function cfxArtilleryZones.processArtilleryZone(aZone)
 		aZone.artyTriggerMethod = aZone:getStringFromZoneProperty("triggerMethod", "change")
 	end
 	
-	if aZone:hasProperty("f?") then 
-		aZone.artyTriggerFlag = cfxZones.getStringFromZoneProperty("f?", "none")
+	if aZone:hasProperty("f?") then -- DEPRECATED
+		aZone.artyTriggerFlag = aZone:getStringFromZoneProperty("f?", "none")
 	elseif aZone:hasProperty("artillery?") then 
 		aZone.artyTriggerFlag = aZone:getStringFromZoneProperty("artillery?", "none")
-	elseif aZone:hasProperty("in?") then 
+	elseif aZone:hasProperty("in?") then -- DEPRECATED
 		aZone.artyTriggerFlag = aZone:getStringFromZoneProperty("in?", "none")
 	end
 	
