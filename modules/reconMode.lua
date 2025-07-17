@@ -1,5 +1,5 @@
 cfxReconMode = {}
-cfxReconMode.version = "2.4.0"
+cfxReconMode.version = "2.5.1"
 cfxReconMode.verbose = false -- set to true for debug info  
 cfxReconMode.reconSound = "UI_SCI-FI_Tone_Bright_Dry_20_stereo.wav" -- to be played when somethiong discovered
 
@@ -13,6 +13,9 @@ cfxReconMode.allowedScouts = {} -- when not using autoscouts
 cfxReconMode.blindScouts = {} -- to exclude aircraft from being scouts 
 cfxReconMode.removeWhenDestroyed = true 
 cfxReconMode.activeMarks = {} -- all marks and their groups, indexed by groupName 
+
+cfxReconMode.objects = {} -- objects that can be scouted 
+cfxReconMode.reconZones = {} -- all "recon" zones, used for clone zones to add statics 
 
 cfxReconMode.requiredLibs = {
 	"dcsCommon", -- always
@@ -68,6 +71,12 @@ VERSION HISTORY
 	   - de-optimized naval visibility check 
 	   - optimization for group check if seen before 
 	   - new bearing and distance callout from pilot 
+2.5.0  - recon zones also collect static objects 
+	   - reconMessage keyword 
+	   - recognize values other than black* and prio* 
+	   - SALT etc for isStatic 
+2.5.1  - staticWasCloned()
+	   - filtering statics 
 --]]--
 
 cfxReconMode.detectionMinRange = 3000 -- meters at ground level
@@ -90,6 +99,7 @@ cfxReconMode.ups = 1 -- updates per second.
 cfxReconMode.scouts = {} -- units that are performing scouting.
 cfxReconMode.processedScouts = {} -- for managing performance: queue
 cfxReconMode.detectedGroups = {} -- so we know which have been detected
+	-- also used for static objects!
 cfxReconMode.marksFadeAfter = 30*60 -- after detection, marks disappear after
                      -- this amount of seconds. -1 means no fade
 					 -- 60 is one minute
@@ -269,6 +279,22 @@ function cfxReconMode.removeScoutByName(aName)
 end
 
 
+function cfxReconMode.canDetectObject(scoutPos, theObj, visRange) 
+	if Object.isExist(theObj) and theObj:getLife() >= 1 then 
+		local oPos = theObj:getPoint()
+		oPos.y = oPos.y + 10 -- raise my 10 meters -- for LOS calc
+		local d = math.floor(dcsCommon.distFlat(scoutPos, oPos)) 
+		if d < visRange then 
+			-- is in visual range. do we have LOS?
+			if land.isVisible(scoutPos, oPos) then 
+				-- group is visible, stop here, return true
+				return true, oPos
+			end
+		end
+	end
+	return false, nil 
+end
+
 function cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 	-- determine if a member of theGroup can be seen from 
 	-- scoutPos at visRange 
@@ -302,12 +328,16 @@ function cfxReconMode.canDetect(scoutPos, theGroup, visRange)
 	return false, nil -- nothing visible
 end
 
-function cfxReconMode.placeMarkForUnit(location, theSide, theGroup) 
+function cfxReconMode.placeMarkForUnit(location, theSide, theGroup, isStatic) 
 	local theID = cfxReconMode.uuid()
 	local theDesc = "Contact" 
 	if cfxReconMode.groupNames then theDesc = theDesc .. ": " ..theGroup:getName() end 
 	if cfxReconMode.reportNumbers then 
-		theDesc = theDesc .. " - " .. cfxReconMode.getSit(theGroup) .. ", " .. cfxReconMode.getAction(theGroup) .. "."
+		if isStatic then 
+			theDesc = theDesc .. " - " .. cfxReconMode.getSit(theGroup, isStatic) .. "."
+		else 
+			theDesc = theDesc .. " - " .. cfxReconMode.getSit(theGroup, isStatic) .. ", " .. cfxReconMode.getAction(theGroup) .. "."
+		end 
 	end
 	trigger.action.markToCoalition(
 					theID, 
@@ -338,9 +368,13 @@ function cfxReconMode.removeMarkForArgs(args)
 	cfxReconMode.detectedGroups[theName] = nil -- some housekeeping. 
 end 
 
-function cfxReconMode.getSit(theGroup)
+function cfxReconMode.getSit(theGroup, isStatic)
 	local cat = theGroup:getCategory()
 	local msg = ""
+	if isStatic then 
+		-- static objects have very limited info 
+		
+	else 
 		-- analyse the group we just discovered. We know it's a ground troop, so simply differentiate between vehicles and infantry 
 		local theUnits = theGroup:getUnits()
 		local numInf = 0 
@@ -365,6 +399,7 @@ function cfxReconMode.getSit(theGroup)
 			if cat == 2 then msg = msg .. " vehicle" else msg = msg .. " vessel" end
 			if numVehicles > 1 then msg = msg .. "s" end 
 		end 
+	end
 	return msg
 end
 
@@ -389,10 +424,15 @@ function cfxReconMode.getAction(theGroup)
 	return msg
 end
 
-function cfxReconMode.getLocation(theGroup)
+function cfxReconMode.getLocation(theGroup, isStatic)
 	local msg = ""
-	local theUnit = theGroup:getUnit(1)
-	local currPoint = theUnit:getPoint()
+	local currPoint
+	if isStatic then 
+		currPoint = theGroup:getPoint() -- is a static
+	else 
+		local theUnit = theGroup:getUnit(1)
+		currPoint = theUnit:getPoint()
+	end
 	local ele = math.floor(land.getHeight({x = currPoint.x, y = currPoint.z}))
 	local units = "m"
 	if cfxReconMode.imperialUnits then 
@@ -435,26 +475,40 @@ function cfxReconMode.getTimeData()
 	return "at " .. msg
 end
 
-function cfxReconMode.generateSALT(theScout, theGroup)
+function cfxReconMode.generateSALT(theScout, theGroup, isStatic)
 	local cat = theGroup:getCategory() -- 2 (gnd) or 3 (naval)
 	local msg = theScout:getName() .. " reports new "
-	if cat == 2 then msg = msg .. "ground contact" else msg = msg .. "surface contact" end  
-	if cfxReconMode.groupNames then msg = msg .. " " .. theGroup:getName() end 
+	if isStatic then msg = theScout:getName() .. " reports eyes on"
+	elseif cat == 2 then msg = msg .. "ground contact" 
+	else msg = msg .. "surface contact" end  
+	if cfxReconMode.groupNames or isStatic then msg = msg .. " " .. theGroup:getName() end 
 	-- at bearing and dist 
 	local p = theScout:getPoint()
-	local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
-	local up = theUnit:getPoint()
+	local up 
+	if isStatic then 
+		up = theGroup:getPoint() -- group is a static
+	else 
+		local theUnit = dcsCommon.getFirstLivingUnit(theGroup)
+		up = theUnit:getPoint()
+	end
 --	local d = math.floor(dcsCommon.dist(p, up)/1000)
 	local dg = math.floor(dcsCommon.distFlat(p, up)/1000)
 	local b = dcsCommon.bearingInDegreesFromAtoB(p, up)
-	msg = msg .. ", bearing " .. b .. "°, " .. dg .. "km:\n"
+	msg = msg .. ", bearing " .. b .. "°, " .. dg .. "km.\n"
 --	msg = msg .. ":\n"
-	-- SALT: S = Situation or number of units A = action they are doing L = Location T = Time 
-	msg = msg .. cfxReconMode.getSit(theGroup) .. ", "-- S 
-	msg = msg .. cfxReconMode.getAction(theGroup) .. ", " -- A 
-	msg = msg .. cfxReconMode.getLocation(theGroup) .. ", " -- L 
-	msg = msg .. cfxReconMode.getTimeData() -- T
+-- SALT: S = Situation or number of units A = action they are doing L = Location T = Time 
 	
+	if isStatic then
+--		msg = msg .. cfxReconMode.getSit(theGroup, isStatic) .. -- S
+		-- no individual Action report
+		msg = msg .. "Installation appears mostly intact. "
+	else
+		msg = msg .. cfxReconMode.getSit(theGroup, isStatic) .. ", "-- S
+		msg = msg .. cfxReconMode.getAction(theGroup) .. ", " -- A 
+	end
+	msg = msg .. cfxReconMode.getLocation(theGroup, isStatic) .. ", " -- L 
+	msg = msg .. cfxReconMode.getTimeData() -- T
+
 	return msg
 end
 
@@ -506,20 +560,26 @@ function cfxReconMode.processZoneMessage(inMsg, theZone, theGroup)
 	return outMsg
 end
 
-function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
+function cfxReconMode.detectedObject(mySide, theScout, theObj, theLoc)
+	cfxReconMode.detectedGroup(mySide, theScout, theObj, theLoc, true)
+end
+
+function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc, isStatic)
 	-- see if it was a prio target and gather info 
 	local inList, gName = cfxReconMode.isStringInList(theGroup:getName(), cfxReconMode.prioList)
 	local silent = false 
+	local isPrio = false 
 	if gName and cfxReconMode.zoneInfo[gName] then 
-		local zInfo = cfxReconMode.zoneInfo[gName]
+		local zInfo = cfxReconMode.zoneInfo[gName] -- connected for statics as well
 		silent = zInfo.silent
+		isPrio = zInfo.isPrio
 	end
 
 	-- put a mark on the map 
 	if (not silent) and cfxReconMode.applyMarks then 
-		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup)
+		local theID = cfxReconMode.placeMarkForUnit(theLoc, mySide, theGroup, isStatic)
 		local gName = theGroup:getName()
-		local args = {mySide, theScout, theGroup, theID, gName}
+		local args = {mySide, theScout, theGroup, theID, gName, isStatic}
 		cfxReconMode.activeMarks[gName] = args
 		-- schedule removal if desired 
 		if cfxReconMode.marksFadeAfter > 0 then 	
@@ -529,7 +589,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	
 	-- say something
 	if (not silent) and cfxReconMode.announcer then 
-		local msg = cfxReconMode.generateSALT(theScout, theGroup)
+		local msg = cfxReconMode.generateSALT(theScout, theGroup, isStatic)
 		trigger.action.outTextForCoalition(mySide, msg, cfxReconMode.reportTime)
 		if cfxReconMode.verbose then 
 			trigger.action.outText("+++rcn: announced for side " .. mySide, 30)
@@ -540,16 +600,18 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end 
 	
 	-- see if it was a prio target 
-	if inList then 
+	if inList or isStatic then
 		if cfxReconMode.verbose then 
-			trigger.action.outText("+++rcn: Priority target spotted",	30)
+			trigger.action.outText("+++rcn: Priority/static target spotted",	30)
 		end 
-		-- invoke callbacks
-		cfxReconMode.invokeCallbacks("priority", mySide, theScout, theGroup, theGroup:getName())
-		
-		-- increase prio flag 
-		if cfxReconMode.prioFlag then 
-			cfxReconMode.theZone:pollFlag(cfxReconMode.prioFlag, cfxReconMode.method )
+		if isPrio then 
+			-- invoke callbacks
+			cfxReconMode.invokeCallbacks("priority", mySide, theScout, theGroup, theGroup:getName())
+			
+			-- update prio flag 
+			if cfxReconMode.prioFlag then 
+				cfxReconMode.theZone:pollFlag(cfxReconMode.prioFlag, cfxReconMode.method )
+			end
 		end
 		
 		-- see if we were passed additional info in zInfo 
@@ -562,7 +624,7 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 				msg = cfxReconMode.processZoneMessage(msg, zInfo.theZone, theGroup) 
 				trigger.action.outTextForCoalition(mySide, msg, cfxReconMode.reportTime)
 				if cfxReconMode.verbose or zInfo.theZone.verbose then 
-					trigger.action.outText("+++rcn: prio message sent  for prio target zone <" .. zInfo.theZone.name .. ">",30)
+					trigger.action.outText("+++rcn: prio message sent for prio target zone <" .. zInfo.theZone.name .. ">",30)
 				end
 			end
 			
@@ -584,6 +646,20 @@ function cfxReconMode.detectedGroup(mySide, theScout, theGroup, theLoc)
 	end
 end
 
+function cfxReconMode.staticWasCloned(theStatic)
+	-- check if that static is in any of my recon zones 
+	local loc = theStatic:getPoint()
+	local sName = theStatic:getName()
+	for zname, theZone in pairs(cfxReconMode.reconZones) do 
+		if theZone:pointInZone(loc) then 
+			if cfxReconMode.verbose or theZone.verbose then 
+				trigger.action.outText("+++rcn: cloner spawned static <" .. sName .. "> in recon zone <" .. theZone.name .. ">. proccing.", 30)
+			end
+			cfxReconMode.objects[sName] = theStatic
+		end 
+	end
+end
+
 function cfxReconMode.performReconForUnit(theScout)
 	if not theScout then return end 
 	if not theScout:isExist() then return end -- will be gc'd soon
@@ -595,8 +671,37 @@ function cfxReconMode.performReconForUnit(theScout)
 	local myCoal = theScout:getCoalition()
 	local enemyCoal = 1 
 	if myCoal == 1 then enemyCoal = 2 end 
-	
---	trigger.action.outText("scout <" .. theScout:getName() .."> at alt <" .. alt .. "> has visRange <" .. visRange .. ">", 30)
+
+	-- first, scan all static objects for a match 
+	local filtered = {}
+	for objName, obj in pairs(cfxReconMode.objects) do 
+		local existing = StaticObject.getByName(objName)
+		if existing and Object.isExist(existing) then 
+			if not cfxReconMode.detectedGroups[objName] then 
+--				trigger.action.outText("reconning named <" .. objName .. ">", 30)
+				local oCoa = obj:getCoalition() 
+				if oCoa ~= myCoal then 
+					local visible, location = cfxReconMode.canDetectObject(scoutPos, obj, visRange)
+					if visible then 
+						-- blacklist check
+						-- visible, not yet seen, not blacklisted 
+						-- perhaps add some percent chance now 
+						-- remember that we know this group 
+						cfxReconMode.detectedGroups[objName] = obj
+						cfxReconMode.detectedObject(myCoal, theScout, obj, location)
+						return -- stop, as we only detect one item per pass
+					end				
+				end 
+			end
+			filtered[objName] = existing
+		else 
+			-- static object named objName does NOT exist any more.
+			if cfxReconMode.verbose then 
+				trigger.action.outText("+++rcn: object <" .. objName .. "> does not exist in performReconForUnit().", 30)
+			end 
+		end
+	end 
+	cfxReconMode.objects = filtered -- only when fully completed pass 
 	-- iterate all enemy units until we find one 
 	-- and then stop this iteration (can only detect one 
 	-- group per pass)
@@ -704,19 +809,22 @@ function cfxReconMode.updateQueues()
 end
 
 function cfxReconMode.isGroupStillAlive(gName)
-		local theGroup = Group.getByName(gName)
-		if not theGroup then return false end 
-		if not theGroup:isExist() then return false end 
-		local allUnits = theGroup:getUnits()
-		for idx, aUnit in pairs (allUnits) do 
-			if aUnit:getLife() >= 1 then return true end 
-		end
-		return false 
+	local theStatic = StaticObject.getByName(gName)
+	if theStatic and theStatic:getLife() >= 1 then return true end 
+	local theGroup = Group.getByName(gName)
+	if not theGroup then return false end 
+	if not theGroup:isExist() then return false end 
+	local allUnits = theGroup:getUnits()
+	for idx, aUnit in pairs (allUnits) do 
+		if aUnit:getLife() >= 1 then return true end 
+	end
+	return false 
 end
 
 function cfxReconMode.autoRemove()
 	-- schedule next call 
-	timer.scheduleFunction(cfxReconMode.autoRemove, {}, timer.getTime() + 1/cfxReconMode.ups)
+--	timer.scheduleFunction(cfxReconMode.autoRemove, {}, timer.getTime() + 1/cfxReconMode.ups)
+	timer.scheduleFunction(cfxReconMode.autoRemove, {}, timer.getTime() + 10) -- every 10 seconds
 	
 	local toRemove = {}
 	-- scan all marked groups, and when they no longer exist, remove them 
@@ -730,7 +838,7 @@ function cfxReconMode.autoRemove()
 	
 	for idx, args in pairs(toRemove) do 
 		cfxReconMode.removeMarkForArgs(args)
-		trigger.action.outText("+++recn: removed mark: " .. args[5], 30)
+--		trigger.action.outText("+++recn: removed mark: " .. args[5], 30)
 	end
 end
 
@@ -1040,18 +1148,40 @@ function cfxReconMode.processReconZone(theZone)
 	local theList = theZone:getStringFromZoneProperty("recon", "prio")
 	theList = string.upper(theList)
 	local isBlack = dcsCommon.stringStartsWith(theList, "BLACK")
-
+	local isPrio = dcsCommon.stringStartsWith(theList, "PRIO")
 	local zInfo = {}
 	zInfo.theZone = theZone
-	zInfo.isBlack = isBlack	
+	zInfo.isBlack = isBlack		
 	zInfo.silent = theZone:getBoolFromZoneProperty("silent", false)
-	
-	if theZone:hasProperty("spotted!") then 
-		zInfo.theFlag = theZone:getStringFromZoneProperty("spotted!", "*<none>")
+	zInfo.isPrio = isPrio
+	if cfxReconMode.verbose or theZone.verbose then 
+		trigger.action.outText("+++rcn: recon zone <" .. theZone.name .. ">: prio=<" .. dcsCommon.bool2Text(isPrio)  .. ">, black = <" .. dcsCommon.bool2Text(isBlack)  .. ">", 30)
 	end
+	-- now collect all objects in zone unless it is a blacklist
+	-- because objects arent detected otherwise anyway
+	if not isBlack then 
+		local allObjects = theZone:allObjectsInZone() -- collect static objects in zone
+		for idx, theObj in pairs(allObjects) do 
+			local theName = theObj:getName()
+			cfxReconMode.objects[theName] = theObj 
+			cfxReconMode.zoneInfo[theName] = zInfo -- connect zinfo
+			if theZone.verbose or cfxReconMode.verbose then 
+				trigger.action.outText("+++recon: added static <" .. theName .. "> in zone <" .. theZone.name .. ">", 30)
+			end 
+		end 
+	end 
 	
 	if theZone:hasProperty("prioMessage") then 
 		zInfo.prioMessage = theZone:getStringFromZoneProperty("prioMessage", "<none>")
+	elseif theZone:hasProperty("reconMessage") then
+		zInfo.prioMessage = theZone:getStringFromZoneProperty("reconMessage", "<none>")
+	end
+	
+	if theZone:hasProperty("spotted!") then 
+		zInfo.theFlag = theZone:getStringFromZoneProperty("spotted!", "*<none>")
+		if isBlack then 
+			trigger.action.outText("+++rcn: WARNING: recon zone <> is blacklisted, but also supplies a 'spotted!' attribute. Blacklisted units/objects will never trigger a spotted output.", 30)
+		end
 	end
 	
 	local dynamic = theZone:getBoolFromZoneProperty("dynamic", false)
@@ -1069,10 +1199,18 @@ function cfxReconMode.processReconZone(theZone)
 				end
 			end 
 		else 
-			cfxReconMode.addToPrioList(aGroup, dynamic)
-			if cfxReconMode.verbose or theZone.verbose then 
-				if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to priority target list", 30)
-				else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to priority target list", 30)
+			if isPrio then 
+				cfxReconMode.addToPrioList(aGroup, dynamic)
+				if cfxReconMode.verbose or theZone.verbose then 
+					if dynamic then trigger.action.outText("+++rcn: added DYNAMIC " .. aGroup:getName() .. " to priority target list", 30) 
+					else trigger.action.outText("+++rcn: added " .. aGroup:getName() .. " to priority target list", 30)
+					end
+				end
+			else 
+				if cfxReconMode.verbose or theZone.verbose then 
+					if dynamic then trigger.action.outText("+++rcn: procced DYNAMIC " .. aGroup:getName() .. " without priority", 30) 
+					else trigger.action.outText("+++rcn: procced " .. aGroup:getName() .. " without priority", 30)
+					end
 				end
 			end
 		end
@@ -1115,6 +1253,7 @@ function cfxReconMode.readReconGroups()
 	local attrZones = cfxZones.getZonesWithAttributeNamed("recon")
 	for k, aZone in pairs(attrZones) do 
 		cfxReconMode.processReconZone(aZone)
+		cfxReconMode.reconZones[aZone.name] = aZone 
 	end
 end
 

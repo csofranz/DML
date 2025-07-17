@@ -1,5 +1,5 @@
 twn = {}
-twn.version = "1.0.2"
+twn.version = "1.0.3"
 twn.verbose = false 
 
 --[[--
@@ -10,6 +10,7 @@ VERSION HISTORY
 1.0.0 - Initial version 
 1.0.1 - Sinai // SinaiMap switcharoo 
 1.0.2 - Germany Cold War name switcharoo 
+1.0.3 - Marianas WW II name switcharoo
 --]]--
 
 function twn.closestTownTo(p) -- returns name, data, distance
@@ -41,6 +42,7 @@ function twn.start()
 	-- map naming oddities 
 	if theater == "SinaiMap" then theater = "Sinai" end 
 	if theater == "GermanyCW" then theater = "GermanyColdWar" end 
+	if theater == "MarianaIslandsWWII" then theater = "MarianasWWII" end 
 	if twn.verbose then 
 		trigger.action.outText("theater is <" .. theater .. ">", 30)
 	end 
@@ -55,6 +57,11 @@ function twn.start()
 	if json then 
 		towns = {}
 		traw = net.json2lua(json)
+		
+		if not traw then 
+			trigger.action.outText("WARNING: TWN was unable to read towns data from <" .. theater .. "> map", 30)
+			return 
+		end 
 --		trigger.action.outText(json, 30)
 --		if true then return false end -- remove me 
 		

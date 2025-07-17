@@ -1,9 +1,9 @@
 cfxNDB = {}
-cfxNDB.version = "1.3.0"
+cfxNDB.version = "1.3.1"
 
 --[[--
 	cfxNDB:
-	Copyright (c) 2021, 2022 by Christian Franz and cf/x AG
+	Copyright (c) 2021 - 2025 by Christian Franz and cf/x AG
 	
 	Zone enhancement that simulates an NDB for a zone.
 	If zone is linked, the NDB's location is updated 
@@ -27,6 +27,10 @@ cfxNDB.version = "1.3.0"
 		  - zone-local verbosity support
 		  - better config defaulting 
 	1.3.0 - dmlZones 
+	1.3.1 - better guarding non-started and paused NDB against repeated pauses
+	      - reworked ndb reading for on? and off? 
+		  - added code to preven multi-start of an NDB
+		  - code cleanup 
 		  
 --]]--
 
@@ -46,17 +50,16 @@ cfxNDB.ndbs = {} -- all ndbs
 --
 
 function cfxNDB.startNDB(theNDB)
-	if type(theNDB) == "string" then 
-		theNDB = cfxZones.getZoneByName(theNDB) 
+	if theNDB.verbose then 
+		trigger.action.outText("+++ndb: invoking START for NDB <" .. theNDB.name .. ">.", 30)
 	end
 	
-	if not theNDB.freq then 
-		-- this zone is not an NDB. Exit 
-		if cfxNDB.verbose or theNDB.verbose then 
-			trigger.action.outText("+++ndb: start() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
-		end
-		return 
-	end
+	if not theNDB.paused then -- NDB is already running, do not start another one!
+		if theNDB.verbose or cfxNDB.verbose then 
+			trigger.action.outText("+++ndb: attempt to start a running ndb <" .. theNDB.name .. ">. aborted", 30)
+		end 		
+		return
+	end 	
 	
 	theNDB.ndbRefreshTime = timer.getTime() + theNDB.ndbRefresh -- only used in linkedUnit, but set up anyway
 	-- generate new ID 
@@ -75,27 +78,25 @@ function cfxNDB.startNDB(theNDB)
 		if theNDB.linkedUnit then 
 			dsc = " (linked to ".. theNDB.linkedUnit:getName() .. "!, r=" .. theNDB.ndbRefresh .. ") "
 		end 
-		trigger.action.outText("+++ndb: started " .. theNDB.name .. dsc .. " at " .. theNDB.freq/1000000 .. "mod " .. modulation .. " with w=" .. theNDB.power .. " s=<" .. fileName .. ">", 30)
+		trigger.action.outText("+++ndb: started <" .. theNDB.name ..">" .. dsc .. " at " .. theNDB.freq/1000000 .. "mod " .. modulation .. " with w=" .. theNDB.power .. " s=<" .. fileName .. ">", 30)
 	end
 	theNDB.paused = false 
-	
 	if cfxNDB.verbose or theNDB.verbose then 
 		trigger.action.outText("+++ndb: " .. theNDB.name .. " started", 30) 
 	end
 end
 
-function cfxNDB.stopNDB(theNDB)
-	if type(theNDB) == "string" then 
-		theNDB = cfxZones.getZoneByName(theNDB) 
+function cfxNDB.stopNDB(theNDB)	
+	if theNDB.verbose then 
+		trigger.action.outText("+++ndb: invoking stopNDB for " .. theNDB.name .. ".", 30)
 	end
-	
-	if not theNDB.freq then 
-		-- this zone is not an NDB. Exit 
+	if theNDB.paused then return end -- already paused, nothing to do 
+	if not theNDB.ndbID then 
 		if cfxNDB.verbose or theNDB.verbose then 
-			trigger.action.outText("+++ndb: stop() -- " .. theNDB.name .. " is not a cfxNDB.", 30) 
+			trigger.action.outText("+++ndb: stop() -- " .. theNDB.name .. " has no ndbID, perhaps not properly started.", 30) 
 		end
 		return 
-	end
+	end 
 	
 	trigger.action.stopRadioTransmission(theNDB.ndbID)
 	theNDB.paused = true 
@@ -126,26 +127,17 @@ function cfxNDB.createNDBWithZone(theZone)
 		theZone.ndbTriggerMethod = theZone:getStringFromZoneProperty("ndbTriggerMethod", "change")
 	end 
 	
-	-- on/offf query flags 
-	if theZone:hasProperty("on?") then 
-		theZone.onFlag = theZone:getStringFromZoneProperty("on?", "none")
-	end
-	
-	if theZone.onFlag then 
-		theZone.onFlagVal = theZone:getFlagValue(theZone.onFlag) -- save last value
-	end
-	
-	if theZone:hasProperty("off?") then 
-		theZone.offFlag = theZone:getStringFromZoneProperty("off?", "none")
-	end
-	
-	if theZone.offFlag then 
-		theZone.offFlagVal = theZone:getFlagValue(theZone.offFlag) -- save last value
-	end
-	
+	theZone.onFlag = theZone:getStringFromZoneProperty("on?", "cfxnone")
+	theZone.onFlagVal = theZone:getFlagValue(theZone.onFlag) -- save last value
+	theZone.offFlag = theZone:getStringFromZoneProperty("off?", "cfxnone")
+	theZone.offFlagVal = theZone:getFlagValue(theZone.offFlag) -- save last value
+		
 	-- start it 
 	if not theZone.paused then 
+		if theZone.verbose then trigger.action.outText("+++nbd: initial invoke start unpaused", 30) end
+		theZone.paused = true -- force a (mocked) pause, so we will start NDB 
 		cfxNDB.startNDB(theZone)
+		if theZone.verbose then trigger.action.outText("+++nbd: initial return unpaused", 30) end
 	end
 	
 	-- add it to my watchlist 
@@ -160,18 +152,16 @@ function cfxNDB.update()
 	local now = timer.getTime()
 	-- walk through all NDB and see if they need a refresh
 	for idx, theNDB in pairs (cfxNDB.ndbs) do 
-		-- see if this ndb is linked, meaning it's potentially 
-		-- moving with the linked unit 
+		-- see if this ndb is linked, meaning it's potentially moving with the linked unit 
 		if theNDB.linkedUnit then 
 			-- yupp, need to update
 			if (not theNDB.paused) and 
-			(now > theNDB.ndbRefreshTime) then 
-				-- optimization: check that it moved far enough 
-				-- to merit update.
+			   (now > theNDB.ndbRefreshTime) then 
+				-- optimization: check that it moved far enough to merit update.
 				if not theNDB.lastLoc then 
 					cfxNDB.startNDB(theNDB) -- never was started 
 				else 
-					local loc = theNDB:getPoint() -- y === 0
+					local loc = theNDB:getPoint()
 					loc.y = land.getHeight({x = loc.x, y = loc.z}) -- get y from land
 					local delta = dcsCommon.dist(loc, theNDB.lastLoc)
 					if delta > cfxNDB.maxDist then 
@@ -189,7 +179,7 @@ function cfxNDB.update()
 		end
 		
 		if theNDB:testZoneFlag(theNDB.offFlag, theNDB.ndbTriggerMethod, "offFlagVal") then
-			-- yupp, trigger start 
+			-- yupp, trigger stop 
 			cfxNDB.stopNDB(theNDB)
 		end 
 	end

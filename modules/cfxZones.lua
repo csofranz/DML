@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.5.3" 
+cfxZones.version = "4.5.4" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -17,7 +17,9 @@ cfxZones.version = "4.5.3"
 		  - guard agains DCS radius stored as sting (WTF, ED?)
 -4.5.3	  - added name for all smoke meths 
 		  - getSmokeColorStringFromZoneProperty() supports "?"
-		  - getSmokeColorNumberFromZoneProperty() supports "?"		  
+		  - getSmokeColorNumberFromZoneProperty() supports "?"		
+-4.5.4    - new allObjectsInZone()
+		  
 --]]--
 
 --
@@ -797,6 +799,26 @@ end
 
 function dmlZone:allGroupsInZone(categ)
 	return cfxZones.allGroupsInZone(self, categ)
+end
+
+function cfxZones.allObjectsInZone(theZone) 
+	-- warning: does not check for existing!
+	local inZones = {}
+	local coals = {0, 1, 2} -- all coalitions
+	for idx, coa in pairs(coals) do 
+		local allObj = coalition.getStaticObjects(coa)
+		for key, obj in pairs(allObj) do -- iterate all objects
+			local loc = obj:getPoint()
+			if theZone:pointInZone(loc) then
+				table.insert(inZones, obj)
+			end
+		end
+	end
+	return inZones
+end
+
+function dmlZone:allObjectsInZone()
+	return cfxZones.allObjectsInZone(self)
 end
 
 function cfxZones.allGroupNamesInZone(theZone, categ) -- categ is optional, must be code 

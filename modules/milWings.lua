@@ -1,5 +1,5 @@
 milWings = {}
-milWings.version = "0.9.5"
+milWings.version = "0.9.8"
 milWings.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -286,7 +286,15 @@ function milWings.createCallbackWP(gName, number, pt, alt, speed, action) -- nam
 	return omwWP
 end
 
-function milWings.spawnForZone(theZone, targetZone)
+function milWings.spawnForZone(theZone, targetZone, diffMod) -- fiffMod is difficulty modificator
+	if not diffMod then diffMod = 1 end -- default to 1
+	--[[--
+		difficulties:
+			1 = normal, do not modify
+			0 = set to rookie
+			2 or more set to ace
+		note that skill levels are named very different in the mission
+	--]]--
 	-- pick one of the flight groups 
 	if not theZone.fCount or theZone.fCount < 1 then 
 		trigger.action.outText("+++milW: WARNING - no f-groups in zone <" .. theZone.name .. "> at spawnForZone", 30)
@@ -309,6 +317,13 @@ function milWings.spawnForZone(theZone, targetZone)
 	for idx, uData in pairs(gData.units) do 
 		uData.name = dcsCommon.uuid(uData.name)
 		uData.alt = theZone.alt
+		if diffMod < 1 then -- set to rookie 
+			uData.skill = "Average" -- that's rookie!
+		elseif diffMod > 1 then -- set to ace 
+			uData.skill = "Excellent" -- 'Ace'
+		else
+			-- keep unchanged 
+		end 
 		uData.alt_type = "BARO"
 		uData.speed = theZone.speed 
 		uData.unitId = nil 

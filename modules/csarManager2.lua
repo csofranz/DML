@@ -1,5 +1,5 @@
 csarManager = {}
-csarManager.version = "4.5.3"
+csarManager.version = "4.5.4"
 csarManager.ups = 1 
 
 --[[-- VERSION HISTORY
@@ -23,6 +23,8 @@ csarManager.ups = 1
   4.5.3  - rewrote csar msn startup code, removed autoTrigger bug 
 		 - and connected csar missions better with update()  
 		 - cleanup 
+  4.5.4  - less verbosity 
+  
 	INTEGRATES AUTOMATICALLY WITH playerScore 
 	INTEGRATES WITH LIMITED AIRFRAMES 
 	INTEGRATES AUTOMATICALLY WITH SCRIBE 
@@ -1295,7 +1297,7 @@ function csarManager.getClosestInZoneForCoa(point, theZones, coa)
 end
 
 function csarManager.createCSARForParachutist(theUnit, name, coa) -- invoked with parachute guy on ground as theUnit, usually from autoCSAR
-	trigger.action.outText("Enter createCSARForParachutist", 30)
+	if csarManager.verbose then trigger.action.outText("Enter createCSARForParachutist", 30) end 
 	if not coa then coa = theUnit:getCoalition() end 
 	local pos = theUnit:getPoint()
 	-- unit DOES NOT HAVE GROUP!!! (unless water splashdown)

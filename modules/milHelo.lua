@@ -1,5 +1,5 @@
 milHelo = {}
-milHelo.version = "1.0.2"
+milHelo.version = "1.1.0"
 milHelo.requiredLibs = {
 	"dcsCommon",
 	"cfxZones", 
@@ -31,39 +31,6 @@ end
 function milHelo.addMilTargetZone(theZone)
 	milHelo.targets[theZone.name] = theZone -- overwrite if duplicate
 end
---[[--
-function milHelo.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
-	--local zP --= cfxZones.getPoint(theZone)
-	local zP = theZone:getDCSOrigin() -- don't use getPoint now.
-	zP.y = 0
-	
-	for idx, aUnit in pairs(theUnits) do 
-		local uP = {}
-		uP.x = aUnit.x 
-		uP.y = 0
-		uP.z = aUnit.y -- !! y-z
-		if theZone:pointInZone(uP) then return true end 
-	end 
-	return false 
-end
-
-function milHelo.allGroupsInZoneByData(theZone) -- move to MX?
-	local theGroupsInZone = {}
-	local count = 0
-	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
-		if groupData.units then 
-			if milHelo.partOfGroupDataInZone(theZone, groupData.units) then 
-				theGroupsInZone[groupName] = groupData -- DATA! work on clones!
-				count = count + 1 
-				if theZone.verbose then 
-					trigger.action.outText("+++milH: added group <" .. groupName .. "> for zone <" .. theZone.name .. ">", 30)
-				end 
-			end
-		end
-	end
-	return theGroupsInZone, count 
-end
---]]--
 
 function milHelo.readMilHeloZone(theZone) -- process attributes
 	-- get mission type. part of milHelo 
@@ -391,7 +358,15 @@ function milHelo.createOMWCallbackWP(gName, number, pt, alt, speed, action, ROE)
 end
 
 	
-function milHelo.spawnForZone(theZone, targetZone)
+function milHelo.spawnForZone(theZone, targetZone, diffMod)
+if not diffMod then diffMod = 1 end -- default to 1
+	--[[--
+		difficulties:
+			1 = normal, do not modify
+			0 = set to rookie
+			2 or more set to ace
+		note that skill levels are named very different in the mission
+	--]]--
 	-- note that each zone only has a single msnType, so zone 
 	-- defines msn type 
 	local n = dcsCommon.randomBetween(1, theZone.hCount)
@@ -406,6 +381,15 @@ function milHelo.spawnForZone(theZone, targetZone)
 	for idx, uData in pairs(gData.units) do 
 		uData.name = dcsCommon.uuid(uData.name)
 		uData.alt = 10
+		
+		if diffMod < 1 then -- set to rookie 
+			uData.skill = "Average" -- that's rookie!
+		elseif diffMod > 1 then -- set to ace 
+			uData.skill = "Excellent" -- 'Ace'
+		else
+			-- keep unchanged 
+		end 
+		
 		uData.alt_type = "RADIO"
 		uData.speed = 0 
 		uData.unitId = nil 

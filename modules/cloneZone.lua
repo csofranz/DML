@@ -1,5 +1,5 @@
 cloneZones = {}
-cloneZones.version = "2.7.0"
+cloneZones.version = "2.8.0"
 cloneZones.verbose = false  
 cloneZones.requiredLibs = {
 	"dcsCommon", -- always
@@ -67,6 +67,7 @@ cloneZones.respawnOnGroupID = true
 		  - increased vorbosity during persistance:loadData 
 	2.7.0 - noSpawn zones 
 	      - ... only for rndLoc
+	2.8.0 - static spawns invoke reconModes's staticSpawned
 --]]--
 
 --
@@ -1479,6 +1480,11 @@ function cloneZones.spawnWithTemplateForZone(theZone, spawnZone)
 		end
 		
 		local theStatic = coalition.addStaticObject(ctry, rawData)
+		-- tell recon if present 
+		if cfxReconMode and cfxReconMode.staticWasCloned then 
+			cfxReconMode.staticWasCloned(theStatic)
+		end 
+		
 		local newStaticID = tonumber(theStatic:getID()) 
 		table.insert(spawnedStatics, theStatic)
 		if spawnZone.despawnInMin then 
@@ -2068,7 +2074,10 @@ function cloneZones.loadData()
 		local cty = newStatic.cty 
 		-- spawn new one, replacing same.named old, dead if required 
 		gStatic =  coalition.addStaticObject(cty, newStatic)
-		
+		if cfxReconMode and cfxReconMode.staticWasCloned then 
+			cfxReconMode.staticWasCloned(gStatic)
+		end 
+
 		-- processing for cargoManager 
 		if oData.canCargo then 
 			if cfxCargoManager then 
