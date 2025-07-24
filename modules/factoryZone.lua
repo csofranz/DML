@@ -183,8 +183,8 @@ function factoryZone.spawnAttackTroops(theTypes, aZone, aCoalition, aFormation)
 	local spawnPoint = {x = aZone.point.x, y = aZone.point.y, z = aZone.point.z} -- copy struct 
 	
 	local rads = aZone.attackPhi * 0.01745
-	spawnPoint.x = spawnPoint.x + math.cos(aZone.attackPhi) * aZone.attackDelta
-	spawnPoint.y = spawnPoint.y + math.sin(aZone.attackPhi) * aZone.attackDelta 
+	spawnPoint.x = spawnPoint.x + math.cos(rads) * aZone.attackDelta
+	spawnPoint.z = spawnPoint.z + math.sin(rads) * aZone.attackDelta 
 	
 	local spawnZone = cfxZones.createSimpleZone("attkSpawnZone", spawnPoint, aZone.attackRadius)
 	
