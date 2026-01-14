@@ -93,7 +93,13 @@ function cfxCommander.doOption(data)
 		trigger.action.outText("Commander: setting option " .. data.key .. " --> " .. data.value, 30)
 	end
 
+	if not data.group or not Group.isExist(data.group) then 
+		-- group doesn't exist, skip
+		return nil 
+	end
+
 	local theController = data.group:getController()
+	if not theController then return nil end 
 	theController:setOption(data.key, data.value)
 end
 
