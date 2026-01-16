@@ -79,7 +79,7 @@ end
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops, the Kiowa can!
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1", "OH-6A", "MH-6J"} -- Ka-50, Apache and Gazelle can't carry troops, the Kiowa can!
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
