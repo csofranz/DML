@@ -364,8 +364,25 @@ function cfxGroundTroops.updateGuards(troop)
 	
 	-- we are currently unengaged. look for an enemy
 	if not troop.range then troop.range = 300 end
-	troop.coalition = troop.group:getCoalition()
+	-- use stored coalition if available, otherwise read from group (handle race condition)
+	-- do NOT overwrite if already set - use the coalition passed when creating troops
+	if not troop.coalition then
+		if troop.group:isExist() then
+			troop.coalition = troop.group:getCoalition()
+		else
+			-- group not initialized yet, skip this update
+			return
+		end
+	end
+	if not troop.coalition then
+		-- still no coalition, skip this update
+		return
+	end
 	local enemyCoal = dcsCommon.getEnemyCoalitionFor(troop.coalition)
+	if not enemyCoal then
+		-- no valid enemy coalition, skip
+		return
+	end
 	local cat = Group.Category.GROUND
 	local p = dcsCommon.getGroupLocation(troop.group)
 	local enemies, enemyDist = dcsCommon.getClosestLivingGroupToPoint(p, enemyCoal, cat) 
@@ -396,7 +413,13 @@ end
 
 function cfxGroundTroops.findLazeTarget(troop)
 	local here = troop.group:getUnit(1):getPoint()
-	troop.coalition = troop.group:getCoalition()
+	-- use stored coalition if available, don't overwrite
+	if not troop.coalition and troop.group:isExist() then
+		troop.coalition = troop.group:getCoalition()
+	end
+	if not troop.coalition then
+		return -- can't find enemy without valid coalition
+	end
 	local enemyCoal = dcsCommon.getEnemyCoalitionFor(troop.coalition)
 	--local enemySide = dcsCommon.getEnemyCoalitionFor(troop.side)
 	local cat = Group.Category.GROUND
@@ -915,7 +938,7 @@ end
 -- createGroundTroop
 -- use this to create a cfxGroundTroops from a dcs group
 --
-function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormation, code, canDrive) 
+function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormation, code, canDrive, coalition) 
 	local newTroops = {}
 	if not orders then 
 		orders = "guard" 
@@ -930,7 +953,16 @@ function cfxGroundTroops.createGroundTroops(inGroup, range, orders, moveFormatio
 	newTroops.isOffroad = false -- if true, we switched to direct orders, not roads, after standstill
 	newTroops.group = inGroup
 	newTroops.orders = orders:lower()
-	newTroops.coalition = inGroup:getCoalition()
+	-- use provided coalition if available (avoids race condition), otherwise get from group
+	if coalition then
+		newTroops.coalition = coalition
+	else
+		newTroops.coalition = inGroup:getCoalition()
+		-- handle race condition: group might not be fully initialized yet
+		if not newTroops.coalition and inGroup:isExist() then
+			newTroops.coalition = inGroup:getCoalition()
+		end
+	end
 	newTroops.side = newTroops.coalition -- because we'e been using both.
 	newTroops.name = inGroup:getName()
 	newTroops.moveFormation = moveFormation

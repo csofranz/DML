@@ -297,9 +297,8 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 		table.insert(unitTypes, "Soldier M4") -- make it one m4 trooper as fallback
 	end
 	
-	local theCountry = aSpawner.country  
+	local theCountry = aSpawner.country
 	local theCoalition = coalition.getCountryCoalition(theCountry)
-	
 	local theGroup, theData = cfxZones.createGroundUnitsInZoneForCoalition (
 				theCoalition, 
 				aSpawner.baseName .. "-" .. aSpawner.count, -- must be unique 
@@ -310,6 +309,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 				nil,  -- liveries 
 				aSpawner.drivable
 	 )
+	
 	if cfxSpawnZones.verbose or theZone.verbose then 
 		-- check created group size versus requested size 
 		trigger.action.outText("+++spwn: created <" .. theGroup:getSize() .. "> units, requested <" .. #unitTypes .. "> units, formation <" .. aSpawner.formation .. ">", 30)
@@ -354,7 +354,7 @@ function cfxSpawnZones.spawnWithSpawner(aSpawner)
 			AI.Option.Ground.val.ROE.WEAPON_HOLD, 
 			1.0)
 	else 
-		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders, aSpawner.moveFormation, aSpawner.code, aSpawner.drivable) 
+		local newTroops = cfxGroundTroops.createGroundTroops(theGroup, aSpawner.range, aSpawner.orders, aSpawner.moveFormation, aSpawner.code, aSpawner.drivable, theCoalition) 
 		cfxGroundTroops.addGroundTroopsToPool(newTroops)
 		
 		-- see if we have defined a target zone as destination
@@ -620,6 +620,7 @@ function cfxSpawnZones.loadData()
 		local cty = gData.cty 
 		local cat = gData.cat  
 		local code = gdTroop.code 
+		local drivable = gdTroop.drivable 
 		
 		-- now spawn, but first 
 		-- add to my own attacker queue so we can save later 
@@ -636,7 +637,8 @@ function cfxSpawnZones.loadData()
 				1.0)
 		else 
 			-- add to groundTroops 
-			local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders, moveFormation) 
+			-- side is stored coalition, pass it explicitly to avoid race condition
+			local newTroops = cfxGroundTroops.createGroundTroops(theGroup, range, orders, moveFormation, code, drivable, side) 
 			cfxGroundTroops.addGroundTroopsToPool(newTroops)
 			-- engage a target zone 
 			if target then 
